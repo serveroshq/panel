@@ -6,3 +6,4 @@
 - **Your serveros.com account, billing or ServerOS Cloud:** email [support@serveros.com](mailto:support@serveros.com). Issues here are for the open source panel's code.
 
 Help in Discussions and on Discord comes from the community, and from the team when we can.
+
