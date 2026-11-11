@@ -20,13 +20,20 @@ class TrustCloudflare
 
     public const string COUNTRY = 'cloudflare.country';
 
+    /** Where cloudflared reaches the panel from: the server itself or its Docker network. */
+    public const array TUNNEL_RANGES = ['127.0.0.0/8', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7'];
+
     public function handle(Request $request, Closure $next): Response
     {
         $edge = (string) $request->server->get('REMOTE_ADDR');
         $visitor = trim((string) $request->headers->get('CF-Connecting-IP'));
 
-        if ($visitor !== '' && filter_var($visitor, FILTER_VALIDATE_IP) && IpUtils::checkIp($edge, self::RANGES)) {
+        $tunnel = self::throughTunnel($edge);
+        if ($visitor !== '' && filter_var($visitor, FILTER_VALIDATE_IP) && ($tunnel || IpUtils::checkIp($edge, self::RANGES))) {
             $request->server->set('REMOTE_ADDR', $visitor);
+            if ($tunnel && strtolower((string) $request->headers->get('X-Forwarded-Proto')) === 'https') {
+                $request->server->set('HTTPS', 'on');
+            }
             $request->headers->remove('X-Forwarded-For');
 
             $country = strtoupper(trim((string) $request->headers->get('CF-IPCountry')));
@@ -36,5 +43,15 @@ class TrustCloudflare
         }
 
         return $next($request);
+    }
+
+    /**
+     * Self-hosted behind a Cloudflare Tunnel, cloudflared hands requests on
+     * from a private address with Cloudflare's headers. The panel's ports
+     * are only open to the server then, so those headers can be believed.
+     */
+    private static function throughTunnel(string $from): bool
+    {
+        return config('serveros.tunnel') === 'cloudflare' && $from !== '' && IpUtils::checkIp($from, self::TUNNEL_RANGES);
     }
 }

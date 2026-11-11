@@ -326,6 +326,11 @@ class DaemonJobQueue
         return self::atLeast($machine, (string) config('daemon.log_skip_since'));
     }
 
+    public static function canRunTunnel(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.tunnel_since'));
+    }
+
     public static function canFollowPolicy(Machine $machine): bool
     {
         return self::atLeast($machine, (string) config('daemon.policy_since'));

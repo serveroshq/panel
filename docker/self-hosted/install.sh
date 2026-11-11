@@ -18,9 +18,21 @@
 # panel, with free Let's Encrypt certificates) and 8443 (where your
 # machines connect) must be open.
 #
+# Behind a Cloudflare Tunnel instead (--tunnel-token), ports 80 and 443
+# stay closed: cloudflared carries the panel's traffic and Cloudflare does
+# HTTPS. Machines still connect to the gateway directly, on a name of its
+# own that points at this server, DNS only (--gateway-host), port 8443.
+#
 # Options:
 #   --domain=NAME      the panel's address (required)
-#   --email=ADDRESS    for Let's Encrypt's expiry notices (required)
+#   --email=ADDRESS    for Let's Encrypt's expiry notices (required, unless
+#                      behind a tunnel)
+#   --tunnel-token=TOKEN
+#                      run behind this Cloudflare Tunnel (the token from the
+#                      tunnel's install command in Cloudflare Zero Trust)
+#   --gateway-host=NAME
+#                      where machines connect, behind a tunnel (like
+#                      gateway.example.com, DNS only, pointing here)
 #   --dir=PATH         where it lives (default /opt/serveros)
 #   --version=X.Y.Z    an image version instead of the latest
 #   --image=NAME       another image (default ghcr.io/serveroshq/panel,
@@ -36,6 +48,8 @@ DIR="${SERVEROS_DIR:-/opt/serveros}"
 IMAGE_NAME="ghcr.io/serveroshq/panel"
 VERSION="latest"
 IMAGE_GIVEN=0
+TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
+GATEWAY_HOST="${SERVEROS_GATEWAY_HOST:-}"
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -48,7 +62,9 @@ for arg in "$@"; do
         --dir=*) DIR="${arg#--dir=}" ;;
         --version=*) VERSION="${arg#--version=}"; VERSION="${VERSION#v}" ;;
         --image=*) IMAGE_NAME="${arg#--image=}"; IMAGE_GIVEN=1 ;;
-        -h|--help) sed -n '2,30p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --tunnel-token=*) TUNNEL_TOKEN="${arg#--tunnel-token=}" ;;
+        --gateway-host=*) GATEWAY_HOST="${arg#--gateway-host=}" ;;
+        -h|--help) sed -n '2,45p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) fail "unknown option $arg (see --help)" ;;
     esac
 done
@@ -71,13 +87,31 @@ if [ -f "$DIR/.env" ]; then
     existing() { grep -E "^$1=" "$DIR/.env" | tail -n1 | cut -d= -f2- || true; }
     DOMAIN="${DOMAIN:-$(existing SERVEROS_DOMAIN)}"
     EMAIL="${EMAIL:-$(existing ACME_EMAIL)}"
+    TUNNEL_TOKEN="${TUNNEL_TOKEN:-$(existing CLOUDFLARE_TUNNEL_TOKEN)}"
+    GATEWAY_HOST="${GATEWAY_HOST:-$(existing SERVEROS_GATEWAY_HOST)}"
 fi
+# The whole install command pasted: the token is its last word.
+TUNNEL_TOKEN="$(printf '%s' "$TUNNEL_TOKEN" | awk '{print $NF}')"
+TUNNEL=0
+[ -z "$TUNNEL_TOKEN" ] || TUNNEL=1
+
+is_domain() { printf '%s' "$1" | grep -Eq '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'; }
+bare() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's|^https\?://||' -e 's|/.*$||' -e 's|:[0-9]*$||'; }
+
 [ -n "$DOMAIN" ] || ask DOMAIN "The panel's domain (like panel.example.com):"
-[ -n "$EMAIL" ] || ask EMAIL "Your email, for Let's Encrypt:"
-DOMAIN="$(printf '%s' "$DOMAIN" | tr '[:upper:]' '[:lower:]' | sed -e 's|^https\?://||' -e 's|/.*$||')"
-printf '%s' "$DOMAIN" | grep -Eq '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$' \
-    || fail "\"$DOMAIN\" isn't a domain name. Use --domain=panel.example.com"
-printf '%s' "$EMAIL" | grep -q '@' || fail "give an email address with --email=you@example.com"
+DOMAIN="$(bare "$DOMAIN")"
+is_domain "$DOMAIN" || fail "\"$DOMAIN\" isn't a domain name. Use --domain=panel.example.com"
+if [ "$TUNNEL" = 1 ]; then
+    printf '%s' "$TUNNEL_TOKEN" | grep -Eq '^[A-Za-z0-9+/=_-]{40,4096}$' \
+        || fail "that isn't a Cloudflare Tunnel token. Copy it from the tunnel's install command in Cloudflare Zero Trust (Networks > Tunnels)."
+    [ -n "$GATEWAY_HOST" ] || ask GATEWAY_HOST "Where machines connect, a name pointing straight at this server, DNS only (like gateway.example.com):"
+    GATEWAY_HOST="$(bare "$GATEWAY_HOST")"
+    is_domain "$GATEWAY_HOST" || fail "give the gateway a name with --gateway-host=gateway.example.com"
+    [ "$GATEWAY_HOST" != "$DOMAIN" ] || fail "machines can't connect through the tunnel, so the gateway needs a name of its own, not $DOMAIN (like gateway.example.com)."
+else
+    [ -n "$EMAIL" ] || ask EMAIL "Your email, for Let's Encrypt:"
+    printf '%s' "$EMAIL" | grep -q '@' || fail "give an email address with --email=you@example.com"
+fi
 
 # Docker, with Compose.
 if ! command -v docker >/dev/null 2>&1; then
@@ -89,9 +123,12 @@ systemctl enable --now docker >/dev/null 2>&1 || true
 
 # Ports another program already holds.
 if command -v ss >/dev/null 2>&1 && [ ! -f "$DIR/compose.yaml" ]; then
-    for port in 80 443 8443; do
+    # Behind a tunnel the panel only listens on this server, on 18080 and 18443.
+    ports="80 443 8443"
+    [ "$TUNNEL" = 0 ] || ports="18080 18443 8443"
+    for port in $ports; do
         if ss -ltnH "sport = :$port" | grep -q .; then
-            fail "port $port is already in use ($(ss -ltnpH "sport = :$port" | sed -n 's/.*users:((\"\([^\"]*\)\".*/\1/p' | head -n1)). ServerOS needs 80, 443 and 8443."
+            fail "port $port is already in use ($(ss -ltnpH "sport = :$port" | sed -n 's/.*users:((\"\([^\"]*\)\".*/\1/p' | head -n1)). ServerOS needs $(printf '%s' "$ports" | sed 's/ /, /g')."
         fi
     done
 fi
@@ -107,8 +144,14 @@ check_dns() {
         warn "$name points at $found, not this server ($public_ip)."
     fi
 }
-check_dns "$DOMAIN"
-check_dns "serveros-check-$RANDOM.$DOMAIN"
+if [ "$TUNNEL" = 1 ]; then
+    # The panel's names come from the tunnel's public hostnames (set up
+    # below); the gateway's must point here without Cloudflare's proxy.
+    check_dns "$GATEWAY_HOST"
+else
+    check_dns "$DOMAIN"
+    check_dns "serveros-check-$RANDOM.$DOMAIN"
+fi
 
 mkdir -p "$DIR"
 chmod 700 "$DIR"
@@ -162,6 +205,29 @@ elif [ "$VERSION" != "latest" ] || [ "$IMAGE_GIVEN" = 1 ] || ! grep -q '^SERVERO
     fi
 fi
 IMAGE="$(grep -E '^SERVEROS_IMAGE=' .env | tail -n1 | cut -d= -f2-)"
+
+# set_env KEY VALUE: replaces the setting, or adds it.
+set_env() {
+    local rest
+    rest="$(grep -vE "^$1=" .env || true)"
+    umask 077
+    printf '%s\n%s=%s\n' "$rest" "$1" "$2" > .env.new && mv .env.new .env
+    umask 022
+}
+if [ "$TUNNEL" = 1 ]; then
+    # cloudflared (COMPOSE_PROFILES=tunnel) carries the panel's traffic, so the
+    # panel only listens on this server. The gateway reaches the panel inside
+    # Docker with Caddy's own certificate (local_certs), since Let's Encrypt
+    # can't reach it here.
+    set_env SERVEROS_TUNNEL cloudflare
+    set_env CLOUDFLARE_TUNNEL_TOKEN "$TUNNEL_TOKEN"
+    set_env SERVEROS_GATEWAY_HOST "$GATEWAY_HOST"
+    set_env COMPOSE_PROFILES tunnel
+    set_env HTTP_PORT 127.0.0.1:18080
+    set_env HTTPS_PORT 127.0.0.1:18443
+    set_env CADDY_GLOBAL_OPTIONS local_certs
+    set_env GATEWAY_PANEL_CA /gateway/panel-ca.crt
+fi
 grep -q '^DAEMON_RELEASE_PUBKEY=' .env || printf 'DAEMON_RELEASE_PUBKEY=%s\n' "5245716675785d7bf5dc36d783fa5c690c705da4d542082f398e3e79543d06f8" >> .env
 
 say "Pulling $IMAGE"
@@ -223,8 +289,22 @@ cat <<EOF
 
   $next
 
+$(if [ "$TUNNEL" = 1 ]; then cat <<TUNNEL_EOF
+  In Cloudflare Zero Trust (Networks > Tunnels > your tunnel > Public
+  hostnames), add these two, each with the service HTTP and web:80:
+
+      $DOMAIN
+      *.$DOMAIN
+
+  Machines connect to $GATEWAY_HOST:8443 directly: give it an A record
+  pointing at ${public_ip:-this server}, DNS only (grey cloud), and keep
+  port 8443 open. Ports 80 and 443 can stay closed.
+TUNNEL_EOF
+else cat <<DIRECT_EOF
   Make sure DNS has both $DOMAIN and *.$DOMAIN pointing here, and that
   ports 80, 443 and 8443 are open to the internet.
+DIRECT_EOF
+fi)
 
   Settings:   $DIR/.env (email, for one), then: cd $DIR && docker compose up -d
   Upgrades:   serveros-panel upgrade

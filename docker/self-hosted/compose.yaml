@@ -51,7 +51,11 @@ x-panel: &panel
         # Machines: the install command, and the gateway they connect to.
         DAEMON_INSTALL_READY: 'true'
         DAEMON_COMMANDS_ENABLED: 'true'
-        DAEMON_GATEWAY_HOST: ${SERVEROS_DOMAIN}:${GATEWAY_PORT:-8443}
+        # Behind a Cloudflare Tunnel machines can't connect on the panel's
+        # name, so the gateway gets its own, pointing straight here.
+        SERVEROS_GATEWAY_HOST: ${SERVEROS_GATEWAY_HOST:-}
+        DAEMON_GATEWAY_HOST: ${SERVEROS_GATEWAY_HOST:-${SERVEROS_DOMAIN}}:${GATEWAY_PORT:-8443}
+        SERVEROS_TUNNEL: ${SERVEROS_TUNNEL:-}
         DAEMON_GATEWAY_INTERNAL_URL: http://gateway:8090
         DAEMON_GATEWAY_SECRET: ${DAEMON_GATEWAY_SECRET:?Set DAEMON_GATEWAY_SECRET in .env}
         DAEMON_RELEASE_PUBKEY: ${DAEMON_RELEASE_PUBKEY:-5245716675785d7bf5dc36d783fa5c690c705da4d542082f398e3e79543d06f8}
@@ -126,6 +130,20 @@ services:
             - '${GATEWAY_PORT:-8443}:8443'
         volumes:
             - gateway:/gateway:ro
+        depends_on:
+            web:
+                condition: service_healthy
+
+    # Behind a Cloudflare Tunnel (install.sh --tunnel-token): cloudflared
+    # carries the panel's traffic from Cloudflare to web, so ports 80 and 443
+    # needn't be open. COMPOSE_PROFILES=tunnel in .env turns it on.
+    cloudflared:
+        image: cloudflare/cloudflared:latest
+        restart: unless-stopped
+        profiles: [tunnel]
+        command: ['tunnel', '--no-autoupdate', 'run']
+        environment:
+            TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
         depends_on:
             web:
                 condition: service_healthy

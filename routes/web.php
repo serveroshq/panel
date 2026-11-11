@@ -31,6 +31,7 @@ use App\Http\Controllers\MachineMetadataController;
 use App\Http\Controllers\MachineScanController;
 use App\Http\Controllers\MachineServiceController;
 use App\Http\Controllers\MachineSettingsController;
+use App\Http\Controllers\MachineTunnelController;
 use App\Http\Controllers\MachineUpdatesController;
 use App\Http\Controllers\MaintenanceController;
 use App\Http\Controllers\Mcp\OAuthAuthorizeController;
@@ -270,6 +271,9 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
         Route::delete('updates/rollouts/{rollout}', [UpdatesController::class, 'cancelRollout'])->withoutScopedBindings()->name('workspace.updates.rollouts.cancel');
         Route::post('machines/{machine}/firewall', [MachineFirewallController::class, 'store'])->middleware('throttle:20,1')->name('workspace.machines.firewall.store');
         Route::get('machines/{machine}/firewall/{job}', [MachineFirewallController::class, 'show'])->name('workspace.machines.firewall.show');
+        Route::post('machines/{machine}/tunnel', [MachineTunnelController::class, 'store'])->middleware('throttle:10,1')->name('workspace.machines.tunnel.store');
+        Route::delete('machines/{machine}/tunnel', [MachineTunnelController::class, 'destroy'])->middleware('throttle:10,1')->name('workspace.machines.tunnel.destroy');
+        Route::get('machines/{machine}/tunnel/{job}', [MachineTunnelController::class, 'show'])->name('workspace.machines.tunnel.show');
         Route::post('machines/{machine}/reboot', [MachineUpdatesController::class, 'reboot'])->middleware('throttle:3,1')->name('workspace.machines.reboot');
         Route::get('machines/{machine}/scan', [MachineScanController::class, 'show'])->name('workspace.machines.scan.show');
         Route::post('machines/{machine}/jobs/{job}/retry', [DaemonJobController::class, 'retry'])->middleware('throttle:10,1')->name('workspace.machines.jobs.retry');

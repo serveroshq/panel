@@ -11,6 +11,11 @@ return [
 
     'sign_ups' => env('SERVEROS_SIGN_UPS', 'closed'),
 
+    // Self-hosted behind a Cloudflare Tunnel (SERVEROS_TUNNEL=cloudflare):
+    // cloudflared hands the panel plain HTTP from inside the server, so the
+    // visitor's address comes from Cloudflare's headers.
+    'tunnel' => env('SERVEROS_TUNNEL'),
+
     'brand' => [
         'company' => env('SERVEROS_COMPANY'),
         'address' => env('SERVEROS_COMPANY_ADDRESS'),

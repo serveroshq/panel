@@ -54,7 +54,9 @@ daemon_certificates() {
         php artisan daemon:ca init --no-interaction
     fi
 
-    host="${SERVEROS_DOMAIN:-}"
+    # Machines connect to the gateway on its own name when it has one (behind
+    # a Cloudflare Tunnel, the panel's name is on Cloudflare).
+    host="${SERVEROS_GATEWAY_HOST:-${SERVEROS_DOMAIN:-}}"
     [ -n "$host" ] || return 0
     cert=/gateway/gateway.crt
     if [ -f "$cert" ] && php -r '
@@ -95,6 +97,11 @@ case "$role" in
         php artisan storage:link --no-interaction >/dev/null 2>&1 || true
         optimize
         log "ServerOS $(cat VERSION 2>/dev/null || echo dev) is starting on https://${SERVEROS_DOMAIN:-localhost}"
+        if [ -n "${ACME_EMAIL:-}" ]; then export ACME_EMAIL_OPTION="email ${ACME_EMAIL}"; fi
+        if [ "${SERVEROS_TUNNEL:-}" = cloudflare ]; then
+            export SERVEROS_HTTP=serve
+            log "behind a Cloudflare Tunnel: plain HTTP serves the panel, and Cloudflare does HTTPS"
+        fi
         publish_panel_ca
         (php artisan daemon:sync-releases --no-interaction >/dev/null 2>&1 || true) &
         # Not set up yet: the setup code the installer asks for, in the log.

@@ -52,6 +52,7 @@ use Illuminate\Support\Facades\Storage;
  * @property list<string>|null $hidden_services services hidden from the panel's lists, by ServiceLabels::identity()
  * @property string|null $log_ip_masking off, partial or hash: IPs masked in log lines on the machine
  * @property array{services: list<string>, patterns: list<array{service: string|null, pattern: string}>}|null $log_skip services and line patterns whose logs never leave the machine
+ * @property array{provider: string, tunnel_id: string|null, state: string, plain_http: bool, since: string}|null $tunnel the Cloudflare Tunnel the machine's apps are served through, once the daemon has it running
  * @property list<string>|null $log_muted_services services whose log lines aren't kept, by ServiceLabels::identity()
  * @property array<string, array<string, int|float|null>>|null $service_stats
  * @property list<array{mount: string, used: int, total: int}>|null $disks
@@ -104,6 +105,7 @@ class Machine extends Model
             'hidden_services' => 'array',
             'log_muted_services' => 'array',
             'log_skip' => 'array',
+            'tunnel' => 'array',
             'service_stats' => 'array',
             'disks' => 'array',
             'alert_state' => 'array',
