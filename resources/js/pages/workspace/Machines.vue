@@ -224,7 +224,7 @@ const sortLabel = computed(
 
 const comparators: Record<SortKey, (a: Machine, b: Machine) => number> = {
     cpu: (a, b) => b.cpu - a.cpu,
-    memory: (a, b) => parseFloat(b.memory) - parseFloat(a.memory),
+    memory: (a, b) => (b.memoryMb ?? -1) - (a.memoryMb ?? -1),
     name: (a, b) => a.name.localeCompare(b.name),
 };
 
