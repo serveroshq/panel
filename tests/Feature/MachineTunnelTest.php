@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\ResolveCustomDomain;
+use App\Http\Middleware\SendToInstaller;
 use App\Http\Middleware\TrustCloudflare;
 use App\Models\Activity;
 use App\Models\DaemonJob;
@@ -9,6 +11,7 @@ use App\Support\Domains\DomainCheck;
 use App\Support\Domains\DomainResolver;
 use App\Support\Install\AddressCheck;
 use App\Support\Machines\CloudflareTunnel;
+use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -178,6 +181,13 @@ test('behind a tunnel, the panel believes cloudflared about who’s visiting, an
 
     config()->set('serveros.tunnel', 'cloudflare');
     expect($seen($request()))->toBe('https 198.51.100.23');
+});
+
+test('the visitor’s address and HTTPS are settled before anything else runs, the installer’s redirect too', function () {
+    $global = app(Kernel::class)->getGlobalMiddleware();
+
+    expect(array_search(TrustCloudflare::class, $global, true))->toBeLessThan(array_search(SendToInstaller::class, $global, true))
+        ->and(array_search(SendToInstaller::class, $global, true))->toBeLessThan(array_search(ResolveCustomDomain::class, $global, true));
 });
 
 test('the installer’s address step checks the tunnel and the gateway’s own name', function () {
