@@ -145,14 +145,14 @@ Then open `https://panel.example.com` and set it up as usual. The address step c
 
 The script adds this to `/opt/serveros/.env`:
 
-| Setting                                    | What it does                                                                                  |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `SERVEROS_TUNNEL=cloudflare`               | Plain HTTP serves the panel, and the visitor's address comes from Cloudflare's headers.       |
-| `CLOUDFLARE_TUNNEL_TOKEN`                  | The tunnel's token, for the `cloudflared` container.                                          |
-| `COMPOSE_PROFILES=tunnel`                  | Starts the `cloudflared` container.                                                           |
-| `SERVEROS_GATEWAY_HOST`                    | Where machines connect, and the name on the gateway's certificate.                            |
-| `HTTP_PORT`, `HTTPS_PORT`                  | `127.0.0.1:18080` and `127.0.0.1:18443`: the panel only listens on the server itself.         |
-| `CADDY_GLOBAL_OPTIONS=local_certs`, `GATEWAY_PANEL_CA` | The gateway reaches the panel inside Docker with Caddy's own certificate.         |
+| Setting                                                | What it does                                                                            |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `SERVEROS_TUNNEL=cloudflare`                           | Plain HTTP serves the panel, and the visitor's address comes from Cloudflare's headers. |
+| `CLOUDFLARE_TUNNEL_TOKEN`                              | The tunnel's token, for the `cloudflared` container.                                    |
+| `COMPOSE_PROFILES=tunnel`                              | Starts the `cloudflared` container.                                                     |
+| `SERVEROS_GATEWAY_HOST`                                | Where machines connect, and the name on the gateway's certificate.                      |
+| `HTTP_PORT`, `HTTPS_PORT`                              | `127.0.0.1:18080` and `127.0.0.1:18443`: the panel only listens on the server itself.   |
+| `CADDY_GLOBAL_OPTIONS=local_certs`, `GATEWAY_PANEL_CA` | The gateway reaches the panel inside Docker with Caddy's own certificate.               |
 
 Two things to know:
 
