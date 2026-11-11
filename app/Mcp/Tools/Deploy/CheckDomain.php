@@ -86,7 +86,7 @@ final class CheckDomain extends Tool
 
         return match ($result['status']) {
             'ready' => ($record['type'] ?? null) === 'CNAME'
-                ? "{$subject} is on Cloudflare, in front of {$machine}’s Cloudflare Tunnel, which does HTTPS. The tunnel also needs a public hostname for it, to http://localhost:80, in Cloudflare Zero Trust."
+                ? "{$subject} is on Cloudflare, in front of {$machine}’s Cloudflare Tunnel, which does HTTPS. The tunnel also needs a route for it (a published application with the service URL http://localhost:80), in Cloudflare Zero Trust."
                 : "{$subject} points to {$machine}. HTTPS is set up as it deploys.",
             'missing' => "No DNS record for {$result['domain']} yet.".($record ? " Add {$record['type']} {$record['name']} → {$record['value']} where the domain is managed." : ' The machine has no known IP address to point it at.'),
             'proxied' => 'It’s behind Cloudflare’s proxy, which blocks the certificate. Set the record to DNS only (grey cloud)'.($record ? ": {$record['type']} {$record['name']} → {$record['value']}." : '.'),

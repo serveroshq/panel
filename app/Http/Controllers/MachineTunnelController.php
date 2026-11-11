@@ -35,7 +35,7 @@ class MachineTunnelController extends Controller
             $token = (string) end($words);
         }
         if (CloudflareTunnel::tunnelId($token) === null) {
-            throw ValidationException::withMessages(['token' => __('That isn’t a Cloudflare Tunnel token. Copy it from the tunnel’s install command in Cloudflare Zero Trust.')]);
+            throw ValidationException::withMessages(['token' => __('That isn’t a Cloudflare Tunnel token. Copy it from the tunnel’s install command in Cloudflare (Networking › Tunnels).')]);
         }
 
         return $this->send($workspace, $machine, $queue, $request, ['type' => 'tunnel', 'action' => 'up', 'token' => $token]);

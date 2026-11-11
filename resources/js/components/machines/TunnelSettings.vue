@@ -234,7 +234,7 @@ async function copy(text: string): Promise<void> {
                 <p class="text-(--ds-text-muted)">
                     {{
                         $t(
-                            'In the tunnel’s settings in Cloudflare Zero Trust, add a public hostname for each app’s domain (or one for *.yourdomain.com) with the service HTTP and localhost:80. Cloudflare adds the DNS records for them.',
+                            'In Cloudflare, open the tunnel’s Routes and add a published application for each app’s domain (or one for *.yourdomain.com), with the service URL http://localhost:80. Cloudflare adds the DNS records for them.',
                         )
                     }}
                 </p>
@@ -304,7 +304,7 @@ async function copy(text: string): Promise<void> {
                     <li>
                         {{
                             $t(
-                                'In Cloudflare Zero Trust, open Networks › Tunnels and create a tunnel with Cloudflared.',
+                                'In Cloudflare, open Networking › Tunnels and create a tunnel with Cloudflared.',
                             )
                         }}
                     </li>
@@ -319,7 +319,7 @@ async function copy(text: string): Promise<void> {
                     <li>
                         {{
                             $t(
-                                'Add a public hostname to the tunnel for your apps, like *.example.com, to HTTP localhost:80.',
+                                'In the tunnel’s Routes, add a published application for your apps, like *.example.com, with the service URL http://localhost:80.',
                             )
                         }}
                     </li>

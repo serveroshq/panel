@@ -72,9 +72,9 @@ class AddressCheck
     {
         $found = ($this->resolver)($host);
         $lines = [match (true) {
-            $found === [] => ['fail', "{$host} doesn’t point anywhere yet. Add it as a public hostname of your tunnel in Cloudflare Zero Trust, to http://web:80."],
+            $found === [] => ['fail', "{$host} doesn’t point anywhere yet. Add it to your tunnel in Cloudflare (Routes, a published application with the service URL http://web:80)."],
             $request->getHost() === $host || self::onCloudflare($found) => ['ok', "{$host} comes through your Cloudflare Tunnel."],
-            default => ['warn', "{$host} points at ".implode(', ', $found).', not Cloudflare. Add it as a public hostname of your tunnel instead.'],
+            default => ['warn', "{$host} points at ".implode(', ', $found).', not Cloudflare. Add it to your tunnel’s routes instead.'],
         }];
 
         $wildcard = ($this->resolver)('serveros-check-'.Str::lower(Str::random(6)).'.'.$host);

@@ -128,7 +128,7 @@ If you'd rather not open ports 80 and 443, the panel can sit behind a [Cloudflar
 
 Machines are the exception. They connect to the gateway with their own certificates, which Cloudflare's proxy can't pass on, so the gateway needs a name of its own that points straight at the server, with port 8443 open to your machines.
 
-1. In Cloudflare Zero Trust, open Networks › Tunnels and create a tunnel with Cloudflared. Copy the token from its install command (the long string after `--token`).
+1. In Cloudflare, open Networking › Tunnels and create a tunnel with Cloudflared. Copy the token from its install command (the long string after `--token`).
 2. Add a DNS record for the gateway, DNS only (grey cloud): an A record for `gateway.example.com` with the server's address.
 3. Install with the token and the gateway's name:
 
@@ -139,7 +139,7 @@ Machines are the exception. They connect to the gateway with their own certifica
 
     There's no `--email` to give: Let's Encrypt isn't used.
 
-4. In the tunnel's Public hostnames, add `panel.example.com` and `*.panel.example.com`, each with the service HTTP and `web:80`. Cloudflare adds their DNS records.
+4. In the tunnel's Routes, add a published application for `panel.example.com` and another for `*.panel.example.com`, each with the service URL `http://web:80`. Cloudflare adds their DNS records. Check the full hostname before you save: a route on the bare domain takes over whatever that domain serves now.
 
 Then open `https://panel.example.com` and set it up as usual. The address step checks the tunnel and the gateway's name.
 
@@ -163,7 +163,7 @@ Two things to know:
 
 A machine can serve its apps through a Cloudflare Tunnel too, so it needs no open ports for them. Open the machine's Settings, find Cloudflare Tunnel, and paste a tunnel's token (or its whole install command). ServerOS installs cloudflared on the machine from Cloudflare's package repository and runs it as the `serveros-tunnel` service, with the token kept root-only in `/etc/serveros/tunnel.env`. The panel doesn't keep the token once the machine has it.
 
-The machine's proxy then answers each app's domain over plain HTTP, since Cloudflare does HTTPS. In the tunnel's Public hostnames, add each app's domain, or one wildcard like `*.example.com`, with the service HTTP and `localhost:80`. Deploy apps with their domain as usual. Taking the tunnel off stops cloudflared, and the apps get their own certificates again.
+The machine's proxy then answers each app's domain over plain HTTP, since Cloudflare does HTTPS. In the tunnel's Routes, add a published application for each app's domain, or one wildcard like `*.example.com`, with the service URL `http://localhost:80`. Deploy apps with their domain as usual. Taking the tunnel off stops cloudflared, and the apps get their own certificates again.
 
 This needs the daemon at v0.1.1-pre.37 or later on the machine, with Caddy as its proxy (the default) or nginx.
 

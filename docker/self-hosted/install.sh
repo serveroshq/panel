@@ -29,7 +29,7 @@
 #                      behind a tunnel)
 #   --tunnel-token=TOKEN
 #                      run behind this Cloudflare Tunnel (the token from the
-#                      tunnel's install command in Cloudflare Zero Trust)
+#                      tunnel's install command in Cloudflare, Networking > Tunnels)
 #   --gateway-host=NAME
 #                      where machines connect, behind a tunnel (like
 #                      gateway.example.com, DNS only, pointing here)
@@ -103,7 +103,7 @@ DOMAIN="$(bare "$DOMAIN")"
 is_domain "$DOMAIN" || fail "\"$DOMAIN\" isn't a domain name. Use --domain=panel.example.com"
 if [ "$TUNNEL" = 1 ]; then
     printf '%s' "$TUNNEL_TOKEN" | grep -Eq '^[A-Za-z0-9+/=_-]{40,4096}$' \
-        || fail "that isn't a Cloudflare Tunnel token. Copy it from the tunnel's install command in Cloudflare Zero Trust (Networks > Tunnels)."
+        || fail "that isn't a Cloudflare Tunnel token. Copy it from the tunnel's install command in Cloudflare (Networking > Tunnels)."
     [ -n "$GATEWAY_HOST" ] || ask GATEWAY_HOST "Where machines connect, a name pointing straight at this server, DNS only (like gateway.example.com):"
     GATEWAY_HOST="$(bare "$GATEWAY_HOST")"
     is_domain "$GATEWAY_HOST" || fail "give the gateway a name with --gateway-host=gateway.example.com"
@@ -145,7 +145,7 @@ check_dns() {
     fi
 }
 if [ "$TUNNEL" = 1 ]; then
-    # The panel's names come from the tunnel's public hostnames (set up
+    # The panel's names come from the tunnel's routes (set up
     # below); the gateway's must point here without Cloudflare's proxy.
     check_dns "$GATEWAY_HOST"
 else
@@ -290,8 +290,9 @@ cat <<EOF
   $next
 
 $(if [ "$TUNNEL" = 1 ]; then cat <<TUNNEL_EOF
-  In Cloudflare Zero Trust (Networks > Tunnels > your tunnel > Public
-  hostnames), add these two, each with the service HTTP and web:80:
+  In Cloudflare (Networking > Tunnels > your tunnel > Routes), add a
+  published application for each of these, with the service URL
+  http://web:80:
 
       $DOMAIN
       *.$DOMAIN
