@@ -40,7 +40,7 @@ class SendWeeklySummaries extends Command
                 }
             });
 
-        $this->info("Sent {$sent} summaries.");
+        $this->info("Sent {$sent} ".($sent === 1 ? 'summary' : 'summaries').'.');
 
         return self::SUCCESS;
     }

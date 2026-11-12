@@ -15,7 +15,7 @@ class RunMonitors extends Command
     public function handle(MonitorRunner $runner): int
     {
         $checked = $runner->runDue();
-        $this->info("Checked {$checked} monitors.");
+        $this->info("Checked {$checked} ".($checked === 1 ? 'monitor' : 'monitors').'.');
 
         if ($this->option('prune')) {
             $deleted = MonitorCheck::query()->where('checked_at', '<', now()->subDays(MonitorCheck::KEEP_DAYS))->delete();

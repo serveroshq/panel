@@ -13,7 +13,8 @@ class WatchMachines extends Command
 
     public function handle(MachineWatcher $watcher): int
     {
-        $this->info("Sent {$watcher->run()} alerts.");
+        $sent = $watcher->run();
+        $this->info("Sent {$sent} ".($sent === 1 ? 'alert' : 'alerts').'.');
 
         return self::SUCCESS;
     }

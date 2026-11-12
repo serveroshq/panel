@@ -199,8 +199,9 @@ test('only due monitors in workspaces with a plan are checked', function () {
     makeMonitor(monitorWorkspace(), ['next_check_at' => now()->addMinute()]);
     makeMonitor(monitorWorkspace(null), ['next_check_at' => now()->subSecond()]);
 
-    expect(app(MonitorRunner::class)->runDue())->toBe(1)
-        ->and($due->fresh()->status)->toBe('up')
+    $this->artisan('monitors:run')->expectsOutput('Checked 1 monitor.')->assertSuccessful();
+
+    expect($due->fresh()->status)->toBe('up')
         ->and($due->fresh()->next_check_at->isFuture())->toBeTrue();
 });
 
@@ -262,11 +263,12 @@ test('a server that stops reporting or fills its disk alerts once, then again wh
     $machine->forceFill(['disconnected_at' => null])->save();
 
     $machine->forceFill(['last_seen_at' => now()->subMinutes(6)])->save();
-    expect($watch())->toBe(1)->and($watch())->toBe(0);
+    $this->artisan('machines:watch')->expectsOutput('Sent 1 alert.')->assertSuccessful();
+    $this->artisan('machines:watch')->expectsOutput('Sent 0 alerts.')->assertSuccessful();
     Notification::assertSentTo($workspace->owner, MonitorAlert::class, fn (MonitorAlert $n) => $n->subject === 'web-1 stopped reporting');
 
     $machine->forceFill(['last_seen_at' => now(), 'disk_percent' => 93, 'disks' => [['mount' => '/', 'used' => 93 << 30, 'total' => 100 << 30]]])->save();
-    expect($watch())->toBe(2);
+    $this->artisan('machines:watch')->expectsOutput('Sent 2 alerts.')->assertSuccessful();
     Notification::assertSentTo($workspace->owner, MonitorAlert::class, fn (MonitorAlert $n) => $n->subject === 'web-1 is reporting again');
     Notification::assertSentTo($workspace->owner, MonitorAlert::class, fn (MonitorAlert $n) => $n->subject === 'web-1’s disk is 93% full' && str_contains(implode(' ', $n->lines), '7 GB left'));
 

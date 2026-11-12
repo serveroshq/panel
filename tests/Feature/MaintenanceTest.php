@@ -117,12 +117,12 @@ test('the weekly summary goes once a week to those who want it', function () {
     $workspace->members()->attach($quiet, ['role' => 'member', 'weekly_summary' => false]);
     $workspace->monitors()->create(['name' => 'Shop', 'type' => 'http', 'url' => 'https://shop.example.com', 'interval_seconds' => 60, 'timeout_seconds' => 10, 'status' => 'up']);
 
-    $this->artisan('summaries:send')->assertSuccessful();
+    $this->artisan('summaries:send')->expectsOutput('Sent 1 summary.')->assertSuccessful();
     Notification::assertSentTo($workspace->owner, WeeklySummaryMail::class, fn (WeeklySummaryMail $n) => $n->summary['headline'] === 'No downtime this week'
         && collect($n->summary['sections'])->pluck('title')->all() === ['Uptime', 'This week', 'Needs attention']);
     Notification::assertNotSentTo($quiet, WeeklySummaryMail::class);
 
-    $this->artisan('summaries:send');
+    $this->artisan('summaries:send')->expectsOutput('Sent 0 summaries.')->assertSuccessful();
     Notification::assertSentTimes(WeeklySummaryMail::class, 1);
 });
 
