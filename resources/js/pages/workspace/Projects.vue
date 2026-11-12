@@ -239,6 +239,7 @@ const focusRing =
                         required
                         autofocus
                         :placeholder="$t('Shop')"
+                        :aria-label="$t('Project name')"
                     />
                     <div class="flex justify-end gap-2">
                         <button

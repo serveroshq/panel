@@ -1664,7 +1664,12 @@ function ago(iso: string | null): string {
                     <DialogDescription class="sr-only">{{
                         $t('Rename project')
                     }}</DialogDescription>
-                    <Input v-model="newName" maxlength="80" required />
+                    <Input
+                        v-model="newName"
+                        maxlength="80"
+                        required
+                        :aria-label="$t('Project name')"
+                    />
                     <div class="flex justify-end gap-2">
                         <button
                             type="button"
@@ -2001,7 +2006,12 @@ function ago(iso: string | null): string {
                     <DialogDescription class="sr-only">{{
                         $t('Rename the environment')
                     }}</DialogDescription>
-                    <Input v-model="newEnvName" maxlength="40" required />
+                    <Input
+                        v-model="newEnvName"
+                        maxlength="40"
+                        required
+                        :aria-label="$t('Environment name')"
+                    />
                     <div class="flex justify-end gap-2">
                         <button
                             type="button"
