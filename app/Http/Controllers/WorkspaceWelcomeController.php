@@ -68,7 +68,7 @@ class WorkspaceWelcomeController extends Controller
             'cardVerifyUrl' => $this->cards->verifyPath($workspace),
             'canConnect' => (bool) config('daemon.install_ready'),
             'apiUrl' => rtrim((string) config('app.url'), '/').'/api/v1/machines',
-            ...(Edition::selfHosted() ? ['choosePlan' => false] : []),
+            'choosePlan' => ! Edition::selfHosted(),
         ]);
     }
 

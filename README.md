@@ -92,6 +92,15 @@ Found a security problem? Please don't open an issue; follow [SECURITY.md](.gith
 
 Before you open a pull request, read [CONTRIBUTING.md](.github/CONTRIBUTING.md). Everyone who takes part follows the [Code of Conduct](.github/CODE_OF_CONDUCT.md), and first-time contributors sign the [CLA](.github/CLA.md) with a comment on their pull request.
 
+## Star history
+
+<a href="https://www.star-history.com/#serveroshq/panel&type=date&legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=serveroshq/panel&type=date&legend=top-left&theme=dark">
+    <img alt="Stars on serveroshq/panel over time" src="https://api.star-history.com/chart?repos=serveroshq/panel&type=date&legend=top-left" width="100%">
+  </picture>
+</a>
+
 ## License
 
 The panel is licensed under the [GNU Affero General Public License v3.0](LICENSE). Copyright © 2026 ServerOS Cloud Ltd.

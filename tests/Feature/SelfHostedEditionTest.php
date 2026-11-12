@@ -128,7 +128,7 @@ test('the welcome flow has no plan step on a self-hosted install', function () {
     $workspace = Workspace::factory()->welcoming()->create();
 
     $this->actingAs($workspace->owner)->get(selfHostedUrl($workspace, 'welcome'))
-        ->assertInertia(fn (Assert $page) => $page->component('welcome/Welcome')->missing('choosePlan'));
+        ->assertInertia(fn (Assert $page) => $page->component('welcome/Welcome')->where('choosePlan', true));
 
     selfHostedInstall();
 

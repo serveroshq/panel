@@ -65,13 +65,13 @@ const props = defineProps<{
     currency: string;
     canConnect: boolean;
     apiUrl: string;
-    choosePlan?: boolean;
+    choosePlan: boolean;
 }>();
 
 const focusRing =
     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--ds-ring)';
 
-const choosePlan = props.choosePlan ?? true;
+const choosePlan = props.choosePlan;
 const steps: Step[] = choosePlan
     ? ['about', 'control', 'plan', 'connect']
     : ['about', 'control', 'connect'];
