@@ -37,7 +37,7 @@ test('the machines page lists only the workspace machines', function () {
                 'tier' => null,
                 'labels' => [],
                 'services' => 2,
-                'memory' => '1.4 GB',
+                'memory' => '1.4 GiB',
                 'memoryMb' => 1434,
                 'cpu' => 38,
                 'groupId' => null,

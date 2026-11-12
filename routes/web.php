@@ -88,6 +88,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['guest', 'throttle:20,1'])->group(function () {
     Route::get('auth/{provider}/redirect', [SocialLoginController::class, 'redirect'])->whereIn('provider', SocialAccount::PROVIDERS)->name('oauth.redirect');
+    Route::post('auth/{provider}/credential', [SocialLoginController::class, 'credential'])->whereIn('provider', ['google'])->name('oauth.credential');
 });
 Route::get('auth/{provider}/callback', [SocialLoginController::class, 'callback'])->middleware('throttle:20,1')->whereIn('provider', SocialAccount::PROVIDERS)->name('oauth.callback');
 

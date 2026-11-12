@@ -63,7 +63,7 @@ const services = computed(() =>
 const memory = computed(() => {
     const mb = props.machines.reduce((sum, m) => sum + (m.memoryMb ?? 0), 0);
 
-    return mb ? `${(mb / 1024).toFixed(1)} GB` : '—';
+    return mb ? `${(mb / 1024).toFixed(1)} GiB` : '—';
 });
 
 const backups = computed(() => {

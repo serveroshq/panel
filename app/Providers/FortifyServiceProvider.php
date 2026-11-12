@@ -81,6 +81,7 @@ class FortifyServiceProvider extends ServiceProvider
             'status' => $request->session()->get('status'),
             'error' => $request->session()->get('oauth_error'),
             'oauthProviders' => SocialAccount::enabled(),
+            'googleClientId' => SocialAccount::googleIdentityClientId($request->getHost()),
             'lastUsed' => LastSignIn::fromRequest($request),
             ...app(Extensions::class)->pagePropsFor('auth/Login', $request),
         ]));
@@ -103,6 +104,7 @@ class FortifyServiceProvider extends ServiceProvider
             'passwordRules' => Password::defaults()->toPasswordRulesString(),
             'workspaceDomain' => config('app.domain'),
             'oauthProviders' => SocialAccount::enabled(),
+            'googleClientId' => SocialAccount::googleIdentityClientId(request()->getHost()),
             'turnstileSiteKey' => Turnstile::siteKey(),
             ...(Edition::selfHosted() ? ['selfHosted' => true] : []),
             ...(SignUps::open() ? [] : ['inviteOnly' => true]),

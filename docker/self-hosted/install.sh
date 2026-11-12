@@ -238,7 +238,13 @@ if ! docker pull "$IMAGE"; then
 fi
 # The compose file and the serveros-panel command come from the image, so
 # they always match the version that runs.
-docker run --rm --entrypoint cat "$IMAGE" /app/docker/self-hosted/compose.yaml > compose.yaml
+image_compose="$(docker run --rm --entrypoint cat "$IMAGE" /app/docker/self-hosted/compose.yaml)"
+# An image from before tunnels (1.1.0 and older) has no cloudflared and can't
+# serve the panel to one, so it would only fail to start.
+if [ "$TUNNEL" = 1 ] && ! printf '%s' "$image_compose" | grep -q cloudflared; then
+    fail "$IMAGE doesn't support Cloudflare Tunnels (1.2.0 and later do). Run the script again with --version=1.2.0, or a newer one."
+fi
+printf '%s\n' "$image_compose" > compose.yaml
 docker run --rm --entrypoint cat "$IMAGE" /app/docker/self-hosted/serveros-panel > /usr/local/bin/serveros-panel
 chmod 755 /usr/local/bin/serveros-panel
 # Only a compose file that gives Redis the password can have one.

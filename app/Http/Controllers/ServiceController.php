@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\MachineResource;
 use App\Models\Machine;
+use App\Models\ServiceGroup;
 use App\Models\Workspace;
 use App\Support\Deploys\AppReleases;
 use App\Support\ServiceTemplates\ServiceTemplateCatalog;
@@ -25,6 +26,8 @@ class ServiceController extends Controller
                     'machine' => ['id' => $machine->id, 'name' => $machine->name],
                     'stat' => $machine->service_stats[$service['key']] ?? null,
                 ]))->values(),
+            'groups' => ServiceGroup::query()->whereIn('machine_id', $machines->modelKeys())->orderBy('name')->get()
+                ->map(fn (ServiceGroup $group) => [...$group->toPageProps(), 'machineId' => $group->machine_id]),
             'machines' => $machines->map(fn (Machine $machine) => [
                 'id' => $machine->id,
                 'name' => $machine->name,

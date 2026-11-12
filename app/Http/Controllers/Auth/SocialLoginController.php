@@ -10,6 +10,7 @@ use App\Models\SocialAccount;
 use App\Models\User;
 use App\Support\Audit\AuditContext;
 use App\Support\Audit\Audited;
+use App\Support\Auth\GoogleIdToken;
 use App\Support\Auth\GoogleTeamAccess;
 use App\Support\Auth\SignUps;
 use App\Support\Extensions\Extensions;
@@ -26,6 +27,7 @@ use Laravel\Socialite\Contracts\User as ProviderUser;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\AbstractProvider;
 use Laravel\Socialite\Two\InvalidStateException;
+use Laravel\Socialite\Two\User as SocialiteUser;
 use Symfony\Component\HttpFoundation\RedirectResponse as SymfonyRedirect;
 use Throwable;
 
@@ -116,6 +118,33 @@ class SocialLoginController extends Controller
             return $this->link($request->user(), $provider, $account, $connecting);
         }
 
+        return $this->signIn($request, $provider, $account);
+    }
+
+    public function credential(Request $request, GoogleIdToken $tokens, string $provider): RedirectResponse
+    {
+        if (! SocialAccount::googleIdentityButton()) {
+            return $this->failed('That sign-in option isn’t available yet.');
+        }
+
+        $credential = $request->input('credential');
+        $claims = is_string($credential) ? $tokens->claims($credential) : null;
+        if ($claims === null) {
+            return $this->failed('We couldn’t sign you in with '.$this->label($provider).'. Try again?');
+        }
+
+        $account = (new SocialiteUser)->setRaw($claims)->map([
+            'id' => $claims['sub'],
+            'name' => $claims['name'] ?? null,
+            'email' => $claims['email'],
+            'avatar' => $claims['picture'] ?? null,
+        ]);
+
+        return $this->signIn($request, $provider, $account);
+    }
+
+    private function signIn(Request $request, string $provider, ProviderUser $account): RedirectResponse
+    {
         $email = Str::lower(trim((string) $account->getEmail()));
         if ($email === '' || ! $this->emailVerified($provider, $account)) {
             return $this->failed('Your '.$this->label($provider).' account needs a verified email address.');

@@ -24,6 +24,7 @@ const props = defineProps<{
     passwordRules: string;
     workspaceDomain: string;
     oauthProviders: string[];
+    googleClientId?: string | null;
     turnstileSiteKey: string | null;
     selfHosted?: boolean;
     inviteOnly?: boolean;
@@ -112,7 +113,10 @@ function onPassword(event: Event): void {
     </div>
 
     <template v-if="step === 1 && oauthProviders.length">
-        <OAuthButtons :providers="oauthProviders" />
+        <OAuthButtons
+            :providers="oauthProviders"
+            :google-client-id="googleClientId"
+        />
         <AuthDivider />
     </template>
 
@@ -232,9 +236,7 @@ function onPassword(event: Event): void {
             </div>
         </div>
 
-        <div
-            class="auth-foot -mx-8 mt-8 -mb-8 border-t border-(--ds-divider) bg-(--ds-subtle) px-8 py-3.5 text-center text-[12.5px] text-(--ds-text-muted)"
-        >
+        <div class="text-center text-[14px]/5 text-(--ds-text-muted)">
             {{ ' ' + $t('Already have an account?') }}
             <TextLink :href="login()" class="underline underline-offset-4">{{
                 $t('Sign in')

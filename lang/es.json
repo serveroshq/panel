@@ -818,6 +818,7 @@
     "Environment": "Entorno",
     "Environment file already exists.": "El archivo de entorno ya existe.",
     "Environment file not found.": "Archivo de entorno no encontrado.",
+    "Environment name": "Nombre del entorno",
     "Environments": "Entornos",
     "Equals": "Es igual a",
     "Error :status": "Error :status",
@@ -1509,6 +1510,7 @@
     "Profile settings": "Ajustes del perfil",
     "Profile updated.": "Perfil actualizado.",
     "Progress": "Progreso",
+    "Project name": "Nombre del proyecto",
     "Protocol": "Protocolo",
     "Provider": "Proveedor",
     "Providers": "Proveedores",
@@ -3491,5 +3493,8 @@
     ":commit to :branch, a newer push already ran": ":commit en :branch, ya se ejecutó un push más reciente",
     "skipped a repeat push": "omitió un push repetido",
     ":commit to :branch already ran": ":commit en :branch ya se ejecutó",
-    "Workspaces keep machines and people separate, e.g. one per client or company.": "Los workspaces separan máquinas y personas, por ejemplo uno por cliente o empresa."
+    "Workspaces keep machines and people separate, e.g. one per client or company.": "Los workspaces separan máquinas y personas, por ejemplo uno por cliente o empresa.",
+    "For individual developers.": "Para desarrolladores individuales.",
+    "For small teams and projects.": "Para equipos y proyectos pequeños.",
+    "For agencies and small MSPs.": "Para agencias y MSP pequeños."
 }

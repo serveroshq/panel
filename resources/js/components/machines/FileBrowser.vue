@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { createFileBrowserSave } from './file-browser-save.js';
 import { trans } from 'laravel-vue-i18n';
 import { router } from '@inertiajs/vue3';
 import { ArrowLeft, LoaderCircle } from '@lucide/vue';
@@ -464,47 +465,25 @@ function closeFile(): void {
     fileError.value = null;
 }
 
-async function save(): Promise<void> {
-    const open = file.value;
-    if (!open || !changed.value || saving.value) {
-        return;
-    }
-    if (savedSize.value > props.maxWrite) {
-        fileError.value = trans(
-            'Files over :bytes can’t be saved from the panel yet.',
-            { bytes: String(bytes(props.maxWrite)) },
-        );
-
-        return;
-    }
-    if (needsUnlock(() => save())) {
-        return;
-    }
-
-    saving.value = true;
-    fileError.value = null;
-    const data = new TextEncoder().encode(text.value);
-
-    try {
-        const result = await job('write', open.path, toBase64(data));
-        file.value = { path: open.path, bytes: data, original: text.value };
-        toast.success(
-            result.backup
-                ? trans(
-                      'Saved. The old version is kept beside it as :baseName.',
-                      { baseName: String(baseName(result.backup as string)) },
-                  )
-                : trans('Saved.'),
-        );
-        if (dir.value) {
-            void list(dir.value);
-        }
-    } catch (error) {
-        fileError.value = handle(error, () => save());
-    } finally {
-        saving.value = false;
-    }
-}
+const save = createFileBrowserSave({
+    text,
+    file,
+    changed,
+    saving,
+    fileError,
+    savedSize,
+    props,
+    needsUnlock,
+    toBase64,
+    job,
+    toast,
+    trans,
+    baseName,
+    bytes,
+    dir,
+    list,
+    handle,
+});
 
 function saveKey(event: KeyboardEvent): void {
     if ((event.metaKey || event.ctrlKey) && event.key === 's') {

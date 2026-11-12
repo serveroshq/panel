@@ -59,9 +59,7 @@ defineProps<{
             </div>
         </Form>
 
-        <div
-            class="auth-foot -mx-8 mt-8 -mb-8 space-x-1 border-t border-(--ds-divider) bg-(--ds-subtle) px-8 py-3.5 text-center text-[12.5px] text-(--ds-text-muted)"
-        >
+        <div class="space-x-1 text-center text-[14px]/5 text-(--ds-text-muted)">
             <span>{{ $t('Or, return to') }}</span>
             <TextLink :href="login()">{{ $t('log in') }}</TextLink>
         </div>

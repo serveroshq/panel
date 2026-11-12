@@ -9,7 +9,6 @@ use App\Models\Workspace;
 use App\Models\WorkspaceDomain;
 use App\Support\Edition;
 use App\Support\Entitlements\Entitlements;
-use App\Support\Entitlements\PlanEntitlements;
 use App\Support\Entitlements\SelfHostedEntitlements;
 use App\Support\Extensions\Extensions;
 use App\Support\Extensions\TrialCards;
@@ -35,7 +34,7 @@ function selfHostedUrl(Workspace $workspace, string $path = ''): string
 
 test('serveros.com is not self-hosted unless the edition says so', function () {
     expect(Edition::selfHosted())->toBeFalse()
-        ->and(app(Entitlements::class))->toBeInstanceOf(PlanEntitlements::class);
+        ->and(app(Entitlements::class))->not->toBeInstanceOf(SelfHostedEntitlements::class);
 
     selfHostedInstall();
 

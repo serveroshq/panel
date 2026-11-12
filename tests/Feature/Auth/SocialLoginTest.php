@@ -4,6 +4,8 @@ use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceInvitation;
+use Firebase\JWT\JWT;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
@@ -19,6 +21,7 @@ beforeEach(function () {
         config()->set("services.{$provider}.client_id", 'id');
         config()->set("services.{$provider}.client_secret", 'secret');
     }
+    config()->set('services.google.identity_button', true);
 });
 
 function providerUser(string $email, string $id = '123', bool $verified = true, ?string $avatar = null): ProviderUser
@@ -215,4 +218,136 @@ test('on an invite-only self-hosted panel, Google sign-in still lets in people f
     returnsFrom('google', $teammate('alan@acme.com', 'g-2'));
     $this->get('/auth/google/callback')->assertRedirect(route('login'))->assertSessionHas('oauth_error');
     $this->assertGuest();
+});
+
+function googleKeys(): array
+{
+    static $pair = null;
+    $pair ??= (function () {
+        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        $details = openssl_pkey_get_details($key);
+        $encode = fn (string $bytes) => rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+
+        return [
+            'private' => $key,
+            'jwk' => ['kty' => 'RSA', 'alg' => 'RS256', 'use' => 'sig', 'kid' => 'test-key', 'n' => $encode($details['rsa']['n']), 'e' => $encode($details['rsa']['e'])],
+        ];
+    })();
+
+    return $pair;
+}
+
+function googleCredential(array $claims = [], ?string $kid = 'test-key'): string
+{
+    Cache::forget('google.id_token.keys');
+    Http::fake(['www.googleapis.com/oauth2/v3/certs' => Http::response(['keys' => [googleKeys()['jwk']]])]);
+
+    return JWT::encode([
+        'iss' => 'https://accounts.google.com',
+        'aud' => 'id',
+        'sub' => '123',
+        'email' => 'ada@example.com',
+        'email_verified' => true,
+        'name' => 'Ada Lovelace',
+        'iat' => now()->timestamp,
+        'exp' => now()->addHour()->timestamp,
+        ...$claims,
+    ], googleKeys()['private'], 'RS256', $kid);
+}
+
+test('the login page gets the Google client id only when Google and its button are set up', function () {
+    $this->get(route('login'))->assertInertia(fn ($page) => $page->where('googleClientId', 'id'));
+
+    config()->set('services.google.identity_button', false);
+    $this->get(route('login'))->assertInertia(fn ($page) => $page->where('googleClientId', null));
+
+    config()->set('services.google.identity_button', true);
+    config()->set('services.google.client_secret', null);
+    $this->get(route('login'))->assertInertia(fn ($page) => $page->where('googleClientId', null));
+});
+
+test('the Google button stays off the sign-in page on a workspace address, which Google has no origin for', function () {
+    $this->get('https://acme.'.config('app.domain').'/login')->assertInertia(fn ($page) => $page->where('googleClientId', null));
+    $this->get('https://'.config('app.domain').'/login')->assertInertia(fn ($page) => $page->where('googleClientId', 'id'));
+});
+
+test('a Google credential is refused while the button is off', function () {
+    config()->set('services.google.identity_button', false);
+
+    $this->post('/auth/google/credential', ['credential' => googleCredential()])
+        ->assertRedirect(route('login'))
+        ->assertSessionHas('oauth_error');
+
+    $this->assertGuest();
+    expect(User::count())->toBe(0);
+});
+
+test('a Google credential signs a new person in and makes their account', function () {
+    $this->post('/auth/google/credential', ['credential' => googleCredential()])->assertRedirect();
+
+    $user = User::where('email', 'ada@example.com')->firstOrFail();
+    $this->assertAuthenticatedAs($user);
+    expect($user->name)->toBe('Ada Lovelace')
+        ->and($user->ownedWorkspaces()->count())->toBe(1)
+        ->and($user->socialAccounts()->where('provider', 'google')->value('provider_id'))->toBe('123');
+});
+
+test('a Google credential finds the account the redirect sign-in made', function () {
+    returnsFrom('google', providerUser('ada@example.com'));
+    $this->get('/auth/google/callback');
+    $user = User::where('email', 'ada@example.com')->firstOrFail();
+    $this->post(route('logout'));
+
+    $this->post('/auth/google/credential', ['credential' => googleCredential()])->assertRedirect();
+
+    $this->assertAuthenticatedAs($user);
+    expect(User::count())->toBe(1)->and(SocialAccount::count())->toBe(1);
+});
+
+test('a Google credential made for another app is refused', function () {
+    $this->post('/auth/google/credential', ['credential' => googleCredential(['aud' => 'someone-else'])])
+        ->assertRedirect(route('login'))
+        ->assertSessionHas('oauth_error');
+
+    $this->assertGuest();
+    expect(User::count())->toBe(0);
+});
+
+test('an expired, unsigned, wrongly issued or unverified Google credential is refused', function (Closure $credential) {
+    $this->post('/auth/google/credential', ['credential' => $credential()])
+        ->assertRedirect(route('login'))
+        ->assertSessionHas('oauth_error');
+
+    $this->assertGuest();
+    expect(User::count())->toBe(0);
+})->with([
+    'expired' => [fn () => googleCredential(['exp' => now()->subMinute()->timestamp])],
+    'wrong issuer' => [fn () => googleCredential(['iss' => 'https://example.com'])],
+    'unknown key' => [fn () => googleCredential(kid: 'another-key')],
+    'signed by someone else' => [function () {
+        $token = googleCredential();
+        $other = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+
+        return JWT::encode(['iss' => 'https://accounts.google.com', 'aud' => 'id', 'sub' => '123', 'email' => 'ada@example.com', 'email_verified' => true, 'exp' => now()->addHour()->timestamp], $other, 'RS256', 'test-key');
+    }],
+    'unsigned' => [function () {
+        googleCredential();
+        $encode = fn (array $part) => rtrim(strtr(base64_encode(json_encode($part)), '+/', '-_'), '=');
+
+        return $encode(['alg' => 'none', 'kid' => 'test-key']).'.'.$encode(['iss' => 'https://accounts.google.com', 'aud' => 'id', 'sub' => '123', 'email' => 'ada@example.com', 'email_verified' => true, 'exp' => now()->addHour()->timestamp]).'.';
+    }],
+    'unverified email' => [fn () => googleCredential(['email_verified' => false])],
+    'not a token' => [fn () => 'nope'],
+]);
+
+test('a Google credential still gets the two-factor prompt', function () {
+    $user = User::factory()->withTwoFactor()->create(['email' => 'ada@example.com']);
+
+    $this->post('/auth/google/credential', ['credential' => googleCredential()])->assertRedirect(route('two-factor.login'));
+
+    $this->assertGuest();
+});
+
+test('GitHub has no credential sign-in', function () {
+    $this->post('/auth/github/credential', ['credential' => 'x'])->assertNotFound();
 });

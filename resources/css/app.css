@@ -70,7 +70,7 @@
     --font-display: 'Schibsted Grotesk', ui-sans-serif, system-ui, sans-serif;
     --font-hero: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
     --font-body: Cabin, ui-sans-serif, system-ui, sans-serif;
-    --font-ui: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    --font-ui: 'Mona Sans', ui-sans-serif, system-ui, sans-serif;
     --font-ui-mono: 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
     --font-inter: Inter, ui-sans-serif, system-ui, sans-serif;
 }
@@ -170,7 +170,7 @@
 
 .auth-form {
     & [data-slot='input'] {
-        @apply h-10 rounded-none border-(--ds-border-strong) bg-(--ds-field) text-[14px] text-(--ds-text) shadow-none placeholder:text-(--ds-text-faint) focus-visible:border-[#14130E] focus-visible:ring-[#14130E]/10 md:text-[14px];
+        @apply h-9 rounded-lg border-(--ds-border-strong) bg-(--ds-field) text-[14px] text-(--ds-text) shadow-none placeholder:text-(--ds-text-faint) focus-visible:border-[#14130E] focus-visible:ring-[#14130E]/10 md:text-[14px];
     }
 
     & [data-slot='label'] {
@@ -178,7 +178,7 @@
     }
 
     & [data-slot='checkbox'] {
-        @apply rounded-none border-(--ds-border-hover) bg-(--ds-field);
+        @apply rounded-[4px] border-(--ds-border-hover) bg-(--ds-field);
     }
 
     & [data-slot='checkbox'][data-state='checked'] {
@@ -186,7 +186,7 @@
     }
 
     & [data-slot='slug-input'] {
-        @apply h-10 rounded-none text-[14px];
+        @apply h-9 rounded-lg text-[14px];
     }
 
     & [data-slot='input'][aria-invalid='true'] {
@@ -197,7 +197,7 @@
 .auth-compact {
     & [data-slot='input'],
     & [data-slot='slug-input'] {
-        @apply h-10 rounded-none px-3 text-[14px] md:text-[14px];
+        @apply h-9 rounded-lg px-3 text-[14px] md:text-[14px];
     }
 
     & [data-slot='label'] {
@@ -215,17 +215,18 @@
 
     & button:not([data-slot='checkbox']),
     & a[class*='inline-flex'] {
-        @apply h-10 min-h-10 rounded-none text-[14px];
+        @apply h-9 min-h-9 rounded-lg text-[14px];
     }
-}
-
-.auth-foot {
-    border-top-color: #e6e6e6 !important;
-    background: #f7f7f7 !important;
 }
 
 html .auth-page.auth-page.ds-root {
     color-scheme: light;
+    --auth-ground: #fafafa;
+    --auth-ink: #151515;
+    --auth-muted: #6b6b66;
+    --auth-faint: #8e8e88;
+    --auth-link: #3f3f3c;
+    --auth-link-line: #d4d4d0;
     --ds-frame: #ffffff;
     --ds-panel: #ffffff;
     --ds-subtle: #f7f7f7;
@@ -248,11 +249,6 @@ html .auth-page.auth-page.ds-root {
     --ds-red: #b42318;
     --ds-red-bg: #feeceb;
 
-    & :where([class*='rounded']):not([class*='rounded-full']),
-    & .ds-modal {
-        border-radius: 0 !important;
-    }
-
     & [class*='bg-[#3B7BFF]'] {
         background: #14130e;
     }
@@ -269,7 +265,62 @@ html .auth-page.auth-page.ds-root {
     }
 }
 
-@package-css 'auth-art.css';
+html.dark .auth-page.auth-page.ds-root {
+    color-scheme: dark;
+    --auth-ground: #161616;
+    --auth-ink: #ededed;
+    --auth-muted: #aaaaa7;
+    --auth-faint: #8d8d8a;
+    --auth-link: #c8c8c5;
+    --auth-link-line: #454545;
+    --ds-frame: #161616;
+    --ds-panel: #161616;
+    --ds-subtle: #1d1d1d;
+    --ds-field: #1f1f1f;
+    --ds-hover: #242424;
+    --ds-divider: #2b2b2b;
+    --ds-border: #2b2b2b;
+    --ds-border-strong: #323232;
+    --ds-border-stronger: #3b3b3b;
+    --ds-border-hover: #454545;
+    --ds-text: #ededed;
+    --ds-text-secondary: #c8c8c5;
+    --ds-text-muted: #aaaaa7;
+    --ds-text-faint: #8d8d8a;
+    --ds-ring: #8ab4ff;
+    --ds-amber: #fbbf24;
+    --ds-amber-bg: #33260b;
+    --ds-green: #4ade80;
+    --ds-green-bg: #12291c;
+    --ds-red: #f87171;
+    --ds-red-bg: #331c1c;
+
+    & [class*='bg-[#3B7BFF]'] {
+        background: #ededed;
+    }
+
+    & :is(a, button)[class*='bg-[#1C4BB0]'] {
+        border-color: #ededed;
+        background: #ededed;
+        color: #161616;
+
+        &:hover {
+            border-color: #d4d4d4;
+            background: #d4d4d4;
+        }
+    }
+
+    & .auth-form [data-slot='input']:focus-visible {
+        border-color: #8d8d8a;
+        --tw-ring-color: rgb(255 255 255 / 0.1);
+    }
+
+    & .auth-form [data-slot='checkbox'][data-state='checked'] {
+        border-color: #ededed;
+        background: #ededed;
+        color: #161616;
+    }
+}
 
 @package-css 'site-landing-dark.css';
 
@@ -1845,33 +1896,6 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
 }
 
 @package-css 'site-docs.css';
-
-.dark .docs-landing {
-    --ds-frame: #111111;
-    --ds-hover: #1c1c1c;
-    --ds-divider: #1c1c1c;
-    --ds-border: #232323;
-    --ds-border-stronger: #323232;
-    --ds-border-hover: #3a3a3a;
-    --ds-text: #f0efea;
-    --ds-text-secondary: #c3c1b8;
-    --ds-text-muted: #9d9b93;
-    --ds-text-faint: #87857e;
-    --ds-ring: #7fa8f5;
-    --ds-blue: #93bbfd;
-    --ds-blue-strong: #bcd0fb;
-    --ds-blue-bg: #1b2a45;
-    --ds-blue-border: #2f4c80;
-    --docs-quiet: var(--ds-text-muted);
-    --docs-card: #0a0a0a;
-    --docs-raised: #141414;
-    --docs-raised-shadow:
-        0 0 0 1px rgb(255 255 255 / 0.07), 0 1px 2px rgb(0 0 0 / 0.4);
-    --docs-pill: var(--ds-hover);
-    --docs-icon: var(--ds-text-faint);
-}
-
-@package-css 'site-docs-square.css';
 
 .docs-prose {
     color: var(--ds-text-secondary);

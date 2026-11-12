@@ -52,6 +52,7 @@ class RecordAccountEvents
         'two-factor.login.store' => 'password',
         'passkey.login' => 'passkey',
         'oauth.callback' => 'social',
+        'oauth.credential' => 'social',
         'register.store' => 'password',
     ];
 
@@ -102,7 +103,7 @@ class RecordAccountEvents
 
         $firstStep = $method;
         $twoFactor = false;
-        if ($route === 'oauth.callback') {
+        if ($route === 'oauth.callback' || $route === 'oauth.credential') {
             $method = $firstStep = (string) $request->route('provider');
         }
         if ($route === 'two-factor.login.store') {

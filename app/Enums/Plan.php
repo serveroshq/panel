@@ -19,12 +19,12 @@ enum Plan: string
         };
     }
 
-    public function machineLimit(): ?int
+    public function machineLimit(): int
     {
         return match ($this) {
             self::Essential => 1,
             self::Pro => 5,
-            self::Business => null,
+            self::Business => 25,
         };
     }
 
@@ -129,9 +129,9 @@ enum Plan: string
     public function summary(): string
     {
         return self::translated(match ($this) {
-            self::Essential => 'For a single server and everything on it.',
-            self::Pro => 'For small teams running a handful of servers.',
-            self::Business => 'For teams with many machines that need control and guarantees.',
+            self::Essential => 'For individual developers.',
+            self::Pro => 'For small teams and projects.',
+            self::Business => 'For agencies and small MSPs.',
         });
     }
 
@@ -170,7 +170,7 @@ enum Plan: string
         });
     }
 
-    /** @return array{value: string, label: string, summary: string, monthlyPrice: int|null, annualPrice: int|null, machineLimit: int|null, mcpCallLimit: int, monitorLimit: int, minMonitorInterval: int, logRetentionDays: int, logLinesPerDay: int, activityRetentionDays: int, features: list<string>} */
+    /** @return array{value: string, label: string, summary: string, monthlyPrice: int|null, annualPrice: int|null, machineLimit: int, mcpCallLimit: int, monitorLimit: int, minMonitorInterval: int, logRetentionDays: int, logLinesPerDay: int, activityRetentionDays: int, features: list<string>} */
     public function toPageProps(Currency $currency = Currency::GBP): array
     {
         $prices = app(Prices::class);

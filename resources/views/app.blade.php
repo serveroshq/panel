@@ -1,6 +1,5 @@
 <!DOCTYPE html>
-@php($alwaysLight = str_starts_with($page['component'] ?? '', 'auth/'))
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class(['dark' => ! $alwaysLight && ($appearance ?? 'system') == 'dark'])>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class(['dark' => ($appearance ?? 'system') == 'dark'])>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,7 +7,7 @@
 
         <script>
             (function() {
-                const appearance = '{{ $alwaysLight ? "light" : ($appearance ?? "system") }}';
+                const appearance = '{{ $appearance ?? "system" }}';
 
                 if (appearance === 'system') {
                     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;

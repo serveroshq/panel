@@ -19,6 +19,7 @@ import {
     serviceSortOptions,
     statusTabs,
 } from '@/components/machines/serviceFilters';
+import type { ServiceStat } from '@/components/machines/serviceFormat';
 import type {
     ServiceSortKey,
     StatusFilter,
@@ -29,7 +30,9 @@ import {
     serviceColumnsWithMachine,
     statusGroup,
 } from '@/components/machines/serviceFormat';
+import ServiceGroupRow from '@/components/machines/ServiceGroupRow.vue';
 import ServiceRow from '@/components/machines/ServiceRow.vue';
+import type { ServiceGroup } from '@/components/machines/ServicesTable.vue';
 import ConnectMachineButton from '@/components/workspace/ConnectMachineButton.vue';
 import type { ServiceTemplate } from '@/components/workspace/DeployServiceDialog.vue';
 import WorkspacePage from '@/components/workspace/WorkspacePage.vue';
@@ -65,6 +68,7 @@ type MachineSummary = {
 const props = defineProps<{
     workspace: Workspace;
     services: WorkspaceService[];
+    groups: (ServiceGroup & { machineId: number })[];
     machines: MachineSummary[];
     templates: ServiceTemplate[];
     deployEnabled: boolean;
@@ -187,8 +191,106 @@ const visible = computed(() => {
         );
 });
 
+type Row =
+    | { id: string; service: WorkspaceService }
+    | {
+          id: string;
+          kind: 'group' | 'stack';
+          name: string;
+          iconUrl: string | null;
+          machine: WorkspaceService['machine'];
+          services: WorkspaceService[];
+      };
+
+// Same grouping as a machine's page: saved groups first, then Compose
+// stacks of two or more. A group sits where its top service would.
+const rows = computed<Row[]>(() => {
+    const owner = new Map<WorkspaceService, string>();
+    const groups = new Map<string, Extract<Row, { services: unknown }>>();
+
+    for (const group of props.groups) {
+        const id = `${group.machineId}:g:${group.id}`;
+        const inside = visible.value.filter(
+            (s) =>
+                s.machine.id === group.machineId &&
+                !owner.has(s) &&
+                (group.services.includes(s.key) ||
+                    (!!s.app && group.services.includes(`app:${s.app}`))),
+        );
+        inside.forEach((s) => owner.set(s, id));
+        if (inside.length) {
+            groups.set(id, {
+                id,
+                kind: 'group',
+                name: group.name,
+                iconUrl: group.iconUrl ?? null,
+                machine: inside[0].machine,
+                services: inside,
+            });
+        }
+    }
+
+    const stacks = new Map<string, WorkspaceService[]>();
+    for (const s of visible.value) {
+        const project = s.details?.compose_project;
+        if (!project || owner.has(s)) continue;
+        const id = `${s.machine.id}:s:${project}`;
+        stacks.set(id, [...(stacks.get(id) ?? []), s]);
+    }
+    for (const [id, inside] of stacks) {
+        if (inside.length < 2) continue;
+        inside.forEach((s) => owner.set(s, id));
+        groups.set(id, {
+            id,
+            kind: 'stack',
+            name: String(inside[0].details?.compose_project).replace(
+                /^serveros-/,
+                '',
+            ),
+            iconUrl: null,
+            machine: inside[0].machine,
+            services: inside,
+        });
+    }
+
+    const result: Row[] = [];
+    const placed = new Set<string>();
+    for (const service of visible.value) {
+        const id = owner.get(service);
+        if (id === undefined) {
+            result.push({
+                id: `${service.machine.id}:${service.key}`,
+                service,
+            });
+        } else if (!placed.has(id)) {
+            placed.add(id);
+            result.push(groups.get(id)!);
+        }
+    }
+
+    return result;
+});
+
+const open = ref(new Set<string>());
+
+function isOpen(id: string): boolean {
+    return open.value.has(id) || search.value.trim() !== '';
+}
+
+function toggle(id: string): void {
+    const next = new Set(open.value);
+    if (!next.delete(id)) next.add(id);
+    open.value = next;
+}
+
+function statsOf(services: WorkspaceService[]): Record<string, ServiceStat> {
+    return Object.fromEntries(
+        services.flatMap((s) => (s.stat ? [[s.key, s.stat]] : [])),
+    );
+}
+
 function refresh(): void {
-    router.reload({ only: ['services', 'machines'] });
+    router.reload({ only: ['services', 'groups', 'machines'] });
 }
 
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -200,7 +302,7 @@ function poll(): void {
         () =>
             whenVisible(() =>
                 router.reload({
-                    only: ['services', 'machines'],
+                    only: ['services', 'groups', 'machines'],
                     onFinish: poll,
                 }),
             ),
@@ -553,17 +655,47 @@ const focusRing =
                 </div>
 
                 <div
-                    v-for="service in visible"
-                    :key="`${service.machine.id}:${service.key}`"
+                    v-for="row in rows"
+                    :key="row.id"
                     class="border-b border-(--ds-divider) last:border-b-0"
                     role="rowgroup"
                 >
                     <ServiceRow
-                        :service="service"
-                        :stat="service.stat"
-                        :machine-id="service.machine.id"
-                        :machine-name="service.machine.name"
+                        v-if="'service' in row"
+                        :service="row.service"
+                        :stat="row.service.stat"
+                        :machine-id="row.service.machine.id"
+                        :machine-name="row.service.machine.name"
                     />
+                    <template v-else>
+                        <ServiceGroupRow
+                            :name="row.name"
+                            :kind="row.kind"
+                            :services="row.services"
+                            :stats="statsOf(row.services)"
+                            :expanded="isOpen(row.id)"
+                            :can-manage="false"
+                            :icon-url="row.iconUrl"
+                            :machine-name="row.machine.name"
+                            @toggle="toggle(row.id)"
+                        />
+                        <div
+                            v-if="isOpen(row.id)"
+                            :id="`group-${row.kind}-${row.name.replace(/\W+/g, '-')}`"
+                            class="border-t border-(--ds-divider) bg-(--ds-subtle)/40"
+                        >
+                            <ServiceRow
+                                v-for="service in row.services"
+                                :key="service.key"
+                                :service="service"
+                                :stat="service.stat"
+                                :machine-id="service.machine.id"
+                                :machine-name="service.machine.name"
+                                nested
+                                class="border-b border-(--ds-divider) last:border-b-0"
+                            />
+                        </div>
+                    </template>
                 </div>
 
                 <p
