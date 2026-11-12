@@ -18,6 +18,7 @@ import CpuBar from '@/components/machines/CpuBar.vue';
 import {
     bytes,
     serviceColumns,
+    serviceColumnsWithMachine,
     status,
     statusGroup,
     uptime,
@@ -40,6 +41,7 @@ const props = defineProps<{
     expanded: boolean;
     canManage: boolean;
     iconUrl?: string | null;
+    machineName?: string;
 }>();
 
 const emit = defineEmits<{
@@ -135,7 +137,12 @@ const ports = computed(() =>
 <template>
     <div
         class="cursor-pointer py-2.5 pr-4 pl-4 text-left text-[13px]/4 transition-colors select-none hover:bg-(--ds-row-hover) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ds-ring)"
-        :class="[serviceColumns, expanded ? 'bg-(--ds-subtle)' : '']"
+        :class="[
+            machineName === undefined
+                ? serviceColumns
+                : serviceColumnsWithMachine,
+            expanded ? 'bg-(--ds-subtle)' : '',
+        ]"
         role="row"
         tabindex="0"
         :aria-expanded="expanded"
@@ -262,6 +269,14 @@ const ports = computed(() =>
                     </TooltipPortal>
                 </TooltipRoot>
             </TooltipProvider>
+        </span>
+
+        <span
+            v-if="machineName !== undefined"
+            class="hidden truncate text-(--ds-text-secondary) md:block"
+            role="cell"
+        >
+            {{ machineName }}
         </span>
 
         <span class="hidden items-center gap-1.75 md:flex" role="cell">
