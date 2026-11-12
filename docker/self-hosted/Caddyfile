@@ -6,9 +6,14 @@
 # own Let's Encrypt certificate the first time it's visited (on-demand
 # TLS), once the panel says the name is its own: /api/internal/tls-check,
 # which only answers on the loopback address below.
+#
+# Behind a Cloudflare Tunnel (SERVEROS_TUNNEL=cloudflare), cloudflared hands
+# requests on over plain HTTP and Cloudflare does HTTPS, so plain HTTP
+# serves the panel instead of sending visitors to HTTPS. The entrypoint sets
+# SERVEROS_HTTP and ACME_EMAIL_OPTION.
 {
 	skip_install_trust
-	email {$ACME_EMAIL}
+	{$ACME_EMAIL_OPTION}
 	{$CADDY_GLOBAL_OPTIONS}
 
 	on_demand_tls {
@@ -33,8 +38,16 @@ https:// {
 	import panel
 }
 
-http:// {
+(http-redirect) {
 	redir https://{host}{uri} permanent
+}
+
+(http-serve) {
+	import panel
+}
+
+http:// {
+	import http-{$SERVEROS_HTTP:redirect}
 }
 
 # Only from inside this container: the certificate check above and the

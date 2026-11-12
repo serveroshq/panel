@@ -25,6 +25,7 @@ return [
     'package_versions_since' => env('DAEMON_PACKAGE_VERSIONS_SINCE', '0.1.1-pre.26'),
 
     'package_add_since' => env('DAEMON_PACKAGE_ADD_SINCE', '0.1.1-pre.35'),
+    'tunnel_since' => env('DAEMON_TUNNEL_SINCE', '0.1.1-pre.37'),
     'install_url' => env('DAEMON_INSTALL_URL', rtrim((string) env('APP_URL', ''), '/').'/install.sh'),
     'install_script' => null,
     'releases_url' => env('DAEMON_RELEASES_URL', 'https://releases.serveros.com'),

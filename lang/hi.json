@@ -3491,5 +3491,8 @@
     ":commit to :branch, a newer push already ran": ":branch पर :commit, एक नया push पहले ही चल चुका था",
     "skipped a repeat push": "ने दोहराया गया push छोड़ दिया",
     ":commit to :branch already ran": ":branch पर :commit पहले ही चल चुका था",
-    "Workspaces keep machines and people separate, e.g. one per client or company.": "Workspaces मशीनों और लोगों को अलग रखते हैं, जैसे हर client या company के लिए एक।"
+    "Workspaces keep machines and people separate, e.g. one per client or company.": "Workspaces मशीनों और लोगों को अलग रखते हैं, जैसे हर client या company के लिए एक।",
+    "For individual developers.": "अकेले डेवलपर्स के लिए।",
+    "For small teams and projects.": "छोटी टीमों और प्रोजेक्ट्स के लिए।",
+    "For agencies and small MSPs.": "एजेंसियों और छोटे MSPs के लिए।"
 }

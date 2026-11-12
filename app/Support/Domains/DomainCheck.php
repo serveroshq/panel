@@ -3,6 +3,7 @@
 namespace App\Support\Domains;
 
 use App\Models\Machine;
+use App\Support\Machines\CloudflareTunnel;
 use Symfony\Component\HttpFoundation\IpUtils;
 
 class DomainCheck
@@ -37,6 +38,10 @@ class DomainCheck
      */
     private function lookup(Machine $machine, string $domain, string $recordName): array
     {
+        if (CloudflareTunnel::active($machine)) {
+            return $this->throughTunnel($machine, $domain, $recordName);
+        }
+
         $expected = $machine->ip_address ?: null;
         $found = $this->resolver->addresses($domain);
 
@@ -57,6 +62,31 @@ class DomainCheck
                 'name' => $recordName,
                 'value' => $expected,
             ],
+        ];
+    }
+
+    /**
+     * Behind a Cloudflare Tunnel the name points at Cloudflare (a proxied
+     * CNAME to the tunnel), never at the machine: Cloudflare's addresses are
+     * what ready looks like.
+     *
+     * @return array{domain: string, status: string, expected: string|null, found: list<string>, record: array{type: string, name: string, value: string}|null}
+     */
+    private function throughTunnel(Machine $machine, string $domain, string $recordName): array
+    {
+        $target = CloudflareTunnel::target($machine);
+        $found = $this->resolver->addresses($domain);
+
+        return [
+            'domain' => $domain,
+            'status' => match (true) {
+                $found === [] => 'missing',
+                IpUtils::checkIp($found[0], self::CLOUDFLARE) => 'ready',
+                default => 'elsewhere',
+            },
+            'expected' => $target,
+            'found' => $found,
+            'record' => $target === null ? null : ['type' => 'CNAME', 'name' => $recordName, 'value' => $target],
         ];
     }
 }

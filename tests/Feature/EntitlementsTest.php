@@ -17,7 +17,7 @@ function useEdition(string $edition): void
 }
 
 test('serveros.com is the default edition, where the plan decides', function () {
-    expect(app(Entitlements::class))->toBeInstanceOf(PlanEntitlements::class);
+    expect(app(Entitlements::class))->not->toBeInstanceOf(SelfHostedEntitlements::class);
 
     $business = Workspace::factory()->onPlan(Plan::Business)->create();
     $essential = Workspace::factory()->onPlan(Plan::Essential)->create();
@@ -25,7 +25,7 @@ test('serveros.com is the default edition, where the plan decides', function () 
     expect($business->isActive())->toBeTrue()
         ->and($business->hasFeature(Feature::Sso))->toBeTrue()
         ->and($business->hasFeature(Feature::CustomRoles))->toBeTrue()
-        ->and($business->limitOf(Limit::Machines))->toBeNull()
+        ->and($business->limitOf(Limit::Machines))->toBe(25)
         ->and($essential->hasFeature(Feature::StaffRoles))->toBeFalse()
         ->and($essential->hasFeature(Feature::Automations))->toBeFalse()
         ->and($essential->limitOf(Limit::Machines))->toBe(1)

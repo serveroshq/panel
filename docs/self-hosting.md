@@ -122,6 +122,51 @@ You'll need PHP 8.4 (with the bcmath, ctype, curl, dom, fileinfo, intl, mbstring
 
 If there's no `APP_KEY` in `.env`, the installer makes one first. It only ever changes its own settings in `.env` (the database, the address and email), keeping every other line as it was, and leaves the file readable by its owner only. Run `php artisan` as the web server's user from then on.
 
+### Behind a Cloudflare Tunnel
+
+If you'd rather not open ports 80 and 443, the panel can sit behind a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/). cloudflared runs next to the panel, carries its traffic from Cloudflare, and Cloudflare does HTTPS.
+
+Machines are the exception. They connect to the gateway with their own certificates, which Cloudflare's proxy can't pass on, so the gateway needs a name of its own that points straight at the server, with port 8443 open to your machines.
+
+1. In Cloudflare, open Networking › Tunnels and create a tunnel with Cloudflared. Copy the token from its install command (the long string after `--token`).
+2. Add a DNS record for the gateway, DNS only (grey cloud): an A record for `gateway.example.com` with the server's address.
+3. Install with the token and the gateway's name:
+
+    ```sh
+    sudo bash docker/self-hosted/install.sh --domain=panel.example.com \
+        --tunnel-token=eyJhIjoi... --gateway-host=gateway.example.com
+    ```
+
+    There's no `--email` to give: Let's Encrypt isn't used.
+
+4. In the tunnel's Routes, add a published application for `panel.example.com` and another for `*.panel.example.com`, each with the service URL `http://web:80`. Cloudflare adds their DNS records. Check the full hostname before you save: a route on the bare domain takes over whatever that domain serves now.
+
+Then open `https://panel.example.com` and set it up as usual. The address step checks the tunnel and the gateway's name.
+
+The script adds this to `/opt/serveros/.env`:
+
+| Setting                                                | What it does                                                                            |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `SERVEROS_TUNNEL=cloudflare`                           | Plain HTTP serves the panel, and the visitor's address comes from Cloudflare's headers. |
+| `CLOUDFLARE_TUNNEL_TOKEN`                              | The tunnel's token, for the `cloudflared` container.                                    |
+| `COMPOSE_PROFILES=tunnel`                              | Starts the `cloudflared` container.                                                     |
+| `SERVEROS_GATEWAY_HOST`                                | Where machines connect, and the name on the gateway's certificate.                      |
+| `HTTP_PORT`, `HTTPS_PORT`                              | `127.0.0.1:18080` and `127.0.0.1:18443`: the panel only listens on the server itself.   |
+| `CADDY_GLOBAL_OPTIONS=local_certs`, `GATEWAY_PANEL_CA` | The gateway reaches the panel inside Docker with Caddy's own certificate.               |
+
+Two things to know:
+
+- Cloudflare's free certificate covers a domain and one level under it: `example.com` and `*.example.com`. Workspaces on `acme.panel.example.com` are two levels down, so they need Cloudflare's Advanced Certificate Manager. Using the domain itself for the panel (`example.com`, with workspaces on `acme.example.com`) avoids that.
+- To move an existing install behind a tunnel, run the script again with `--tunnel-token` and `--gateway-host`. Machines connected before then use the old gateway name, so connect them again from Machines › Connect machine.
+
+### Your machines' apps behind a tunnel
+
+A machine can serve its apps through a Cloudflare Tunnel too, so it needs no open ports for them. Open the machine's Settings, find Cloudflare Tunnel, and paste a tunnel's token (or its whole install command). ServerOS installs cloudflared on the machine from Cloudflare's package repository and runs it as the `serveros-tunnel` service, with the token kept root-only in `/etc/serveros/tunnel.env`. The panel doesn't keep the token once the machine has it.
+
+The machine's proxy then answers each app's domain over plain HTTP, since Cloudflare does HTTPS. In the tunnel's Routes, add a published application for each app's domain, or one wildcard like `*.example.com`, with the service URL `http://localhost:80`. Deploy apps with their domain as usual. Taking the tunnel off stops cloudflared, and the apps get their own certificates again.
+
+This needs the daemon at v0.1.1-pre.37 or later on the machine, with Caddy as its proxy (the default) or nginx.
+
 ### Getting the code again
 
 The code is the same until you finish. To see it again:

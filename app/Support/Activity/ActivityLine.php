@@ -59,6 +59,7 @@ final class ActivityLine
             'machine.packages_add' => $set($t('installed :packages on', ['packages' => implode(', ', array_slice(array_map('strval', (array) ($meta['packages'] ?? [])), 0, 6))]), null, 'warn'),
             'machine.reboot' => $set('restarted', null, 'warn'),
             'machine.firewall' => $set($t(($meta['action'] ?? null) === 'open' ? 'opened port :port on' : 'closed port :port on', ['port' => $meta['port'] ?? '']), null, ($meta['action'] ?? null) === 'open' ? 'warn' : 'neutral'),
+            'machine.tunnel' => $set(($meta['action'] ?? null) === 'up' ? 'put a Cloudflare Tunnel on' : 'took the Cloudflare Tunnel off', null, 'warn'),
             'machine.remove' => $set('removed the machine', null, 'bad'),
             'machine.data_clear' => $set(match (array_keys(array_intersect_key($meta, array_flip(['logs', 'metrics', 'services'])))) {
                 ['logs'] => isset($meta['skipped_services'])

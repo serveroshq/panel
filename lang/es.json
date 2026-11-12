@@ -3491,5 +3491,8 @@
     ":commit to :branch, a newer push already ran": ":commit en :branch, ya se ejecutó un push más reciente",
     "skipped a repeat push": "omitió un push repetido",
     ":commit to :branch already ran": ":commit en :branch ya se ejecutó",
-    "Workspaces keep machines and people separate, e.g. one per client or company.": "Los workspaces separan máquinas y personas, por ejemplo uno por cliente o empresa."
+    "Workspaces keep machines and people separate, e.g. one per client or company.": "Los workspaces separan máquinas y personas, por ejemplo uno por cliente o empresa.",
+    "For individual developers.": "Para desarrolladores individuales.",
+    "For small teams and projects.": "Para equipos y proyectos pequeños.",
+    "For agencies and small MSPs.": "Para agencias y MSP pequeños."
 }

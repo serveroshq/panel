@@ -45,8 +45,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(ResolveCustomDomain::class);
-        $middleware->prepend(TrustCloudflare::class);
         $middleware->prepend(SendToInstaller::class);
+        // First, so everything after it (the installer's redirect, too) sees
+        // the visitor's address and HTTPS behind Cloudflare or its tunnel.
+        $middleware->prepend(TrustCloudflare::class);
 
         $middleware->trimStrings(except: ['db_password', 'mail_password']);
 

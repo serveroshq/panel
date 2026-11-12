@@ -43,6 +43,7 @@ defineProps<{
     error?: string;
     canResetPassword: boolean;
     oauthProviders: string[];
+    googleClientId?: string | null;
     lastUsed?: 'password' | 'passkey' | 'google' | 'github' | 'sso' | null;
 }>();
 
@@ -101,7 +102,11 @@ function clear(field: 'email' | 'password'): void {
     <ExtensionSlot name="auth/Login/notices" :parts="slotParts" />
 
     <div class="grid gap-2">
-        <OAuthButtons :providers="oauthProviders" :last-used="lastUsed" />
+        <OAuthButtons
+            :providers="oauthProviders"
+            :google-client-id="googleClientId"
+            :last-used="lastUsed"
+        />
         <PasskeyVerify
             :routes="{
                 options: passkeyLoginOptions(),
@@ -195,9 +200,7 @@ function clear(field: 'email' | 'password'): void {
             </button>
         </div>
 
-        <div
-            class="auth-foot -mx-8 mt-8 -mb-8 border-t border-(--ds-divider) bg-(--ds-subtle) px-8 py-3.5 text-center text-[12.5px] text-(--ds-text-muted)"
-        >
+        <div class="text-center text-[14px]/5 text-(--ds-text-muted)">
             {{ ' ' + $t('New to ServerOS?') }}
             <TextLink :href="register()" :tabindex="5">{{
                 $t('Create an account')

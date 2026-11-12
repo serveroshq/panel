@@ -298,6 +298,34 @@ const linkedPackages = packages
     .filter((path) => lstatSync(path).isSymbolicLink())
     .map((path) => realpathSync(path));
 
+// The linked packages as they appear under vendor/. With preserveSymlinks the
+// dev server loads their files by these paths, so the watcher has to see
+// changes here or edits to a linked package never reload.
+const linkedVendorDirs = packages
+    .filter((path) => lstatSync(path).isSymbolicLink())
+    .map((path) => resolve(path));
+
+/** Ignores vendor/, except the way in to a linked package and its own files. */
+function ignoreVendor(file: string): boolean {
+    if (!file.includes('/vendor/')) {
+        return false;
+    }
+
+    return !linkedVendorDirs.some((dir) => {
+        if (dir.startsWith(`${file}/`)) {
+            return true;
+        }
+        if (file !== dir && !file.startsWith(`${dir}/`)) {
+            return false;
+        }
+        const inside = file.slice(dir.length);
+
+        return (
+            !inside.includes('/vendor/') && !inside.includes('/node_modules/')
+        );
+    });
+}
+
 const site = packages.find((path) =>
     existsSync(`${path}/resources/js/marketing/app.tsx`),
 );
@@ -557,7 +585,7 @@ export default defineConfig({
                 '**/.claude/**',
                 '**/.cursor/**',
                 '**/.junie/**',
-                '**/vendor/**',
+                ignoreVendor,
             ],
         },
     },

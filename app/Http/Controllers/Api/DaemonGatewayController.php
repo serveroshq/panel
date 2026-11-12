@@ -18,6 +18,7 @@ use App\Support\Fixes\FixRunner;
 use App\Support\Health\JobAlerts;
 use App\Support\Logs\LogIngest;
 use App\Support\Logs\LogSkipRules;
+use App\Support\Machines\CloudflareTunnel;
 use App\Support\Machines\DaemonUpdateNotices;
 use App\Support\Machines\MachineMetadata;
 use App\Support\Machines\PackageUpdates;
@@ -268,6 +269,20 @@ class DaemonGatewayController extends Controller
                         $inventory = $changes['inventory'] ?? $machine->inventory;
                         if (is_array($inventory)) {
                             $changes['inventory'] = [...$inventory, 'firewall' => $payload['result']['firewall']];
+                        }
+                    }
+
+                    if ($job->kind === CloudflareTunnel::KIND && in_array($state, self::FINISHED_JOB_STATES, true)) {
+                        // The token has done its job: it doesn't stay in the panel.
+                        $command = $job->command;
+                        if (is_array($command) && isset($command['job']['token'])) {
+                            unset($command['job']['token']);
+                            $job->forceFill(['command' => $command])->saveQuietly();
+                        }
+                        if ($state === 'succeeded') {
+                            $changes['tunnel'] = ($command['job']['action'] ?? null) === 'up'
+                                ? CloudflareTunnel::fromResult(is_array($payload['result'] ?? null) ? $payload['result'] : [])
+                                : null;
                         }
                     }
 
