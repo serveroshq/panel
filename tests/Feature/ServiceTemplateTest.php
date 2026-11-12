@@ -91,6 +91,26 @@ test('a database template deploys its compose file with a generated password', f
         ->and($response->json('generated.0.value'))->toBe($job['env']['POSTGRES_PASSWORD']);
 });
 
+test('Supabase gets its anon and service role keys signed with the JWT secret it generates', function () {
+    [$workspace, , $url] = templateMachine();
+
+    $this->actingAs($workspace->owner)->postJson($url, ['template' => 'supabase', 'service' => 'supabase'])->assertAccepted();
+
+    $env = sentJob()['env'];
+    $claims = function (string $jwt) use ($env): array {
+        [$header, $payload, $signature] = explode('.', $jwt);
+        $expected = rtrim(strtr(base64_encode(hash_hmac('sha256', "{$header}.{$payload}", $env['JWT_SECRET'], true)), '+/', '-_'), '=');
+        expect(hash_equals($expected, $signature))->toBeTrue();
+
+        return json_decode(base64_decode(strtr($payload, '-_', '+/')), true);
+    };
+
+    expect(strlen($env['JWT_SECRET']))->toBeGreaterThanOrEqual(32)
+        ->and($claims($env['ANON_KEY']))->toMatchArray(['role' => 'anon', 'iss' => 'supabase'])
+        ->and($claims($env['SERVICE_ROLE_KEY']))->toMatchArray(['role' => 'service_role'])
+        ->and($claims($env['ANON_KEY'])['exp'])->toBeGreaterThan(now()->addYears(9)->timestamp);
+});
+
 test('an install from the app installer is recorded with its app, for the admin Stats', function () {
     [$workspace, $machine, $url] = templateMachine();
 
