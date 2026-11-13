@@ -89,7 +89,7 @@ test('offline machines cannot deploy and bad repository or commit values are rej
     $this->actingAs($workspace->owner)->postJson(machineUrl($workspace, $machine).'/deploy', $payload)->assertStatus(409);
     $machine->forceFill(['last_seen_at' => now()])->save();
     $this->actingAs($workspace->owner)->postJson(machineUrl($workspace, $machine).'/deploy', array_replace($payload, ['repo' => 'https://user:pass@example.com/repo.git']))->assertUnprocessable();
-    $this->actingAs($workspace->owner)->postJson(machineUrl($workspace, $machine).'/deploy', array_replace($payload, ['commit' => 'main']))->assertUnprocessable();
+    $this->actingAs($workspace->owner)->postJson(machineUrl($workspace, $machine).'/deploy', array_replace($payload, ['commit' => 'not a ref!']))->assertUnprocessable();
     Http::assertNothingSent();
 });
 

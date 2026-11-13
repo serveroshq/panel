@@ -36,7 +36,7 @@ final class RefResolver
         } elseif (preg_match(DeployRequest::COMMIT_PATTERN, $ref)) {
             return ['commit' => strtolower($ref), 'ref' => null];
         } elseif (! self::validRef($ref)) {
-            throw new ToolError('ref must be a branch, a tag or a full 40-character commit.');
+            throw new ToolError('Give a branch, a tag or a full 40-character commit.');
         }
 
         try {
@@ -177,10 +177,22 @@ final class RefResolver
                 ->withHeaders(['User-Agent' => 'git/2.0 (ServerOS)', 'Accept' => 'application/x-git-upload-pack-advertisement'])
                 ->withOptions([
                     'allow_redirects' => false,
-                    'curl' => [CURLOPT_RESOLVE => ["{$host}:{$port}:{$ip}"], CURLOPT_MAXFILESIZE => self::MAX_BYTES],
+                    'curl' => [CURLOPT_RESOLVE => ["{$host}:{$port}:{$ip}"]],
+                    // Guzzle turns down CURLOPT_MAXFILESIZE, so the cap is kept as it downloads.
+                    'progress' => function (int $total, int $downloaded): void {
+                        if ($total > self::MAX_BYTES || $downloaded > self::MAX_BYTES) {
+                            throw new ToolError('That repository has too many branches and tags to look through. Give the full 40-character commit instead of a branch.');
+                        }
+                    },
                 ])
                 ->get($url);
-        } catch (ConnectionException) {
+        } catch (ConnectionException $e) {
+            for ($cause = $e->getPrevious(); $cause !== null; $cause = $cause->getPrevious()) {
+                if ($cause instanceof ToolError) {
+                    throw $cause;
+                }
+            }
+
             throw new ToolError("Couldn’t reach {$host}. Check the repository address, or try again in a moment.");
         }
     }
