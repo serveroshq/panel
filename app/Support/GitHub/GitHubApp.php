@@ -260,6 +260,74 @@ final class GitHubApp
         return hash_equals('sha256='.hash_hmac('sha256', $body, $secret), $signature);
     }
 
+    /**
+     * The repositories the workspace's GitHub connections share with ServerOS,
+     * most recently pushed first, for picking one to deploy.
+     *
+     * @return list<array{name: string, url: string, private: bool, branch: string, pushed: string}>
+     */
+    public function repositoriesFor(Workspace $workspace): array
+    {
+        if (! self::enabled()) {
+            return [];
+        }
+
+        $found = [];
+        foreach ($workspace->githubInstallations()->get() as $installation) {
+            try {
+                $response = $this->asApp()->post(self::API."/app/installations/{$installation->installation_id}/access_tokens", [
+                    'permissions' => ['metadata' => 'read'],
+                ]);
+                if ($response->status() === 404) {
+                    $installation->delete();
+
+                    continue;
+                }
+                $token = $response->json('token');
+                $repositories = is_string($token) ? $this->repositories($this->client()->withToken($token), self::API.'/installation/repositories') : null;
+            } catch (ConnectionException) {
+                continue;
+            }
+
+            foreach ($repositories ?? [] as $repository) {
+                $name = $repository['full_name'] ?? null;
+                if (is_string($name) && $installation->allows((int) ($repository['id'] ?? 0))) {
+                    $found[$name] = [
+                        'name' => $name,
+                        'url' => "https://github.com/{$name}",
+                        'private' => ($repository['private'] ?? false) === true,
+                        'branch' => (string) ($repository['default_branch'] ?? ''),
+                        'pushed' => (string) ($repository['pushed_at'] ?? ''),
+                    ];
+                }
+            }
+        }
+
+        usort($found, fn (array $a, array $b) => strcmp($b['pushed'], $a['pushed']));
+
+        return $found;
+    }
+
+    /** @return list<string>|null */
+    public function branchesFor(Workspace $workspace, string $owner, string $repo): ?array
+    {
+        $token = $this->tokenFor($workspace, $owner, $repo);
+
+        try {
+            $response = $this->client()
+                ->when($token !== null, fn (PendingRequest $http) => $http->withToken((string) $token))
+                ->get(self::API.'/repos/'.rawurlencode($owner).'/'.rawurlencode($repo).'/branches', ['per_page' => 100]);
+        } catch (ConnectionException) {
+            return null;
+        }
+        $branches = $response->json();
+        if (! $response->successful() || ! is_array($branches)) {
+            return null;
+        }
+
+        return array_values(array_filter(array_map(fn (mixed $branch) => is_array($branch) ? ($branch['name'] ?? null) : null, $branches), 'is_string'));
+    }
+
     public static function connected(Workspace $workspace, string $owner): bool
     {
         return $workspace->githubInstallations()->whereRaw('lower(account_login) = ?', [strtolower($owner)])->exists();
