@@ -178,6 +178,8 @@ class DeploySourcePacker
             'framework' => $match['framework'] ?? null,
             'type' => $match['type'] ?? null,
             'reasons' => $match['reasons'] ?? [],
+            'composeFile' => $match['composeFile'] ?? null,
+            'composePort' => $match['composePort'] ?? null,
         ];
     }
 

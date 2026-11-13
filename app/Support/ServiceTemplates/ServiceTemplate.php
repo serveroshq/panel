@@ -34,6 +34,7 @@ final readonly class ServiceTemplate
         public ?string $dockerfile,
         public ?string $notes,
         public ?int $healthRetries = null,
+        public ?string $compose = null,
     ) {}
 
     /**
@@ -76,6 +77,7 @@ final readonly class ServiceTemplate
             dockerfile: isset($data['dockerfile']) ? (string) $data['dockerfile'] : null,
             notes: isset($data['notes']) ? (string) $data['notes'] : null,
             healthRetries: isset($data['health_retries']) ? (int) $data['health_retries'] : null,
+            compose: $kind === self::KIND_APP && isset($data['compose']) ? (string) $data['compose'] : null,
         );
     }
 
@@ -93,8 +95,18 @@ final readonly class ServiceTemplate
         return $this->kind === self::KIND_APP;
     }
 
+    /** An app that runs the Compose file in its own repository, not a Dockerfile. */
+    public function composeFromRepo(): bool
+    {
+        return $this->compose !== null;
+    }
+
     public function controlsHost(): bool
     {
+        // A repository's own Compose file can ask for anything (privileged, the Docker socket, the host's disk).
+        if ($this->composeFromRepo()) {
+            return true;
+        }
         foreach ([...$this->files, (string) $this->dockerfile] as $content) {
             if (str_contains($content, 'docker.sock') || preg_match('/^\s*privileged:\s*true/mi', $content) === 1) {
                 return true;
@@ -118,6 +130,7 @@ final readonly class ServiceTemplate
             'web' => $this->web,
             'portEditable' => $this->portEditable,
             'health' => $this->health,
+            'compose' => $this->compose,
             'notes' => $this->notesFor($machine),
             'env' => array_map(fn (array $field) => [
                 'key' => $field['key'],
