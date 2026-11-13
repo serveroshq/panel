@@ -6,6 +6,7 @@ use App\Models\Machine;
 use App\Models\PanelUpdate;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Models\WorkspaceInvitation;
 use App\Support\Activity\ActivityLine;
 use App\Support\Entitlements\Entitlements;
 use App\Support\Entitlements\SelfHostedEntitlements;
@@ -95,6 +96,27 @@ test('only a self-hosted install’s workspace owner sees updates or can start o
     $this->actingAs($admin)->post(panelSettingsUrl($workspace, 'panel-update'))->assertNotFound();
     $this->actingAs($admin)->post(panelSettingsUrl($workspace, 'panel-update/check'))->assertNotFound();
     expect(PanelUpdate::query()->count())->toBe(0);
+});
+
+test('someone who signs up later owns a workspace but can’t update the install, unless made an admin', function () {
+    selfHostedPanel();
+    $workspace = Workspace::factory()->create();
+    WorkspaceInvitation::factory()->for($workspace)->create(['email' => 'vic@example.com', 'role' => 'viewer']);
+    $this->post(route('register.store'), ['name' => 'Vic', 'email' => 'vic@example.com', 'password' => 'Str0ng!pass-xyz-123', 'password_confirmation' => 'Str0ng!pass-xyz-123'])->assertSessionHasNoErrors();
+    $vic = User::query()->where('email', 'vic@example.com')->firstOrFail();
+    $vic->forceFill(['email_verified_at' => now()])->save();
+    $own = Workspace::query()->where('owner_id', $vic->id)->firstOrFail();
+    updaterRuns();
+    PanelUpdates::check();
+
+    $this->actingAs($vic)->get(panelSettingsUrl($own, 'general'))
+        ->assertInertia(fn (Assert $page) => $page->where('panelUpdate', null)->where('githubSetup.canSetUp', false));
+    $this->actingAs($vic)->post(panelSettingsUrl($own, 'panel-update'))->assertNotFound();
+    expect(PanelUpdate::query()->count())->toBe(0);
+
+    $vic->forceFill(['is_admin' => true])->save();
+    $this->actingAs($vic)->post(panelSettingsUrl($own, 'panel-update'))->assertSessionHasNoErrors();
+    expect(PanelUpdate::query()->sole()->requested_by)->toBe($vic->id);
 });
 
 test('checking finds a newer release on GitHub, and an unreachable GitHub keeps the last answer', function () {
