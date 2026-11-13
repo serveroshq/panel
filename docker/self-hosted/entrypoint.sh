@@ -61,8 +61,8 @@ daemon_certificates() {
     cert=/gateway/gateway.crt
     if [ -f "$cert" ] && php -r '
         $c = openssl_x509_parse((string) file_get_contents($argv[1]));
-        $names = (string) ($c["extensions"]["subjectAltName"] ?? "");
-        exit($c !== false && $c["validTo_time_t"] > time() + 30 * 86400 && str_contains($names, "DNS:".$argv[2]) ? 0 : 1);
+        $names = array_map("trim", explode(",", (string) ($c["extensions"]["subjectAltName"] ?? "")));
+        exit($c !== false && $c["validTo_time_t"] > time() + 30 * 86400 && array_intersect(["DNS:".$argv[2], "IP Address:".$argv[2]], $names) !== [] ? 0 : 1);
     ' "$cert" "$host"; then
         return 0
     fi
