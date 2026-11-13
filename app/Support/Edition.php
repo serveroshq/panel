@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\User;
+use App\Models\Workspace;
 use App\Support\Extensions\Extensions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,6 +13,12 @@ final class Edition
     public static function selfHosted(): bool
     {
         return config('serveros.edition') === 'self-hosted';
+    }
+
+    public static function installAdmin(?User $user, Workspace $workspace): bool
+    {
+        return self::selfHosted() && $user !== null
+            && $workspace->owner_id === $user->id && $user->can('manageSettings', $workspace);
     }
 
     public static function withoutBilling(): bool
