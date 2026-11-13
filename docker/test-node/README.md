@@ -17,8 +17,8 @@ Mac
 
 The node reaches the panel and gateway through Docker's `host.docker.internal`.
 It trusts your Herd certificate, so `https://serveros.test` works from inside
-it, and the daemon pins that same certificate when it enrols
-(`SERVEROS_LOCAL_PANEL_CA`, from `docker/daemon-local/panel-ca.patch`).
+it, and the install command pins that same certificate for the daemon, as on
+a home network (`DAEMON_PANEL_CA`, which `setup.sh` sets).
 
 ## What you need
 
@@ -58,9 +58,9 @@ From the project root:
 docker/daemon-local/build.sh
 ```
 
-Clones the daemon to `/private/tmp/serveros-daemon` (or `SERVEROS_DAEMON_SOURCE`),
-applies the local CA patch and builds `serverosd` and `serveros-gateway` for your
-Mac's CPU in Docker. The first build takes a few minutes. The daemon lands in
+Clones the daemon to `/private/tmp/serveros-daemon` (or `SERVEROS_DAEMON_SOURCE`)
+and builds `serverosd` and `serveros-gateway` for your Mac's CPU in Docker. The
+first build takes a few minutes. The daemon lands in
 `public/releases/daemon/v0.0.0-local/`, which the install command downloads from.
 
 ```bash

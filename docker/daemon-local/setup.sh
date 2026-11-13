@@ -31,6 +31,8 @@ php -r '
     "DAEMON_COMMANDS_ENABLED" => "true",
     "DAEMON_GATEWAY_INTERNAL_URL" => "http://127.0.0.1:8090",
     "DAEMON_LOCAL_NODE_PORT" => "8088",
+    // The CA the install command pins (Herd), as on a home network.
+    "DAEMON_PANEL_CA" => "\"".getcwd()."/docker/test-node/herd-ca.pem\"",
   ] as $key => $value) {
     $line = $key."=".$value;
     $body = preg_match("/^".preg_quote($key, "/")."=.*/m", $body)
