@@ -106,6 +106,8 @@ COPY docker/self-hosted/entrypoint.sh /usr/local/bin/serveros-entrypoint
 # ports 80 and 443. The app's .env points into storage (a volume), where
 # the web installer saves what it's given (email, for one); compose.yaml's
 # own settings still come first.
+# public/storage (uploaded icons) is made here too: the app can't write to
+# public/, and a link made inside a container is gone after an update.
 RUN useradd --uid 1000 --user-group --home-dir /app --no-create-home serveros \
     && setcap CAP_NET_BIND_SERVICE=+eip /usr/local/bin/frankenphp \
     && mkdir -p /app/storage/app/private /app/storage/app/public /app/storage/framework/cache \
@@ -114,7 +116,8 @@ RUN useradd --uid 1000 --user-group --home-dir /app --no-create-home serveros \
     && chown -R serveros:serveros /app/storage /app/bootstrap/cache /data /config /gateway \
     && chmod +x /usr/local/bin/serveros-entrypoint \
     && echo "${SERVEROS_VERSION}" > /app/VERSION \
-    && ln -s storage/app/private/settings.env /app/.env
+    && ln -s storage/app/private/settings.env /app/.env \
+    && ln -s /app/storage/app/public /app/public/storage
 
 USER serveros
 WORKDIR /app
