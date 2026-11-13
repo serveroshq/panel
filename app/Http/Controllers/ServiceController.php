@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\MachineResource;
+use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Models\ServiceGroup;
 use App\Models\Workspace;
@@ -33,7 +34,26 @@ class ServiceController extends Controller
                 'name' => $machine->name,
                 'connection' => MachineResource::connection($machine),
                 'scanned' => $machine->inventory !== null,
+                'scannedAt' => $machine->inventory['scanned_at'] ?? null,
             ]),
+            // The same deploys a machine's page lists while a service builds.
+            'deploys' => DaemonJob::query()
+                ->whereIn('machine_id', $machines->modelKeys())
+                ->where('kind', 'deploy')
+                ->where(fn ($query) => $query->whereIn('state', ['queued', 'accepted', 'running'])
+                    ->orWhere('created_at', '>=', now()->subMinutes(10)))
+                ->latest()
+                ->limit(50)
+                ->get()
+                ->map(fn (DaemonJob $job) => [
+                    'id' => $job->id,
+                    'machineId' => $job->machine_id,
+                    'service' => $job->service,
+                    'state' => $job->state,
+                    'phase' => $job->phase,
+                    'progress' => $job->progress,
+                    'createdAt' => $job->created_at?->toIso8601String(),
+                ]),
             'templates' => fn () => $templates->toPageProps(),
             'deployEnabled' => (bool) config('daemon.commands_enabled') && filled(config('daemon.gateway_internal_url')),
         ]);
