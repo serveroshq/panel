@@ -75,7 +75,7 @@ final class PanelUpdates
     {
         $seen = Cache::get(self::UPDATER_SEEN);
 
-        return is_int($seen) && $seen >= now()->subMinutes(5)->getTimestamp();
+        return is_numeric($seen) && (int) $seen >= now()->subMinutes(5)->getTimestamp();
     }
 
     /** @throws RuntimeException */

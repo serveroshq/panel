@@ -16,6 +16,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -167,6 +168,10 @@ test('an update can only start once the server runs the updater, and one at a ti
 
     $this->actingAs($workspace->owner)->post(panelSettingsUrl($workspace, 'panel-update'))->assertSessionHasErrors('update');
     expect(PanelUpdate::query()->count())->toBe(0);
+
+    Cache::forever(PanelUpdates::UPDATER_SEEN, (string) now()->subMinutes(2)->getTimestamp());
+    expect(PanelUpdates::updaterSeen())->toBeTrue();
+    Cache::forget(PanelUpdates::UPDATER_SEEN);
 
     updaterRuns();
     config()->set('serveros.install.docker', false);
