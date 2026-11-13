@@ -71,6 +71,17 @@ final class PanelUpdates
         return $current !== 'dev' && $release !== null && DaemonUpdates::newer($release['version'], $current) ? $release : null;
     }
 
+    /** @return array{version: string, current: string}|null */
+    public static function notice(): ?array
+    {
+        $release = self::available();
+        if ($release === null || PanelUpdate::query()->whereIn('status', [PanelUpdate::REQUESTED, PanelUpdate::RUNNING])->exists()) {
+            return null;
+        }
+
+        return ['version' => $release['version'], 'current' => self::current()];
+    }
+
     public static function updaterSeen(): bool
     {
         $seen = Cache::get(self::UPDATER_SEEN);

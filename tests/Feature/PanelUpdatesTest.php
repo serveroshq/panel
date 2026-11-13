@@ -255,3 +255,22 @@ test('an update that fails, comes back on the old version or never finishes says
         ->assertJsonPath('updater', false);
     expect($stuck->fresh()->error)->toContain('/var/log/serveros-panel-update.log');
 });
+
+test('the install’s first account sees an update on the home dashboard until one is on its way', function () {
+    selfHostedPanel();
+    $workspace = Workspace::factory()->create();
+    $member = User::factory()->create();
+    $workspace->members()->attach($member, ['role' => 'admin']);
+    $home = 'https://'.$workspace->host().'/';
+
+    $this->actingAs($workspace->owner)->get($home)->assertInertia(fn (Assert $page) => $page->where('panelUpdate', null));
+
+    PanelUpdates::check();
+    updaterRuns();
+    $this->actingAs($workspace->owner)->get($home)
+        ->assertInertia(fn (Assert $page) => $page->where('panelUpdate', ['version' => '1.4.0', 'current' => '1.3.2']));
+    $this->actingAs($member)->get($home)->assertInertia(fn (Assert $page) => $page->where('panelUpdate', null));
+
+    $this->actingAs($workspace->owner)->post(panelSettingsUrl($workspace, 'panel-update'))->assertSessionHasNoErrors();
+    $this->actingAs($workspace->owner)->get($home)->assertInertia(fn (Assert $page) => $page->where('panelUpdate', null));
+});
