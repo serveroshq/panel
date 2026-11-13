@@ -19,6 +19,8 @@ Built from source, Settings › License says it's the community edition and how 
 - A domain for the panel, like `panel.example.com`, and access to its DNS.
 - Ports 80 and 443 open (the panel, with free Let's Encrypt certificates) and 8443 (where your machines connect).
 
+On a home network with no public domain, see [On a home network without a domain](#on-a-home-network-without-a-domain) instead.
+
 The panel answers on the domain, and each workspace on a subdomain of it (`acme.panel.example.com`). So before you install, add two DNS records pointing at the server:
 
 | Type | Name                  | Value                |
@@ -166,6 +168,31 @@ A machine can serve its apps through a Cloudflare Tunnel too, so it needs no ope
 The machine's proxy then answers each app's domain over plain HTTP, since Cloudflare does HTTPS. In the tunnel's Routes, add a published application for each app's domain, or one wildcard like `*.example.com`, with the service URL `http://localhost:80`. Deploy apps with their domain as usual. Taking the tunnel off stops cloudflared, and the apps get their own certificates again.
 
 This needs the daemon at v0.1.1-pre.37 or later on the machine, with Caddy as its proxy (the default) or nginx.
+
+### On a home network without a domain
+
+A panel on your own network, like a homelab server on `192.168.1.20`, can't get certificates from Let's Encrypt, which checks the name from the internet. It can run on Caddy's own certificates instead:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/serveroshq/panel/main/docker/self-hosted/install.sh | sudo bash -s -- --domain=192-168-1-20.sslip.io --local-certs
+```
+
+The panel still needs a name, since workspaces open on names under it. Either:
+
+- **An sslip.io name**, like `192-168-1-20.sslip.io`. [sslip.io](https://sslip.io) points it, and every name under it, at the address in it, with nothing to set up. Some routers turn down DNS answers with a home address in them (DNS rebinding protection): if the name doesn't resolve, allow `sslip.io` in the router's settings.
+- **A name on your own DNS**, like `panel.home.arpa`, with `*.panel.home.arpa` pointing at the server too (in your router or Pi-hole, say).
+
+Connect machines from Machines › Connect machine as usual. The command is longer: it downloads the panel's CA and stops unless it matches the SHA-256 in the command. From then on that CA is the only one trusted for your panel, by the install and by the daemon, which keeps it in `/etc/serveros/panel-ca.crt`.
+
+Browsers warn about the panel's certificate until you trust its CA. Download it from `https://192-168-1-20.sslip.io/panel-ca.crt` (Firefox offers to trust it straight away) and add it to your computer's trusted certificates.
+
+The script adds this to `/opt/serveros/.env`:
+
+| Setting                                  | What it does                                     |
+| ---------------------------------------- | ------------------------------------------------ |
+| `CADDY_GLOBAL_OPTIONS=local_certs`       | Caddy makes the panel's certificates itself.     |
+| `GATEWAY_PANEL_CA=/gateway/panel-ca.crt` | The gateway checks the panel against Caddy's CA. |
+| `DAEMON_PANEL_CA=/gateway/panel-ca.crt`  | The install command pins that CA on machines.    |
 
 ### Getting the code again
 
