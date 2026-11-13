@@ -33,7 +33,7 @@ final class DetectRepository extends Tool
     {
         return 'Looks at a GitHub repository (public, or private and shared with the workspace’s GitHub connection), as the dashboard’s deploy dialog does when a link is pasted: reads the files at the root of the latest commit on its default branch (or the branch given) and the manifests that name a framework, and says what it is (a Laravel web app, an Express API, a Vite static site…) and which app template builds it. '
             .'Returns detected, template (its key, or null when nothing matched), framework, type, the reasons, the repository’s clone address, the branch and the exact commit it looked at, a suggested name to deploy it as, and the template’s summary. '
-            .'Then deploy it with deploy_template (template, repo, ref = the commit returned, so what was checked is what’s deployed, plus php and health_path when it returns them: an older PHP app needs its PHP version). When nothing matched, pick an app template yourself (list_templates kind=app), or "custom-dockerfile" if the repository has its own Dockerfile. Only GitHub repositories can be detected (private ones once the workspace has connected GitHub in Settings → General); others can still be deployed with deploy_from_git or an app template.';
+            .'Then deploy it with deploy_template (template, repo, ref = the commit returned, so what was checked is what’s deployed, plus php and health_path when it returns them: an older PHP app needs its PHP version; for compose-file, compose_file = composeFile and port = composePort, the port the Compose file publishes). When nothing matched, pick an app template yourself (list_templates kind=app), "custom-dockerfile" if the repository has its own Dockerfile, or "compose-file" if it has its own Compose file somewhere. Only GitHub repositories can be detected (private ones once the workspace has connected GitHub in Settings → General); others can still be deployed with deploy_from_git or an app template.';
     }
 
     public function inputSchema(): array
@@ -93,8 +93,8 @@ final class DetectRepository extends Tool
                 ? array_values(array_map(fn (ServiceTemplate $t) => $t->slug, array_filter($this->catalog->all(), fn (ServiceTemplate $t) => $t->isApp())))
                 : null,
             'next' => $template !== null
-                ? "Deploy it with deploy_template: template={$template->slug}, repo={$found['repo']}, ref={$found['commit']}. Ask the person which machine, the name and the domain if they haven’t said; list_templates with template={$template->slug} shows its settings."
-                : 'No template matched. If it has its own Dockerfile somewhere, use template=custom-dockerfile; otherwise choose one of appTemplates with the person.',
+                ? "Deploy it with deploy_template: template={$template->slug}, repo={$found['repo']}, ref={$found['commit']}".($found['composeFile'] !== null ? ", compose_file={$found['composeFile']}" : '').($found['template'] === 'compose-file' && $found['composePort'] !== null ? ", port={$found['composePort']}" : '').". Ask the person which machine, the name and the domain if they haven’t said; list_templates with template={$template->slug} shows its settings."
+                : 'No template matched. If it has its own Dockerfile somewhere, use template=custom-dockerfile, or template=compose-file with compose_file for its own Compose file; otherwise choose one of appTemplates with the person.',
         ];
     }
 

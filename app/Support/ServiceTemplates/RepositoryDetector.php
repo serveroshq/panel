@@ -19,12 +19,14 @@ class RepositoryDetector
 
     public const TYPE_APP = 'App';
 
-    public const MANIFESTS = ['package.json', 'composer.json', 'requirements.txt', 'pyproject.toml', 'Gemfile', 'Cargo.toml', 'go.mod', 'mix.exs'];
+    public const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
+
+    public const MANIFESTS = ['package.json', 'composer.json', 'requirements.txt', 'pyproject.toml', 'Gemfile', 'Cargo.toml', 'go.mod', 'mix.exs', ...self::COMPOSE_FILES];
 
     private ?string $token = null;
 
     /**
-     * @return array{detected: bool, template: string|null, framework: string|null, type: string|null, repo: string, branch: string, commit: string, reasons: list<string>}
+     * @return array{detected: bool, template: string|null, framework: string|null, type: string|null, repo: string, branch: string, commit: string, reasons: list<string>, php: string|null, healthPath: string|null, composeFile: string|null, composePort: int|null}
      */
     public function detect(string $url, ?Workspace $workspace = null): array
     {
@@ -66,7 +68,92 @@ class RepositoryDetector
             'reasons' => $match['reasons'] ?? [],
             'php' => $match['php'] ?? null,
             'healthPath' => $match['healthPath'] ?? null,
+            'composeFile' => $match['composeFile'] ?? null,
+            'composePort' => $match['composePort'] ?? null,
         ];
+    }
+
+    /**
+     * @param  list<string>  $files
+     * @param  array<string, string|null>  $contents
+     * @return array{template: string, framework: string, type: string, reasons: list<string>, php?: string, healthPath?: string, composeFile?: string, composePort?: int}|null
+     */
+    public function match(array $files, array $contents): ?array
+    {
+        $compose = null;
+        foreach (self::COMPOSE_FILES as $file) {
+            if (in_array($file, $files, true)) {
+                $compose = ['file' => $file, 'body' => (string) ($contents[$file] ?? '')];
+                break;
+            }
+        }
+        // Laravel Sail's file only works on a laptop, so it's never the way to deploy.
+        if ($compose !== null && str_contains($compose['body'], 'laravel/sail')) {
+            $compose = null;
+        }
+
+        // A Compose file that builds this code is how it's meant to run. One that only
+        // starts images (a database next to the app) is usually for development, so the
+        // framework wins, unless nothing else is recognised.
+        if ($compose !== null && preg_match('/^\s*build:/m', $compose['body']) === 1) {
+            return $this->composeFound($compose['file'], $compose['body'], 'It builds this code, so it runs the whole stack.');
+        }
+        $match = $this->framework($files, $contents);
+        if ($compose === null) {
+            return $match;
+        }
+        if ($match === null) {
+            return $this->composeFound($compose['file'], $compose['body'], 'It runs as a stack, like docker compose up.');
+        }
+        $match['reasons'][] = "There’s a {$compose['file']} too. To run that instead, choose Your own Docker Compose file.";
+        $match['composeFile'] = $compose['file'];
+        if (($port = self::publishedPort($compose['body'])) !== null) {
+            $match['composePort'] = $port;
+        }
+
+        return $match;
+    }
+
+    /** @return array{template: string, framework: string, type: string, reasons: list<string>, composeFile: string, composePort?: int} */
+    private function composeFound(string $file, string $body, string $why): array
+    {
+        $found = [...$this->found('compose-file', 'Docker Compose', self::TYPE_APP, "Has a {$file}. {$why}"), 'composeFile' => $file];
+        $port = self::publishedPort($body);
+        if ($port !== null) {
+            $found['composePort'] = $port;
+            $found['reasons'][] = "It publishes port {$port}, so that’s the one checked and served.";
+        } else {
+            $found['reasons'][] = 'It doesn’t publish a port. Publish the web one (like "127.0.0.1:8080:80") to give it a domain.';
+        }
+
+        return $found;
+    }
+
+    // Databases, caches and mail answer on these, not HTTP, so they're never the one to check.
+    private const NOT_WEB_PORTS = [22, 25, 465, 587, 1433, 1521, 3306, 5432, 5672, 6379, 11211, 27017];
+
+    /** The first web port a Compose file publishes on the machine, from "8080:80", "127.0.0.1:8080:80", "${PORT:-8080}:80" or published: 8080. */
+    public static function publishedPort(string $compose): ?int
+    {
+        $host = '(?:(?:\d{1,3}\.){3}\d{1,3}:|\[[0-9a-fA-F:]+\]:)?';
+        $port = '(?:(\d{1,5})|\$\{[A-Za-z_][A-Za-z0-9_]*:?-(\d{1,5})\})';
+        $found = [];
+        preg_match_all('/^\s*-\s*["\']?'.$host.$port.':\d{1,5}(?:\/(?:tcp|udp))?["\']?\s*(?:#.*)?$/m', $compose, $short, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+        foreach ($short as $m) {
+            $found[$m[0][1]] = (int) (($m[1][0] ?? '') !== '' ? $m[1][0] : ($m[2][0] ?? ''));
+        }
+        preg_match_all('/^\s*published:\s*["\']?(\d{1,5})["\']?\s*(?:#.*)?$/m', $compose, $long, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+        foreach ($long as $m) {
+            $found[$m[0][1]] = (int) $m[1][0];
+        }
+        ksort($found);
+        foreach ($found as $candidate) {
+            if ($candidate >= 1 && $candidate <= 65535 && ! in_array($candidate, self::NOT_WEB_PORTS, true)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -74,7 +161,7 @@ class RepositoryDetector
      * @param  array<string, string|null>  $contents
      * @return array{template: string, framework: string, type: string, reasons: list<string>, php?: string, healthPath?: string}|null
      */
-    public function match(array $files, array $contents): ?array
+    private function framework(array $files, array $contents): ?array
     {
         $has = fn (string $file) => in_array($file, $files, true);
         $hasAny = fn (string $pattern) => preg_grep($pattern, $files) !== [];

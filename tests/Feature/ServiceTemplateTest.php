@@ -37,14 +37,19 @@ function sentJob(): array
     return json_decode($command->body(), true)['command']['job'];
 }
 
-test('the catalog has four hundred and forty-seven valid templates and every compose variable is provided', function () {
+test('the catalog has four hundred and forty-eight valid templates and every compose variable is provided', function () {
     $templates = app(ServiceTemplateCatalog::class)->all();
 
-    expect($templates)->toHaveCount(447);
+    expect($templates)->toHaveCount(448);
 
     foreach ($templates as $template) {
         expect(in_array($template->category, ServiceTemplate::CATEGORIES, true))->toBeTrue();
 
+        if ($template->composeFromRepo()) {
+            expect($template->isApp())->toBeTrue()->and($template->dockerfile)->toBeNull();
+
+            continue;
+        }
         if ($template->isApp()) {
             expect($template->dockerfile)->not->toBeNull();
 

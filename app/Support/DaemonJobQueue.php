@@ -331,6 +331,12 @@ class DaemonJobQueue
         return self::atLeast($machine, (string) config('daemon.tunnel_since'));
     }
 
+    // From this version a stack runs from a folder that outlives the deploy, so a repository's ./paths keep working.
+    public static function canComposeFromRepo(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.compose_repo_since'));
+    }
+
     public static function canFollowPolicy(Machine $machine): bool
     {
         return self::atLeast($machine, (string) config('daemon.policy_since'));

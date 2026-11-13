@@ -26,7 +26,7 @@ final class ListTemplates extends Tool
     public function description(): string
     {
         return 'Lists the service templates deploy_template can deploy, as the dashboard’s “Deploy service” library shows them. '
-            .'kind "stack" is ready-made (a database, a self-hosted app, a game server: no code needed); kind "app" builds the person’s own public Git repository with a Dockerfile ServerOS provides (Laravel, Next.js, Django…; "custom-dockerfile" builds the repository’s own Dockerfile). '
+            .'kind "stack" is ready-made (a database, a self-hosted app, a game server: no code needed); kind "app" builds the person’s own public Git repository with a Dockerfile ServerOS provides (Laravel, Next.js, Django…; "custom-dockerfile" builds the repository’s own Dockerfile, and "compose-file" runs the repository’s own Compose file as one stack). '
             .'Each row has the key to deploy, its category, whether it’s a web service (web services can get a domain with automatic HTTPS), the port it listens on and whether that can be changed, and `needs`: what deploy_template must be given beyond a machine. '
             .'Filter with query (words matched against name, key, description and category, like the dialog’s search), category or kind. '
             .'Pass template (a key) to get one template in full: every setting with its label, hint and default, which are secrets, which are generated when left empty (passwords, keys: shown once after deploying), which must be accepted (a licence: ask the person, never accept for them), the health check path and notes. '

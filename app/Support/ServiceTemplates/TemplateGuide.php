@@ -28,6 +28,7 @@ final class TemplateGuide
         'static-site' => 'How to deploy a static site on your own server',
         'vite-spa' => 'How to deploy a Vite app on your own server',
         'custom-dockerfile' => 'How to deploy any Dockerfile on your own server',
+        'compose-file' => 'How to deploy a Docker Compose file on your own server',
     ];
 
     private const BRIDGE = '172.17.0.1';
@@ -93,6 +94,9 @@ final class TemplateGuide
     {
         $name = $this->template->name;
 
+        if ($this->template->composeFromRepo()) {
+            return 'Deploy the Docker Compose file in your repository to a VPS you rent: how ServerOS runs it from GitHub, gives it a domain with HTTPS, and how to run it by hand.';
+        }
         if ($this->template->isApp()) {
             return "Deploy your {$name} app to a VPS you rent: the Dockerfile it needs, the settings, and how to run it with ServerOS from GitHub or by hand with Docker.";
         }
@@ -146,7 +150,9 @@ final class TemplateGuide
         if ($this->template->isApp()) {
             return [
                 $connect,
-                ['Deploy from GitHub', "Open the machine, press Deploy service and choose Custom. Paste your repository's link. ServerOS reads the latest commit and works out it's {$name}."],
+                ['Deploy from GitHub', $this->template->composeFromRepo()
+                    ? "Open the machine, press Deploy service and choose Custom. Paste your repository's link. ServerOS reads the latest commit, finds the Compose file and the port it publishes."
+                    : "Open the machine, press Deploy service and choose Custom. Paste your repository's link. ServerOS reads the latest commit and works out it's {$name}."],
                 ['Check the settings', $this->settingsSentence()],
                 ['Add a domain', 'Type the domain you want. ServerOS shows the DNS record to add and sets up HTTPS with Let\'s Encrypt once it points at the machine.'],
                 ['Deploy', 'ServerOS builds it, starts it and checks it answers before sending traffic to it. Turn on deploy on push and every push to your branch goes live the same way.'],
@@ -190,6 +196,9 @@ final class TemplateGuide
 
     private function byHand(): string
     {
+        if ($this->template->composeFromRepo()) {
+            return 'Install Docker, clone your repository on the server, put your settings in a .env file beside the Compose file, and start it with Docker Compose. Publish the web port on 127.0.0.1 and put a reverse proxy like Caddy or nginx in front of it for your domain and HTTPS.';
+        }
         if ($this->template->isApp()) {
             return 'Add this Dockerfile to your project, build the image on the server, and run it with your settings in a .env file. It listens on the machine only, so put a reverse proxy like Caddy or nginx in front of it for your domain and HTTPS.';
         }
@@ -304,6 +313,20 @@ final class TemplateGuide
         $slug = $this->template->slug;
         $port = $this->template->port;
 
+        if ($this->template->composeFromRepo()) {
+            return implode("\n", [
+                '# Docker first, if the server hasn\'t got it',
+                'curl -fsSL https://get.docker.com | sudo sh',
+                '',
+                'git clone https://github.com/you/app.git && cd app',
+                '# Your settings in .env, then',
+                'docker compose up -d --build',
+                'docker compose logs -f',
+                '',
+                '# HTTPS on your domain, with Caddy',
+                "caddy reverse-proxy --from app.example.com --to 127.0.0.1:{$port}",
+            ])."\n";
+        }
         if ($this->template->isApp()) {
             return implode("\n", [
                 '# In your project, with the Dockerfile and .env beside your code',
@@ -352,9 +375,14 @@ final class TemplateGuide
             $faq[] = ["Where does {$name} keep its data?", 'In Docker volumes ('.$list.'), so it survives restarts, updates and the container being recreated. `docker volume ls` lists them. Removing the stack with `docker compose down -v` deletes them, so leave out `-v`.'];
         }
 
-        $faq[] = $this->template->isApp()
-            ? ['How do I update it?', 'Push to your repository. With deploy on push turned on, ServerOS builds the new commit, checks it answers and only then switches traffic to it, so a broken build never goes live. By hand, pull your code, build the image again and recreate the container.']
-            : ["How do I update {$name}?", 'Run `docker compose pull` then `docker compose up -d` in its folder. If the image is pinned to a version in the Compose file, change the tag first. ServerOS takes a snapshot of a service\'s data before each deploy, so an update that goes wrong can be undone.'];
+        if ($this->template->composeFromRepo()) {
+            $faq[] = ['Do my containers get the settings?', 'Settings you add in the deploy dialog fill in ${NAME} in the Compose file, the same as a .env file beside it. Pass them on under a service\'s environment, like `DATABASE_URL: ${DATABASE_URL}`.'];
+        }
+        $faq[] = match (true) {
+            $this->template->composeFromRepo() => ['How do I update it?', 'Push to your repository. With deploy on push turned on, ServerOS fetches the new commit and runs docker compose up again, which recreates the containers that changed, so they restart briefly. By hand, run `git pull` then `docker compose up -d --build`.'],
+            $this->template->isApp() => ['How do I update it?', 'Push to your repository. With deploy on push turned on, ServerOS builds the new commit, checks it answers and only then switches traffic to it, so a broken build never goes live. By hand, pull your code, build the image again and recreate the container.'],
+            default => ["How do I update {$name}?", 'Run `docker compose pull` then `docker compose up -d` in its folder. If the image is pinned to a version in the Compose file, change the tag first. ServerOS takes a snapshot of a service\'s data before each deploy, so an update that goes wrong can be undone.'],
+        };
 
         if ($volumes !== []) {
             $faq[] = ["How do I back up {$name}?", 'Copy its volumes somewhere other than the server, on a schedule. ServerOS Backups do that for every service it runs: daily or weekly, to an S3 bucket or another of your machines, with restores from the panel.'];

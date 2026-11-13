@@ -3533,5 +3533,11 @@
     "Workspaces keep machines and people separate, e.g. one per client or company.": "Los workspaces separan máquinas y personas, por ejemplo uno por cliente o empresa.",
     "For individual developers.": "Para desarrolladores individuales.",
     "For small teams and projects.": "Para equipos y proyectos pequeños.",
-    "For agencies and small MSPs.": "Para agencias y MSP pequeños."
+    "For agencies and small MSPs.": "Para agencias y MSP pequeños.",
+    "Command copied": "Comando copiado",
+    "To update now, run this on the server as root. It also turns on the Update button here, which otherwise turns on by itself after the nightly backup.": "Para actualizar ahora, ejecuta esto en el servidor como root. También activa aquí el botón Actualizar, que si no se activa solo después de la copia de seguridad nocturna.",
+    "Port it publishes on this machine": "Puerto que publica en esta máquina",
+    "Compose file": "Archivo Compose",
+    "Its path in the repository. Every service in it runs as one stack.": "Su ruta en el repositorio. Todos sus servicios se ejecutan como un solo stack.",
+    "They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.": "Rellenan ${NAME} en el archivo Compose. Pásalas a un servicio en su environment, como DATABASE_URL: ${DATABASE_URL}."
 }

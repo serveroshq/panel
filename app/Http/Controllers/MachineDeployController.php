@@ -70,6 +70,7 @@ class MachineDeployController extends Controller
             DeployRequest::assertPublicRepo($data['repo']);
         }
         DeployRequest::assertWildcard($machine, $template->web ? ($data['domain'] ?? null) : null, (bool) ($data['wildcard'] ?? false));
+        DeployRequest::assertComposeFromRepo($machine, $template);
 
         $deployment = new TemplateDeployment($template, $machine, $data);
         $response = $this->dispatch($request, $machine, $queue, $deployment->job());

@@ -54,6 +54,7 @@ final class DeployTemplate extends Tool
             'ref' => Schema::string('App templates only: the branch, tag or full commit to deploy. Defaults to the default branch’s latest commit.', maxLength: 255),
             'port' => Schema::integer('The port it listens on, for templates whose port can change (list_templates says portEditable). Defaults to the template’s.', 1, 65535),
             'health_path' => Schema::string('App templates only: the path that answers 200 once the app is up, like /health. Defaults to the template’s (/up for Laravel, which only Laravel 11 and newer have: detect_repository says which to use).', maxLength: 200),
+            'compose_file' => Schema::string('compose-file only: the Compose file’s path in the repository, like docker/compose.prod.yaml. Defaults to compose.yaml; detect_repository returns the one it found.', maxLength: 200),
             'php' => Schema::string('PHP templates only (laravel, php, symfony…): the PHP version to build on. Defaults to 8.4; an older app needs the version detect_repository suggests, or it can crash on start.', RepositoryDetector::PHP_VERSIONS),
             'domain' => Schema::string('Web templates only: the domain to serve it at, like app.example.com. Leave out for none.', maxLength: 253),
             'wildcard' => Schema::boolean('Also serve every subdomain one level under the domain (*.domain), each getting its own certificate the first time it’s visited. Needs domain, and a wildcard DNS record (*.domain) pointing at the machine.'),
@@ -85,6 +86,7 @@ final class DeployTemplate extends Tool
             'port' => ['sometimes', 'nullable', 'integer', 'between:1,65535'],
             'health_path' => ['sometimes', 'nullable', 'string', 'max:200'],
             'php' => ['sometimes', 'nullable', 'string', 'max:10'],
+            'compose_file' => ['sometimes', 'nullable', 'string', 'max:200'],
             'domain' => ['sometimes', 'nullable', 'string', 'max:300'],
             'wildcard' => ['sometimes', 'boolean'],
             'env' => ['sometimes', 'nullable', 'array'],
@@ -124,6 +126,7 @@ final class DeployTemplate extends Tool
             'repo' => $repo,
             'health_path' => $args['health_path'] ?? null,
             'php' => $args['php'] ?? null,
+            'compose_file' => $args['compose_file'] ?? null,
             'domain' => DeployRequest::bareDomain($args['domain'] ?? null),
             'wildcard' => ($args['wildcard'] ?? false) ? true : null,
             'env' => $env,
@@ -149,6 +152,7 @@ final class DeployTemplate extends Tool
         $deployment = Deploys::check(fn () => new TemplateDeployment($template, $machine, $data));
         Deploys::check(fn () => DeployRequest::assertDocker($machine, $context->user));
         Deploys::check(fn () => DeployRequest::assertWildcard($machine, $template->web ? ($data['domain'] ?? null) : null, (bool) ($data['wildcard'] ?? false)));
+        Deploys::check(fn () => DeployRequest::assertComposeFromRepo($machine, $template));
 
         $job = $this->deploys->deploy($context, $machine, $deployment->job());
         AppInstall::record($machine, $context->user, $template->slug, $job->id, 'mcp');
@@ -180,6 +184,9 @@ final class DeployTemplate extends Tool
     {
         if (filled($args['php'] ?? null) && ! TemplateDeployment::usesPhp($template)) {
             throw new ToolError("{$template->name} doesn’t run on PHP: leave out php.");
+        }
+        if (filled($args['compose_file'] ?? null) && ! $template->composeFromRepo()) {
+            throw new ToolError("{$template->name} doesn’t run a Compose file from the repository: leave out compose_file, or use compose-file.");
         }
         if (! $template->isApp()) {
             foreach (['repo', 'ref', 'health_path'] as $key) {
@@ -253,7 +260,7 @@ final class DeployTemplate extends Tool
 
     public static function defaultName(ServiceTemplate $template, ?string $repo): string
     {
-        $fromTemplate = substr((string) preg_replace('/[^a-z0-9-]/', '-', $template->slug === 'custom-dockerfile' ? 'app' : $template->slug), 0, 63);
+        $fromTemplate = substr((string) preg_replace('/[^a-z0-9-]/', '-', $template->slug === 'custom-dockerfile' || $template->composeFromRepo() ? 'app' : $template->slug), 0, 63);
 
         return $repo !== null && $repo !== '' ? (DetectRepository::serviceName($repo) ?: $fromTemplate) : $fromTemplate;
     }

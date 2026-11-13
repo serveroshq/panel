@@ -49,6 +49,7 @@ export type ServiceTemplate = {
     web: boolean;
     portEditable: boolean;
     health: string | null;
+    compose?: string | null;
     notes: string | null;
     env: TemplateField[];
 };
@@ -108,6 +109,8 @@ type Detection = {
     branch: string;
     commit: string;
     reasons: string[];
+    composeFile?: string | null;
+    composePort?: number | null;
     upload?: { filename: string; files: number; expiresAt: string };
 };
 
@@ -230,6 +233,16 @@ function continueCustom(): void {
         commit: detection.value.commit,
     });
 
+    if (customTemplate.value.compose) {
+        form.value.compose_file =
+            detection.value.composeFile ?? customTemplate.value.compose;
+        form.value.port = detection.value.composePort ?? form.value.port;
+        suggested.value = {
+            service: form.value.service,
+            port: form.value.port,
+        };
+    }
+
     const upload = detection.value.upload;
     if (upload) {
         const name = repoServiceName(upload.filename.replace(/\.zip$/i, ''));
@@ -338,6 +351,7 @@ const form = ref({
     repo: '',
     commit: '',
     health_path: '',
+    compose_file: '',
     domain: '',
     wildcard: false,
     env: {} as Record<string, string | boolean>,
@@ -454,7 +468,10 @@ function repoServiceName(repo: string): string {
 }
 
 function serviceNameFor(template: ServiceTemplate): string {
-    const name = template.slug === 'custom-dockerfile' ? 'app' : template.slug;
+    const name =
+        template.slug === 'custom-dockerfile' || template.compose
+            ? 'app'
+            : template.slug;
 
     return name.replace(/[^a-z0-9-]/g, '-').slice(0, 63);
 }
@@ -481,6 +498,7 @@ function choose(
         repo: source?.repo ?? '',
         commit: source?.commit ?? '',
         health_path: template.health ?? '/',
+        compose_file: template.compose ?? '',
         domain: '',
         wildcard: false,
         env: Object.fromEntries(
@@ -635,6 +653,9 @@ async function deploy(): Promise<void> {
                 commit: template.kind === 'app' ? form.value.commit : null,
                 health_path:
                     template.kind === 'app' ? form.value.health_path : null,
+                compose_file: template.compose
+                    ? form.value.compose_file || null
+                    : null,
                 domain:
                     template.web && form.value.domain
                         ? bareDomain(form.value.domain)
@@ -1333,11 +1354,17 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                             :class="labelClass"
                                         >
                                             {{
-                                                selected.kind === 'app'
+                                                selected.compose
                                                     ? $t(
-                                                          'Port your app listens on',
+                                                          'Port it publishes on this machine',
                                                       )
-                                                    : $t('Port on this machine')
+                                                    : selected.kind === 'app'
+                                                      ? $t(
+                                                            'Port your app listens on',
+                                                        )
+                                                      : $t(
+                                                            'Port on this machine',
+                                                        )
                                             }}
                                         </label>
                                         <Input
@@ -1395,6 +1422,37 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                         <InputError
                                             :message="errorFor('repo')"
                                         />
+                                    </div>
+                                    <div
+                                        v-if="selected.compose"
+                                        class="flex flex-col gap-1.5"
+                                    >
+                                        <label
+                                            for="deploy-compose-file"
+                                            :class="labelClass"
+                                        >
+                                            {{ ' ' + $t('Compose file') + ' ' }}
+                                        </label>
+                                        <Input
+                                            id="deploy-compose-file"
+                                            v-model.trim="form.compose_file"
+                                            :placeholder="selected.compose"
+                                            class="font-ui-mono"
+                                        />
+                                        <InputError
+                                            :message="errorFor('compose_file')"
+                                        />
+                                        <p
+                                            class="text-xs/4 text-(--ds-text-faint)"
+                                        >
+                                            {{
+                                                ' ' +
+                                                $t(
+                                                    'Its path in the repository. Every service in it runs as one stack.',
+                                                ) +
+                                                ' '
+                                            }}
+                                        </p>
                                     </div>
                                     <div
                                         class="grid gap-4"
@@ -1853,7 +1911,19 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                             class="rounded-md border border-input bg-transparent px-3 py-2 font-ui-mono text-xs/5 text-(--ds-text) outline-none placeholder:text-(--ds-text-faint) focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
                                         />
                                         <p
-                                            v-if="selected?.kind === 'app'"
+                                            v-if="selected?.compose"
+                                            class="text-xs/4 text-(--ds-text-faint)"
+                                        >
+                                            {{
+                                                ' ' +
+                                                $t(
+                                                    'They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.',
+                                                ) +
+                                                ' '
+                                            }}
+                                        </p>
+                                        <p
+                                            v-else-if="selected?.kind === 'app'"
                                             class="text-xs/4 text-(--ds-text-faint)"
                                         >
                                             {{

@@ -58,13 +58,26 @@ final class TemplateDeployment
             'repo' => $template->isApp() ? $this->input['repo'] : '',
             'commit' => $this->commit(),
             'files' => (object) [...$this->files(), ...$this->buildEnvFile()],
-            'compose_file' => $template->isApp() ? null : 'compose.yaml',
-            'dockerfile' => $template->isApp() ? $template->dockerfile : null,
+            'compose_file' => $this->composeFile(),
+            'dockerfile' => $template->isApp() && ! $template->composeFromRepo() ? $template->dockerfile : null,
             'env' => (object) $this->env,
             'health' => $this->health(),
             'domains' => DeployRequest::domains($this->domain(), (bool) ($this->input['wildcard'] ?? false)),
             'port' => $this->port,
         ];
+    }
+
+    public function composeFile(): ?string
+    {
+        if (! $this->template->isApp()) {
+            return 'compose.yaml';
+        }
+        if (! $this->template->composeFromRepo()) {
+            return null;
+        }
+        $given = $this->input['compose_file'] ?? null;
+
+        return is_string($given) && $given !== '' ? $given : $this->template->compose;
     }
 
     /** @return array<string, string> */
@@ -88,7 +101,7 @@ final class TemplateDeployment
     /** @return array<string, string> */
     private function buildEnvFile(): array
     {
-        if (! $this->template->isApp()) {
+        if (! $this->template->isApp() || $this->template->composeFromRepo()) {
             return [];
         }
 

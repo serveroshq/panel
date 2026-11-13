@@ -19,6 +19,9 @@ final class DeployRequest
 
     public const COMMIT_PATTERN = '/^[a-fA-F0-9]{40}$/';
 
+    // A Compose file inside the repository: no leading slash, and no part starting with a dot, so never outside it.
+    public const COMPOSE_FILE_PATTERN = '#^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*\.ya?ml$#';
+
     public static function bareDomain(mixed $domain): mixed
     {
         return is_string($domain)
@@ -55,7 +58,15 @@ final class DeployRequest
             'env.*' => ['nullable', 'string', 'max:2000'],
             'extra_env' => ['nullable', 'string', 'max:10000'],
             'php' => ['nullable', 'string', Rule::in(RepositoryDetector::PHP_VERSIONS)],
+            'compose_file' => [$template->composeFromRepo() ? 'nullable' : 'prohibited', 'string', 'max:200', 'regex:'.self::COMPOSE_FILE_PATTERN],
         ];
+    }
+
+    public static function assertComposeFromRepo(Machine $machine, ServiceTemplate $template): void
+    {
+        if ($template->composeFromRepo() && ! DaemonJobQueue::canComposeFromRepo($machine)) {
+            throw ValidationException::withMessages(['form' => $machine->name.'’s daemon is too old to run a Compose file from a repository. It updates itself, or run “sudo serverosd update” on the server, then deploy again.']);
+        }
     }
 
     /** @return list<string> */
