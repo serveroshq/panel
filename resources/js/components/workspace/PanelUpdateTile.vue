@@ -4,10 +4,12 @@ import { trans } from 'laravel-vue-i18n';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
 import AppButton from '@/components/workspace/AppButton.vue';
+import ShellCommand from '@/components/workspace/ShellCommand.vue';
 import Tile from '@/components/workspace/Tile.vue';
 import { appButtonClasses } from '@/lib/appButton';
-import { SolarDownload as Download } from '@/lib/solarIcons';
+import { SolarCopy as Copy, SolarDownload as Download } from '@/lib/solarIcons';
 import { timeAgo } from '@/lib/timeAgo';
+import { toast } from '@/lib/toast';
 
 export type PanelUpdateState = {
     current: string;
@@ -57,6 +59,29 @@ const canUpdate = computed(
         state.value.updater &&
         !pending.value,
 );
+
+// The updater runs from the server's cron. An install upgraded from before
+// 1.4.0 gets it after its nightly backup, or straight away with this.
+const UPDATE_COMMAND = 'serveros-panel upgrade && serveros-panel schedule';
+
+const needsUpdater = computed(
+    () =>
+        state.value.available &&
+        state.value.docker &&
+        !state.value.updater &&
+        !pending.value,
+);
+
+async function copyCommand(): Promise<void> {
+    try {
+        await navigator.clipboard.writeText(UPDATE_COMMAND);
+        toast.success(trans('Command copied'));
+    } catch {
+        toast.error(
+            trans('Could not copy. Select the command and copy it manually.'),
+        );
+    }
+}
 
 const headline = computed(() => {
     const { current, latest, update } = state.value;
@@ -118,7 +143,7 @@ const details = computed(() => {
     } else if (state.value.available && !updater) {
         lines.push(
             trans(
-                'To update from here, run serveros-panel upgrade && serveros-panel schedule on the server once.',
+                'To update now, run this on the server as root. It also turns on the Update button here, which otherwise turns on by itself after the nightly backup.',
             ),
         );
     } else if (state.value.available) {
@@ -240,6 +265,15 @@ onBeforeUnmount(() => clearInterval(timer));
                     {{ $t('Update') }}
                 </AppButton>
                 <AppButton
+                    v-else-if="needsUpdater"
+                    size="sm"
+                    variant="primary"
+                    @click="copyCommand"
+                >
+                    <Copy class="size-3.5" />
+                    {{ $t('Copy command') }}
+                </AppButton>
+                <AppButton
                     v-else-if="state.current !== 'dev'"
                     size="sm"
                     :disabled="busy"
@@ -248,6 +282,12 @@ onBeforeUnmount(() => clearInterval(timer));
                     {{ $t('Check now') }}
                 </AppButton>
             </div>
+        </div>
+        <div
+            v-if="needsUpdater"
+            class="mt-3 rounded-[10px] border border-(--ds-border) bg-(--ds-code) px-4 py-3"
+        >
+            <ShellCommand :command="UPDATE_COMMAND" />
         </div>
         <InputError :message="error ?? undefined" class="mt-3" />
     </Tile>
