@@ -8,6 +8,7 @@ use App\Models\MachinePolicy;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Audit\AuditContext;
+use App\Support\PanelCa;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -37,6 +38,10 @@ final class CreateJoinCommand
         $releases = config('daemon.releases_url');
         if (! filter_var($installer, FILTER_VALIDATE_URL) || ! filter_var($panel, FILTER_VALIDATE_URL) || ! filter_var($releases, FILTER_VALIDATE_URL)) {
             throw new RuntimeException('The daemon installer is not configured.');
+        }
+        $ca = PanelCa::pem();
+        if ($ca === null && PanelCa::configured()) {
+            throw new RuntimeException('The panel’s own certificate isn’t ready yet. Try again in a minute.');
         }
         foreach ([$policy, $group] as $chosen) {
             if ($chosen !== null && $chosen->workspace_id !== $workspace->id) {
@@ -87,8 +92,20 @@ final class CreateJoinCommand
         }
         [$token, $enrolment] = $created;
 
+        $args = '--token='.escapeshellarg($token).' --panel='.escapeshellarg($panel).' --releases='.escapeshellarg($releases);
+        $command = 'curl -fsSL '.escapeshellarg($installer).' | sudo bash -s -- '.$args;
+        if ($ca !== null) {
+            // No public certificate to check the panel against: the command
+            // fetches its CA, stops unless it matches this SHA-256, and only
+            // then trusts it, for the script and (through it) the daemon.
+            $hash = hash('sha256', $ca);
+            $command = 'curl -fsSLk -o serveros-panel-ca.crt '.escapeshellarg(rtrim($panel, '/').'/panel-ca.crt')
+                .' && echo '.escapeshellarg($hash.'  serveros-panel-ca.crt').' | sha256sum -c'
+                .' && curl -fsSL --cacert serveros-panel-ca.crt '.escapeshellarg($installer).' | sudo bash -s -- '.$args.' --panel-ca-sha256='.$hash;
+        }
+
         return [
-            'command' => 'curl -fsSL '.escapeshellarg($installer).' | sudo bash -s -- --token='.escapeshellarg($token).' --panel='.escapeshellarg($panel).' --releases='.escapeshellarg($releases),
+            'command' => $command,
             'token' => $token,
             'enrolment' => $enrolment,
         ];

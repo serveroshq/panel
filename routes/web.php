@@ -84,6 +84,7 @@ use App\Models\Workspace;
 use App\Support\Edition;
 use App\Support\Extensions\Extensions;
 use App\Support\Licensing\CommunityLicense;
+use App\Support\PanelCa;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -373,6 +374,14 @@ if (app(Extensions::class)->marketingSite() === null) {
 }
 
 Route::get('install.sh', DaemonInstallScriptController::class)->middleware('throttle:60,1')->name('daemon.install-script');
+
+// The install command checks this against its SHA-256 before trusting it.
+Route::get('panel-ca.crt', function () {
+    $pem = PanelCa::pem();
+    abort_if($pem === null, 404);
+
+    return response($pem, 200, ['Content-Type' => 'application/x-x509-ca-cert', 'X-Content-Type-Options' => 'nosniff']);
+})->middleware('throttle:60,1')->name('daemon.panel-ca');
 
 Route::get('robots.txt', RobotsTxtController::class)->middleware('throttle:60,1')->name('robots');
 
