@@ -123,20 +123,21 @@ const event = computed(
 function save(options: { enabled?: boolean; after?: () => void } = {}): void {
     if (!props.canManage) return;
     saving.value = true;
+    const graph = editor.serialise();
     router.put(
         `/workflows/${props.workflow.id}`,
         {
             name: name.value.trim() || trans('Untitled workflow'),
             description: props.workflow.description,
             enabled: options.enabled ?? enabled.value,
-            graph: editor.serialise(),
+            graph,
         },
         {
             preserveState: true,
             preserveScroll: true,
             only: ['workflow', 'problems', 'errors', 'flash'],
             onSuccess: () => {
-                editor.markSaved();
+                editor.markSaved(graph);
                 enabled.value = options.enabled ?? enabled.value;
                 options.after?.();
             },
@@ -228,7 +229,12 @@ function showEditor(): void {
     if (mode.value === 'edit') return;
     mode.value = 'edit';
     editor.run.value = null;
-    editor.replace(draft ?? props.workflow.graph);
+    if (draft) {
+        editor.replace(draft);
+    } else {
+        editor.replace(props.workflow.graph);
+        editor.markSaved(props.workflow.graph);
+    }
     draft = null;
     if (props.run)
         router.get(
