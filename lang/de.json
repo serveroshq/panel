@@ -3155,6 +3155,7 @@
     "Edit details of :selectedCount selected": "Details von :selectedCount ausgewählten bearbeiten",
     "Provider, region, tier and labels": "Anbieter, Region, Stufe und Labels",
     "Details of :count machines": "Details von :count Maschinen",
+    "Details of 1 machine": "Details von 1 Maschine",
     "What you fill in is set on every one of them. What you leave empty stays as each has it.": "Was du ausfüllst, wird auf allen gesetzt. Was du leer lässt, bleibt, wie es jede hat.",
     "OVH": "OVH",
     "Add labels": "Labels hinzufügen",

@@ -921,9 +921,11 @@ function formatBytes(bytes: number | undefined): string {
                     <div class="flex flex-col gap-1 px-5 pt-5">
                         <DialogTitle class="text-base/6 font-semibold">
                             {{
-                                $t('Details of :count machines', {
-                                    count: String(clearTargets.length),
-                                })
+                                clearTargets.length === 1
+                                    ? $t('Details of 1 machine')
+                                    : $t('Details of :count machines', {
+                                          count: String(clearTargets.length),
+                                      })
                             }}
                         </DialogTitle>
                         <DialogDescription
