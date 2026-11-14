@@ -37,9 +37,19 @@ final class DatabaseConsole
             return null;
         }
 
+        // The image's own name too, as the daemon checks it: older daemons
+        // also marked tools named after a database (postgrest) as one.
+        $image = (string) ($service['details']['image'] ?? '');
+        $name = strtolower(preg_split('/[:@]/', basename($image))[0] ?? '');
+        $named = match (true) {
+            in_array($name, ['postgres', 'postgresql', 'postgis', 'pgvector', 'timescaledb', 'timescaledb-ha'], true) => 'postgres',
+            in_array($name, ['mysql', 'mysql-server', 'mariadb', 'percona', 'percona-server'], true) => 'mysql',
+            default => null,
+        };
+
         return match ($service['details']['backup'] ?? null) {
-            'pg_dumpall' => 'postgres',
-            'mysqldump' => 'mysql',
+            'pg_dumpall' => $named === 'postgres' || $image === '' ? 'postgres' : null,
+            'mysqldump' => $named === 'mysql' || $image === '' ? 'mysql' : null,
             default => null,
         };
     }
