@@ -12,6 +12,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -71,10 +72,11 @@ class MachineDataController extends Controller
             'skipped_services' => count($services),
         ]);
 
-        $lines = number_format($result['counts'][MachineDataEraser::LOGS] ?? 0);
+        $count = $result['counts'][MachineDataEraser::LOGS] ?? 0;
+        $lines = number_format($count).' '.Str::plural('line', $count);
         Inertia::flash('toast', ['type' => 'success', 'message' => $result['queued']
-            ? "Deleting {$lines} lines from skipped services on {$machine->name}. Its settings show when it’s done."
-            : "Deleted {$lines} lines from skipped services on {$machine->name}."]);
+            ? "Deleting {$lines} from skipped services on {$machine->name}. Its settings show when it’s done."
+            : "Deleted {$lines} from skipped services on {$machine->name}."]);
 
         return back();
     }

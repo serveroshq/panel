@@ -157,6 +157,19 @@ test('deleting skipped services removes only their lines and counts on that mach
     expect(MachineDataEraser::status($web))->toMatchArray(['state' => 'done', 'kinds' => ['logs'], 'counts' => ['logs' => 38], 'services' => ['ptero-1', 'wings']]);
 });
 
+test('deleting one skipped service log line uses a singular toast', function () {
+    $workspace = Workspace::factory()->onPlan(Plan::Pro)->create();
+    $machine = offerMachine($workspace);
+    $machine->forceFill(['log_skip' => ['services' => ['wings'], 'patterns' => []]])->save();
+    offerLogs($machine, 'wings', 1);
+
+    $this->actingAs($workspace->owner)
+        ->post(offerUrl($workspace, $machine, 'collected-data/skipped-services'), ['services' => ['wings']])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast.message', 'Deleted 1 line from skipped services on web-1.');
+});
+
 test('services the machine doesn’t skip can’t be deleted this way', function () {
     $workspace = Workspace::factory()->onPlan(Plan::Pro)->create();
     $machine = offerMachine($workspace);
