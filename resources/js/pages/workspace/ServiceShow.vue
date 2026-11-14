@@ -37,6 +37,7 @@ import { toast } from '@/lib/toast';
 import InputError from '@/components/InputError.vue';
 import AppVariablesDialog from '@/components/machines/AppVariablesDialog.vue';
 import CloneServiceDialog from '@/components/machines/CloneServiceDialog.vue';
+import DatabaseBrowser from '@/components/machines/DatabaseBrowser.vue';
 import FileBrowser from '@/components/machines/FileBrowser.vue';
 import type { FilePlace } from '@/components/machines/FileBrowser.vue';
 import JobStatusBadge from '@/components/machines/JobStatusBadge.vue';
@@ -111,6 +112,7 @@ const props = defineProps<{
     stats: ServiceStat | null;
     removable: boolean;
     inspect: { available: boolean } | null;
+    database: { engine: 'postgres' | 'mysql' } | null;
     clone: { unavailable: string | null; name: string; port: number } | null;
     links: string[];
     range: string;
@@ -232,11 +234,20 @@ const tab = usePathTab(serviceUrl.value, [
     'logs',
     'console',
     'files',
+    'database',
     'details',
 ] as const);
 
 const tabs = computed(() =>
-    (['overview', 'logs', 'files', 'details'] as const).map((value) => ({
+    (
+        [
+            'overview',
+            'logs',
+            'files',
+            ...(props.database ? (['database'] as const) : []),
+            'details',
+        ] as const
+    ).map((value) => ({
         value,
         label: value[0].toUpperCase() + value.slice(1),
         current: tab.value === value,
@@ -2049,6 +2060,15 @@ const focusRing =
                           'ServerOS can open the files of services it deployed or adopted. Adopt this service to browse its files here.',
                       )
             "
+        />
+
+        <DatabaseBrowser
+            v-else-if="tab === 'database' && database"
+            :machine-id="machine.id ?? 0"
+            :service-key="service.app ? `app:${service.app}` : service.key"
+            :engine="database.engine"
+            :console-lock="consoleLock"
+            :available="canManage && commandsEnabled && online"
         />
 
         <div v-else class="flex flex-col gap-5">
