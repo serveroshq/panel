@@ -64,7 +64,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { bytes, statusGroup } from '@/components/machines/serviceFormat';
 import ServicesTable from '@/components/machines/ServicesTable.vue';
-import type { BuildingService } from '@/components/machines/ServicesTable.vue';
+import { buildingServices as findBuilding } from '@/components/machines/buildingServices';
+import type { BuildingService } from '@/components/machines/buildingServices';
 import Sparkline from '@/components/machines/Sparkline.vue';
 import TimeSeriesChart from '@/components/machines/TimeSeriesChart.vue';
 import type {
@@ -191,58 +192,13 @@ const listedServices = computed(() =>
         (service) => !removingKeys.value.has(service.key),
     ),
 );
-const buildingServices = computed<BuildingService[]>(() => {
-    const inScan = new Set<string>();
-    for (const service of props.machine.inventory?.services ?? []) {
-        const project = service.details?.compose_project;
-        if (project?.startsWith('serveros-')) {
-            inScan.add(project.slice('serveros-'.length));
-        }
-        if (service.app) {
-            inScan.add(service.app);
-        }
-    }
-    const scannedAt = (props.machine.inventory?.scanned_at ?? 0) * 1000;
-    const seen = new Set<string>();
-    const rows: BuildingService[] = [];
-
-    for (const job of props.jobs) {
-        if (job.kind !== 'deploy' || !job.service || seen.has(job.service)) {
-            continue;
-        }
-        seen.add(job.service);
-        const created = new Date(job.createdAt ?? 0).getTime();
-        const moving = ['queued', 'accepted', 'running'].includes(job.state);
-        const recent = Date.now() - created < 10 * 60_000;
-        if (inScan.has(job.service) || (!moving && !recent)) {
-            continue;
-        }
-
-        let state: BuildingService['state'];
-        if (job.state === 'queued' || job.state === 'accepted') {
-            state = 'queued';
-        } else if (job.state === 'running') {
-            state = 'building';
-        } else if (job.state === 'succeeded') {
-            if (scannedAt > created + 60_000) continue;
-            state = 'starting';
-        } else if (['failed', 'timed_out'].includes(job.state)) {
-            state = 'failed';
-        } else {
-            continue;
-        }
-
-        rows.push({
-            jobId: job.id,
-            name: job.service,
-            state,
-            phase: job.phase,
-            progress: job.progress,
-        });
-    }
-
-    return rows;
-});
+const buildingServices = computed<BuildingService[]>(() =>
+    findBuilding(
+        props.jobs,
+        props.machine.inventory?.services ?? [],
+        props.machine.inventory?.scanned_at,
+    ),
+);
 const removeInFlight = computed(() =>
     props.jobs.some(
         (job) =>

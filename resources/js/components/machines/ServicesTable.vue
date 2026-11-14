@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { trans } from 'laravel-vue-i18n';
 import { router } from '@inertiajs/vue3';
-import { Check, ChevronDown, LoaderCircle, Search } from '@lucide/vue';
+import { Check, ChevronDown, Search } from '@lucide/vue';
 import {
     SolarEye as Eye,
     SolarEyeOff as EyeOff,
@@ -19,7 +19,8 @@ import type {
     ServiceStat,
 } from '@/components/machines/serviceFormat';
 import ServiceGroupRow from '@/components/machines/ServiceGroupRow.vue';
-import ServiceLogo from '@/components/machines/ServiceLogo.vue';
+import BuildingServiceRow from '@/components/machines/BuildingServiceRow.vue';
+import type { BuildingService } from '@/components/machines/buildingServices';
 import ServiceRow from '@/components/machines/ServiceRow.vue';
 import {
     DropdownMenu,
@@ -32,14 +33,6 @@ import ImageUploadField from '@/components/workspace/ImageUploadField.vue';
 import type { GroupDialogItem } from '@/components/workspace/GroupDialog.vue';
 
 export type { Service, ServiceStat } from '@/components/machines/serviceFormat';
-
-export type BuildingService = {
-    jobId: string;
-    name: string;
-    state: 'queued' | 'building' | 'starting' | 'failed';
-    phase: string | null;
-    progress: number | null;
-};
 
 export type ServiceGroup = {
     id: number;
@@ -61,25 +54,6 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{ 'open-log': [jobId: string] }>();
-
-const buildingLabels = computed(() => ({
-    queued: trans('Queued'),
-    building: trans('Building'),
-    starting: trans('Starting'),
-    failed: trans('Failed'),
-}));
-
-function phaseLabel(entry: BuildingService): string {
-    const phase = entry.phase
-        ? entry.phase.charAt(0).toUpperCase() + entry.phase.slice(1)
-        : null;
-    const progress =
-        entry.progress !== null && entry.state === 'building'
-            ? `${Math.round(entry.progress)}%`
-            : null;
-
-    return [trans('Deploy'), phase, progress].filter(Boolean).join(' · ');
-}
 
 type StatusFilter = ServiceFilter;
 type SortKey = 'cpu' | 'memory' | 'uptime' | 'name';
@@ -650,73 +624,11 @@ defineExpose({ startNew });
                 class="border-b border-(--ds-divider) last:border-b-0"
                 role="rowgroup"
             >
-                <button
-                    type="button"
-                    class="w-full cursor-pointer px-4 py-2.5 text-left text-[13px]/4 transition-colors hover:bg-(--ds-row-hover) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ds-ring)"
-                    :class="serviceColumns"
-                    role="row"
-                    :aria-label="
-                        $t(':service: :state. Open the deploy log', {
-                            service: entry.name,
-                            state: buildingLabels[entry.state],
-                        })
-                    "
-                    @click="emit('open-log', entry.jobId)"
-                >
-                    <span class="flex min-w-0 items-center gap-3" role="cell">
-                        <span
-                            v-if="canManage"
-                            class="size-4 shrink-0 rounded-sm border-[1.5px] border-(--ds-border-hover) opacity-50"
-                            aria-hidden="true"
-                        />
-                        <ServiceLogo :name="entry.name" kind="" />
-                        <span class="flex min-w-0 flex-col gap-0.5">
-                            <span class="truncate font-medium">{{
-                                entry.name
-                            }}</span>
-                            <span
-                                class="truncate text-xs text-(--ds-text-muted)"
-                                >{{ phaseLabel(entry) }}</span
-                            >
-                        </span>
-                    </span>
-                    <span
-                        class="flex items-center gap-1.75 md:col-start-2"
-                        role="cell"
-                    >
-                        <LoaderCircle
-                            v-if="entry.state !== 'failed'"
-                            class="size-3 shrink-0 animate-spin text-(--ds-amber)"
-                            :stroke-width="2.4"
-                        />
-                        <span
-                            v-else
-                            class="size-1.5 shrink-0 rounded-full bg-(--ds-red)"
-                        />
-                        {{ buildingLabels[entry.state] }}
-                    </span>
-                    <span
-                        class="hidden text-(--ds-text-faint) md:block"
-                        role="cell"
-                        >—</span
-                    >
-                    <span
-                        class="hidden text-(--ds-text-faint) md:block"
-                        role="cell"
-                        >—</span
-                    >
-                    <span
-                        class="hidden text-(--ds-text-faint) md:block"
-                        role="cell"
-                        >—</span
-                    >
-                    <span
-                        class="hidden text-(--ds-text-faint) md:block"
-                        role="cell"
-                        >—</span
-                    >
-                    <span role="cell" class="hidden md:block" />
-                </button>
+                <BuildingServiceRow
+                    :entry="entry"
+                    :can-manage="canManage"
+                    @open="emit('open-log', entry.jobId)"
+                />
             </div>
 
             <div
