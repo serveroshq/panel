@@ -224,9 +224,12 @@ watch(
                                         type="text"
                                         readonly
                                         :value="manualSetupKey"
+                                        :aria-label="$t('Setup key')"
                                         class="h-full w-full bg-background p-3 text-foreground"
                                     />
                                     <button
+                                        type="button"
+                                        :aria-label="$t('Copy setup key')"
                                         @click="copy(manualSetupKey || '')"
                                         class="relative block h-auto border-l border-border px-3 hover:bg-muted"
                                     >
