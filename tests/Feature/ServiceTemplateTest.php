@@ -37,10 +37,10 @@ function sentJob(): array
     return json_decode($command->body(), true)['command']['job'];
 }
 
-test('the catalog has four hundred and forty-eight valid templates and every compose variable is provided', function () {
+test('the catalog has four hundred and forty-nine valid templates and every compose variable is provided', function () {
     $templates = app(ServiceTemplateCatalog::class)->all();
 
-    expect($templates)->toHaveCount(448);
+    expect($templates)->toHaveCount(449);
 
     foreach ($templates as $template) {
         expect(in_array($template->category, ServiceTemplate::CATEGORIES, true))->toBeTrue();
@@ -114,6 +114,32 @@ test('Supabase gets its anon and service role keys signed with the JWT secret it
         ->and($claims($env['ANON_KEY']))->toMatchArray(['role' => 'anon', 'iss' => 'supabase'])
         ->and($claims($env['SERVICE_ROLE_KEY']))->toMatchArray(['role' => 'service_role'])
         ->and($claims($env['ANON_KEY'])['exp'])->toBeGreaterThan(now()->addYears(9)->timestamp);
+});
+
+test('Appwrite gets its console and API on the domain, with its own keys and health check', function () {
+    [$workspace, , $url] = templateMachine();
+
+    $this->actingAs($workspace->owner)->postJson($url, [
+        'template' => 'appwrite',
+        'service' => 'appwrite',
+        'domain' => 'appwrite.example.com',
+    ])->assertAccepted();
+
+    $job = sentJob();
+
+    $compose = $job['files']['compose.yaml'];
+
+    expect($job['compose_file'])->toBe('compose.yaml')
+        ->and($job['domains'])->toBe(['appwrite.example.com'])
+        ->and($job['health']['path'])->toBe('/v1/health/version')
+        ->and($job['env']['_APP_DOMAIN'])->toBe('appwrite.example.com')
+        ->and(strlen($job['env']['_APP_OPENSSL_KEY_V1']))->toBe(32)
+        ->and(strlen($job['env']['_APP_EXECUTOR_SECRET']))->toBe(48)
+        ->and($job['env']['_APP_DB_PASS'])->not->toBe($job['env']['_APP_DB_ROOT_PASS'])
+        ->and($compose)->toContain('traefik.http.routers.appwrite_console')
+        ->and($compose)->toContain('127.0.0.1:${PORT}:80')
+        // The executor looks its own container up by hostname, so the name has to match it.
+        ->and($compose)->toContain("container_name: exc1\n    hostname: exc1");
 });
 
 test('an install from the app installer is recorded with its app, for the admin Stats', function () {
