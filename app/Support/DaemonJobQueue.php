@@ -18,9 +18,9 @@ use RuntimeException;
 
 class DaemonJobQueue
 {
-    public const array NEEDS_PLAN = ['deploy', 'release', 'rollback', 'service_exec', 'service_clone'];
+    public const array NEEDS_PLAN = ['deploy', 'release', 'rollback', 'service_exec', 'service_clone', 'database_query'];
 
-    private const array READS = ['service_logs', 'service_inspect', 'discover', 'file_list', 'file_read', 'package_updates', 'disk_usage'];
+    private const array READS = ['database_query', 'service_logs', 'service_inspect', 'discover', 'file_list', 'file_read', 'package_updates', 'disk_usage'];
 
     public function __construct(private readonly DaemonGatewayClient $gateway) {}
 
@@ -47,7 +47,7 @@ class DaemonJobQueue
             return null;
         }
 
-        return $kind === 'service_exec'
+        return in_array($kind, ['service_exec', 'database_query'], true)
             ? 'The console needs a plan. Choose one in Billing to run commands again.'
             : 'Deploys need a plan. Choose one in Billing to deploy again. Everything that’s already running keeps running.';
     }
@@ -72,10 +72,11 @@ class DaemonJobQueue
     /**
      * @param  array<string, mixed>  $job
      * @param  array{kind: string, job: array<string, mixed>, service: string|null}|null  $then
+     * @param  array<string, mixed>  $meta  what the activity log keeps instead of the job itself
      *
      * @throws RuntimeException
      */
-    public function queue(Machine $machine, User $user, string $kind, array $job, ?string $service, int $timeoutSecs = 300, ?array $then = null): DaemonJob
+    public function queue(Machine $machine, User $user, string $kind, array $job, ?string $service, int $timeoutSecs = 300, ?array $then = null, array $meta = []): DaemonJob
     {
         if (($reason = self::needsPlan($machine, $kind)) !== null) {
             throw new RuntimeException($reason);
@@ -104,7 +105,7 @@ class DaemonJobQueue
         ]);
 
         $this->send($machine, $record, $command);
-        $this->recordActivity($machine, $user, $kind, $job, $service);
+        $this->recordActivity($machine, $user, $kind, $job, $service, $meta);
 
         return $record;
     }
@@ -144,6 +145,8 @@ class DaemonJobQueue
             'rollback' => 'service.rollback',
             'service_action' => in_array($job['action'] ?? null, ['start', 'stop', 'restart', 'reload'], true) ? 'service.'.$job['action'] : null,
             'service_exec' => 'console.command',
+            // A query is audited by what it asked; a listing of tables isn't.
+            'database_query' => $meta === [] ? null : 'console.command',
             'adopt' => 'service.adopt',
             'service_remove' => 'service.remove',
             'service_repair' => 'service.repair',

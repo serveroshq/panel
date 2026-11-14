@@ -2537,6 +2537,8 @@
     "published the status page": "publicó la página de estado",
     "ran": "ejecutó",
     "ran a command in": "ejecutó un comando en",
+    "ran a query that can change data in": "ejecutó una consulta que puede cambiar datos en",
+    "ran a read-only query in": "ejecutó una consulta de solo lectura en",
     "ran the workflow": "ejecutó el flujo",
     "read the install script": "lee el script de instalación",
     "ref": "ref",

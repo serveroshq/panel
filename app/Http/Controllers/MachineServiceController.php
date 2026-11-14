@@ -257,15 +257,20 @@ class MachineServiceController extends Controller
             return response()->json(['error' => $reason], 409);
         }
 
-        $command = DatabaseConsole::command($engine, $data['action'], $data['database'] ?? null, $data['query'] ?? null, (bool) ($data['write'] ?? false), bin2hex(random_bytes(16)));
+        $write = (bool) ($data['write'] ?? false);
+        $command = DatabaseConsole::command($engine, $data['action'], $data['database'] ?? null, $data['query'] ?? null, $write, bin2hex(random_bytes(16)));
+        // Its own kind keeps it off the machine's job list; the daemon only sees service_exec.
+        $meta = $data['action'] === 'query'
+            ? array_filter(['command' => mb_substr((string) $data['query'], 0, 500), 'database' => $data['database'] ?? null, 'write' => $write], fn ($v) => $v !== null)
+            : [];
 
         try {
-            $record = $queue->queue($machine, $request->user(), 'service_exec', [
+            $record = $queue->queue($machine, $request->user(), 'database_query', [
                 'type' => 'service_exec',
                 'service' => (string) $found['key'],
                 'command' => $command,
                 'timeout_secs' => DatabaseConsole::TIMEOUT,
-            ], null, DatabaseConsole::TIMEOUT + 30);
+            ], (string) $found['key'], DatabaseConsole::TIMEOUT + 30, meta: $meta);
         } catch (RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 503);
         }
@@ -281,12 +286,16 @@ class MachineServiceController extends Controller
         $record = DaemonJob::query()
             ->where('machine_id', $machine->id)
             ->where('user_id', $request->user()->id)
-            ->where('kind', 'service_exec')
+            ->where('kind', 'database_query')
             ->whereKey($job)
             ->firstOrFail();
 
         $state = $record->isStale() ? 'timed_out' : $record->state;
         $result = $record->finished_at !== null && $state === 'succeeded' ? DatabaseConsole::result($record) : null;
+        if ($record->finished_at !== null) {
+            // Rows are the customer's data: handed over once, not kept in the job.
+            $record->forceFill(['log' => []])->saveQuietly();
+        }
         $error = $record->error === null ? null : (string) ($record->error['message'] ?? 'The machine couldn’t run that.');
         if ($state === 'succeeded' && $result === null) {
             $error = 'The database’s answer couldn’t be read.';

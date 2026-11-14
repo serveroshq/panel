@@ -2537,6 +2537,8 @@
     "published the status page": "hat die Statusseite veröffentlicht",
     "ran": "hat ausgeführt",
     "ran a command in": "hat einen Befehl ausgeführt auf",
+    "ran a query that can change data in": "hat eine Abfrage mit Schreibrechten ausgeführt auf",
+    "ran a read-only query in": "hat eine schreibgeschützte Abfrage ausgeführt auf",
     "ran the workflow": "hat den Workflow ausgeführt",
     "read the install script": "lies das Installationsskript",
     "ref": "Ref",

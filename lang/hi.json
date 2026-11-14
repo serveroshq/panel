@@ -2423,6 +2423,8 @@
     "published the status page": "ने स्टेटस पेज पब्लिश किया",
     "ran": "चलाया",
     "ran a command in": "ने इसमें कमांड चलाई",
+    "ran a query that can change data in": "ने इसमें डेटा बदल सकने वाली क्वेरी चलाई",
+    "ran a read-only query in": "ने इसमें केवल-पढ़ने वाली क्वेरी चलाई",
     "ran the workflow": "ने वर्कफ़्लो चलाया",
     "read the install script": "इंस्टॉल स्क्रिप्ट पढ़ें",
     "ref": "ref",
