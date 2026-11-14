@@ -11,7 +11,7 @@ return [
     'port_editable' => true,
     'health' => '/v1/health/version',
     'health_retries' => 40,
-    'notes' => 'Open the address for the console and make the first account there. The project it makes has an API endpoint of the same address and an API key to copy. Functions and sites build and run in Docker on this machine. The containers Appwrite starts for them are not part of this stack: the panel lists them on their own, and removing Appwrite leaves them running. Idle it uses about 2 GB of memory, and the first start runs the database migrations, so give it a few minutes. The executor mounts the machine\'s /tmp, which Appwrite needs to hand code to the containers it starts; it only writes its own folders there.',
+    'notes' => 'Open the address for the console and make the first account there. The project it makes has an API endpoint of the same address and an API key to copy. Functions and sites build and run in Docker on this machine. The containers Appwrite starts for them are not part of this stack: the panel lists them on their own, and removing Appwrite leaves them running. Idle it uses about 2 GB of memory, and the first start runs the database migrations, so give it a few minutes. The executor mounts the machine\'s /tmp, which Appwrite needs to hand code to the containers it starts; it only writes its own folders there, so leave it out of a backup, since one would copy that folder and a restore would write over it. Functions and sites open on <id>.<domain>, so turn on wildcard subdomains for the domain when you deploy: nothing can route them without it.',
     'env' => [
         ['key' => '_APP_DOMAIN', 'label' => 'Domain', 'default' => '{host}', 'hint' => 'The address the console and API answer on, from the domain you add.'],
         ['key' => '_APP_OPENSSL_KEY_V1', 'label' => 'Encryption key', 'default' => '{random:32}', 'secret' => true],
@@ -66,7 +66,7 @@ x-app-env: &app-env
   _APP_STORAGE_PREVIEW_LIMIT: 20000000
   _APP_AUTOGRAVITY_HOST: http://appwrite-autogravity:8080
   _APP_EXIFTOOL_HOST: http://appwrite-exiftool:8080
-  _APP_EXECUTOR_HOST: http://${COMPOSE_PROJECT_NAME}-exc1/v1
+  _APP_EXECUTOR_HOST: http://exc1-${PORT}/v1
   _APP_EXECUTOR_SECRET: ${_APP_EXECUTOR_SECRET}
   _APP_EXECUTOR_IMAGES: openruntimes/node:v5-22,openruntimes/static:v5-1
   _APP_EXECUTOR_CONNECTION_STORAGE: local://localhost
@@ -74,8 +74,10 @@ x-app-env: &app-env
   _APP_FUNCTIONS_TIMEOUT: 900
   _APP_SITES_RUNTIMES: static-1,node-22
   _APP_SITES_TIMEOUT: 60
-  _APP_DOMAIN_FUNCTIONS: functions.${_APP_DOMAIN}
-  _APP_DOMAIN_SITES: sites.${_APP_DOMAIN}
+  # One level under the domain, because that is as deep as the panel's wildcard
+  # reaches. Appwrite puts the function or site id in front of it.
+  _APP_DOMAIN_FUNCTIONS: ${_APP_DOMAIN}
+  _APP_DOMAIN_SITES: ${_APP_DOMAIN}
   # The console reads this to build domain instructions; without it the console
   # answers 500 and cannot create sites or functions.
   _APP_DOMAIN_TARGET_CNAME: ${_APP_DOMAIN}
@@ -152,7 +154,7 @@ services:
       # Functions and sites are served from their own host names, so they need a
       # router that wins over the console's catch-all path rule.
       - traefik.http.routers.appwrite_public.entrypoints=appwrite_web
-      - traefik.http.routers.appwrite_public.rule=Host(`*.functions.${_APP_DOMAIN}`) || Host(`*.sites.${_APP_DOMAIN}`)
+      - traefik.http.routers.appwrite_public.rule=Host(`*.${_APP_DOMAIN}`)
       - traefik.http.routers.appwrite_public.service=appwrite_api
       - traefik.http.routers.appwrite_public.priority=1000
     volumes:
@@ -308,10 +310,10 @@ services:
     image: openruntimes/executor:1.1.2
     restart: unless-stopped
     # Appwrite reaches the executor by this name, and the executor finds itself by
-    # it (it looks up a container whose name is its hostname), so both carry the
-    # stack's project name.
-    container_name: ${COMPOSE_PROJECT_NAME}-exc1
-    hostname: ${COMPOSE_PROJECT_NAME}-exc1
+    # it (it looks up a container whose name is its hostname). The port keeps the
+    # pair unique per stack without running past Docker's 63-byte hostname limit.
+    container_name: exc1-${PORT}
+    hostname: exc1-${PORT}
     stop_signal: SIGINT
     environment:
       - OPR_EXECUTOR_IMAGES=openruntimes/node:v5-22,openruntimes/static:v5-1

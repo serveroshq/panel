@@ -139,8 +139,9 @@ test('Appwrite gets its console and API on the domain, with its own keys and hea
         ->and($job['env']['_APP_DB_PASS'])->not->toBe($job['env']['_APP_DB_ROOT_PASS'])
         ->and($compose)->toContain('traefik.http.routers.appwrite_console')
         ->and($compose)->toContain('127.0.0.1:${PORT}:80')
-        // The executor looks its own container up by hostname, so the name has to match it.
-        ->and($compose)->toContain("container_name: \${COMPOSE_PROJECT_NAME}-exc1\n    hostname: \${COMPOSE_PROJECT_NAME}-exc1")
+        // The executor looks its own container up by hostname, so the name has to
+        // match it. The port, not the project name, keeps it under 63 bytes.
+        ->and($compose)->toContain("container_name: exc1-\${PORT}\n    hostname: exc1-\${PORT}")
         // Every fixed name is keyed off the project, so a second stack on the machine is separate.
         ->and($compose)->toContain('traefik.constraint-label-stack=${COMPOSE_PROJECT_NAME}')
         ->and($compose)->toContain('traefik.docker.network=${COMPOSE_PROJECT_NAME}_appwrite')
@@ -149,7 +150,10 @@ test('Appwrite gets its console and API on the domain, with its own keys and hea
         ->and($compose)->not->toContain('traefik.constraint-label-stack=appwrite')
         // Abuse protection is Appwrite's rate limiting on auth, so it stays on.
         ->and($compose)->toContain('_APP_OPTIONS_ABUSE: enabled')
-        ->and($compose)->toContain('_APP_DOMAIN_FUNCTIONS: functions.${_APP_DOMAIN}')
+        // The panel's wildcard reaches one level under the domain, so functions
+        // and sites sit at <id>.<domain> and not a level deeper.
+        ->and($compose)->toContain('_APP_DOMAIN_FUNCTIONS: ${_APP_DOMAIN}')
+        ->and($compose)->toContain('Host(`*.${_APP_DOMAIN}`)')
         // Build sidecars run on the runtimes network, so both the API and the
         // orchestrator they upload their artifacts to have to answer there.
         ->and(substr_count($compose, '      - runtimes'))->toBeGreaterThanOrEqual(2);
