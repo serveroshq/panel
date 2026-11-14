@@ -314,7 +314,7 @@ function ago(iso: string | null): string {
     ];
     for (const [unit, size] of units) {
         if (Math.abs(seconds) >= size) {
-            return relative.format(Math.round(seconds / size), unit);
+            return relative.format(Math.trunc(seconds / size), unit);
         }
     }
 
