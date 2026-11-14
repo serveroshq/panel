@@ -3155,6 +3155,7 @@
     "Edit details of :selectedCount selected": ":selectedCount चुनी हुई के विवरण बदलें",
     "Provider, region, tier and labels": "प्रोवाइडर, रीजन, टियर और लेबल",
     "Details of :count machines": ":count मशीनों के विवरण",
+    "Details of 1 machine": "1 मशीन के विवरण",
     "What you fill in is set on every one of them. What you leave empty stays as each has it.": "जो भरेंगे वह सब पर लगेगा। जो खाली छोड़ेंगे वह हर मशीन पर जैसा है वैसा रहेगा।",
     "OVH": "OVH",
     "Add labels": "लेबल जोड़ें",
