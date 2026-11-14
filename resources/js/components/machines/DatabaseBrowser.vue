@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3';
 import { LoaderCircle, Play, Search } from '@lucide/vue';
 import {
     SolarDatabase as DatabaseIcon,
+    SolarDownload as Download,
     SolarLock as Lock,
     SolarRefreshCw as RefreshCw,
     SolarShieldCheck as ShieldCheck,
@@ -27,6 +28,7 @@ type Result = {
     columns: string[];
     rows: (string | null)[][];
     truncated: boolean;
+    changed: number | null;
     error: string | null;
 };
 
@@ -314,6 +316,25 @@ function onEditorKeydown(event: KeyboardEvent): void {
         event.preventDefault();
         void run();
     }
+}
+
+// ponytail: only the rows on screen; a full export is a dump, not a query.
+function downloadCsv(shown: Result): void {
+    const cell = (value: string | null): string =>
+        value === null
+            ? ''
+            : /[",\r\n]/.test(value)
+              ? `"${value.replaceAll('"', '""')}"`
+              : value;
+    const text = [shown.columns, ...shown.rows]
+        .map((row) => row.map(cell).join(','))
+        .join('\r\n');
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${shown.database ?? 'query'}.csv`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function count(value: number | null): string {
@@ -634,28 +655,57 @@ const field =
                             v-else-if="result.columns.length === 0"
                             class="ds-tile px-4 py-3 text-[13px]/5 text-(--ds-text-muted)"
                         >
-                            {{ $t('Done. The query returned no rows.') }}
+                            {{
+                                result.changed === null
+                                    ? $t('Done. The query returned no rows.')
+                                    : result.changed === 0
+                                      ? $t('Done. No rows changed.')
+                                      : result.changed === 1
+                                        ? $t('Done. 1 row changed.')
+                                        : $t('Done. :count rows changed.', {
+                                              count: result.changed.toLocaleString(),
+                                          })
+                            }}
                         </p>
                         <div v-else class="flex min-w-0 flex-col gap-2">
-                            <p class="text-xs text-(--ds-text-muted)">
-                                {{
-                                    result.truncated
-                                        ? $t(
-                                              'The first :count rows. Add a LIMIT or a WHERE to see others.',
-                                              {
-                                                  count: String(
-                                                      result.rows.length,
-                                                  ),
-                                              },
-                                          )
-                                        : $t(':count rows', {
-                                              count: String(result.rows.length),
-                                          })
-                                }}
-                                <span v-if="tookMs !== null">
-                                    · {{ (tookMs / 1000).toFixed(1) }} s</span
+                            <div class="flex items-center gap-2">
+                                <p class="text-xs text-(--ds-text-muted)">
+                                    {{
+                                        result.truncated
+                                            ? $t(
+                                                  'The first :count rows. Add a LIMIT or a WHERE to see others.',
+                                                  {
+                                                      count: String(
+                                                          result.rows.length,
+                                                      ),
+                                                  },
+                                              )
+                                            : result.rows.length === 1
+                                              ? $t('1 row')
+                                              : $t(':count rows', {
+                                                    count: String(
+                                                        result.rows.length,
+                                                    ),
+                                                })
+                                    }}
+                                    <span v-if="tookMs !== null">
+                                        ·
+                                        {{ (tookMs / 1000).toFixed(1) }} s</span
+                                    >
+                                </p>
+                                <AppButton
+                                    size="xs"
+                                    variant="quiet"
+                                    class="ml-auto"
+                                    @click="downloadCsv(result)"
                                 >
-                            </p>
+                                    <Download
+                                        class="size-3.5"
+                                        :stroke-width="1.75"
+                                    />
+                                    {{ $t('Download CSV') }}
+                                </AppButton>
+                            </div>
                             <div
                                 class="ds-tile max-h-[30rem] overflow-auto"
                                 role="region"
