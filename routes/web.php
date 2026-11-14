@@ -17,6 +17,7 @@ use App\Http\Controllers\DomainCheckController;
 use App\Http\Controllers\FixController;
 use App\Http\Controllers\GitHubAppSetupController;
 use App\Http\Controllers\GitHubConnectionController;
+use App\Http\Controllers\GitHubRepositoryController;
 use App\Http\Controllers\ImpersonationController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\LocaleController;
@@ -208,6 +209,9 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
         Route::get('logs/deletion', [LogController::class, 'deletion'])->middleware('throttle:30,1')->name('workspace.logs.deletion');
         Route::delete('logs', [LogController::class, 'destroy'])->middleware('throttle:10,1')->name('workspace.logs.destroy');
         Route::post('services/detect', ServiceDetectController::class)->middleware('throttle:20,1')->name('workspace.services.detect');
+        Route::get('github/repositories', [GitHubRepositoryController::class, 'index'])->middleware('throttle:30,1')->name('workspace.github.repositories');
+        Route::get('github/repositories/{owner}/{repo}/branches', [GitHubRepositoryController::class, 'branches'])
+            ->where(['owner' => '[A-Za-z0-9-]+', 'repo' => '[A-Za-z0-9._-]+'])->middleware('throttle:30,1')->name('workspace.github.branches');
         Route::post('machines/{machine}/sources', [DeploySourceController::class, 'start'])->middleware('throttle:20,1')->name('workspace.sources.start');
         Route::post('machines/{machine}/sources/{token}/chunk', [DeploySourceController::class, 'chunk'])->middleware('throttle:600,1')->name('workspace.sources.chunk');
         Route::post('machines/{machine}/sources/{token}/finish', [DeploySourceController::class, 'finish'])->middleware('throttle:20,1')->name('workspace.sources.finish');
