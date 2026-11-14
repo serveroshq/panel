@@ -13,7 +13,8 @@ class GrantAdmin extends Command
 
     public function handle(): int
     {
-        $email = strtolower(trim((string) $this->argument('email')));
+        $email = $this->argument('email');
+        $email = strtolower(trim(is_string($email) ? $email : ''));
         $user = User::query()->whereRaw('lower(email) = ?', [$email])->orderBy('id')->first();
         if ($user === null) {
             $this->error("No account uses {$email}. They need to sign up first.");

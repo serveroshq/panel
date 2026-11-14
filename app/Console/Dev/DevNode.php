@@ -203,7 +203,7 @@ class DevNode extends Command
     {
         $container = 'serveros-'.$this->nodeName();
         if (trim(Process::run(['docker', 'ps', '-q', '--filter', "name=^{$container}\$"])->output()) === '') {
-            throw new RuntimeException("{$container} isn't running. Start one with `php artisan dev:node up {$this->argument('name')}`.");
+            throw new RuntimeException("{$container} isn't running. Start one with `php artisan dev:node up {$this->nodeName()}`.");
         }
 
         return $container;
@@ -211,7 +211,8 @@ class DevNode extends Command
 
     private function nodeName(): string
     {
-        $name = (string) $this->argument('name');
+        $name = $this->argument('name');
+        $name = is_string($name) ? $name : '';
         if (preg_match('/^[a-z0-9][a-z0-9-]{0,40}$/', $name) !== 1) {
             throw new RuntimeException('Use lowercase letters, numbers and dashes for the name.');
         }
@@ -221,7 +222,8 @@ class DevNode extends Command
 
     private function workspace(): Workspace
     {
-        if (filled($slug = $this->option('workspace'))) {
+        $slug = $this->option('workspace');
+        if (is_string($slug) && $slug !== '') {
             return Workspace::query()->where('slug', $slug)->first()
                 ?? throw new RuntimeException("No workspace with the slug {$slug}.");
         }
