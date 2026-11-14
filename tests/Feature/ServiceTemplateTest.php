@@ -149,7 +149,10 @@ test('Appwrite gets its console and API on the domain, with its own keys and hea
         ->and($compose)->not->toContain('traefik.constraint-label-stack=appwrite')
         // Abuse protection is Appwrite's rate limiting on auth, so it stays on.
         ->and($compose)->toContain('_APP_OPTIONS_ABUSE: enabled')
-        ->and($compose)->toContain('_APP_DOMAIN_FUNCTIONS: functions.${_APP_DOMAIN}');
+        ->and($compose)->toContain('_APP_DOMAIN_FUNCTIONS: functions.${_APP_DOMAIN}')
+        // Build sidecars run on the runtimes network, so both the API and the
+        // orchestrator they upload their artifacts to have to answer there.
+        ->and(substr_count($compose, '      - runtimes'))->toBeGreaterThanOrEqual(2);
 });
 
 test('an install from the app installer is recorded with its app, for the admin Stats', function () {

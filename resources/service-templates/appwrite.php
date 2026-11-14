@@ -357,6 +357,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - appwrite
+      # Build sidecars run on the runtimes network and upload their artifacts
+      # here, so this name has to resolve there too.
+      - runtimes
 
   postgresql:
     image: appwrite/postgres:0.1.0
