@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Mcp\ToolError;
+use App\Mcp\Tools\Deploy\RefResolver;
 use App\Models\AppInstall;
 use App\Models\Machine;
 use App\Models\Workspace;
@@ -20,7 +22,7 @@ use RuntimeException;
 class MachineDeployController extends Controller
 {
     #[Audited]
-    public function __invoke(Request $request, Workspace $workspace, Machine $machine, DaemonJobQueue $queue, ServiceTemplateCatalog $catalog): JsonResponse
+    public function __invoke(Request $request, Workspace $workspace, Machine $machine, DaemonJobQueue $queue, ServiceTemplateCatalog $catalog, RefResolver $refs): JsonResponse
     {
         abort_unless($machine->workspace_id === $workspace->id, 404);
         Gate::authorize('manageMachines', $workspace);
@@ -30,16 +32,16 @@ class MachineDeployController extends Controller
         }
 
         if ($request->filled('template')) {
-            return $this->deployTemplate($request, $machine, $queue, $catalog);
+            return $this->deployTemplate($request, $workspace, $machine, $queue, $catalog, $refs);
         }
 
         if (is_string($domain = $request->input('domain'))) {
             $request->merge(['domain' => DeployRequest::bareDomain($domain)]);
         }
 
+        $this->resolveCommit($request, $workspace, $refs, DeployRequest::gitRules());
         $data = $request->validate(DeployRequest::gitRules());
 
-        DeployRequest::assertPublicRepo($data['repo']);
         DeployRequest::assertWildcard($machine, $data['domain'] ?? null, (bool) ($data['wildcard'] ?? false));
 
         return $this->dispatch($request, $machine, $queue, DeployRequest::gitJob($data));
@@ -53,7 +55,7 @@ class MachineDeployController extends Controller
         return response()->json(Placement::taken($machine));
     }
 
-    private function deployTemplate(Request $request, Machine $machine, DaemonJobQueue $queue, ServiceTemplateCatalog $catalog): JsonResponse
+    private function deployTemplate(Request $request, Workspace $workspace, Machine $machine, DaemonJobQueue $queue, ServiceTemplateCatalog $catalog, RefResolver $refs): JsonResponse
     {
         $template = $catalog->find((string) $request->input('template'));
         if ($template === null) {
@@ -64,11 +66,11 @@ class MachineDeployController extends Controller
             $request->merge(['domain' => DeployRequest::bareDomain($domain)]);
         }
 
+        if ($template->isApp()) {
+            $this->resolveCommit($request, $workspace, $refs, DeployRequest::templateRules($template));
+        }
         $data = $request->validate(DeployRequest::templateRules($template));
 
-        if ($template->isApp()) {
-            DeployRequest::assertPublicRepo($data['repo']);
-        }
         DeployRequest::assertWildcard($machine, $template->web ? ($data['domain'] ?? null) : null, (bool) ($data['wildcard'] ?? false));
         DeployRequest::assertComposeFromRepo($machine, $template);
 
@@ -85,6 +87,27 @@ class MachineDeployController extends Controller
             ...$response->getData(true),
             ...DeployRequest::templateResult($deployment, $data),
         ], 202);
+    }
+
+    /**
+     * What to deploy can be a branch, a tag or a commit, and is the default
+     * branch's latest commit when left out. Either way the job gets the
+     * exact commit it stands for now, as the MCP deploy tools do.
+     *
+     * @param  array<string, list<string>>  $rules
+     */
+    private function resolveCommit(Request $request, Workspace $workspace, RefResolver $refs, array $rules): void
+    {
+        $request->validate([...$rules, 'commit' => ['nullable', 'string', 'max:255']]);
+        DeployRequest::assertPublicRepo((string) $request->input('repo'));
+
+        try {
+            $resolved = $refs->resolve((string) $request->input('repo'), $request->input('commit'), $workspace);
+        } catch (ToolError $e) {
+            throw ValidationException::withMessages(['commit' => $e->getMessage()]);
+        }
+
+        $request->merge(['commit' => $resolved['commit']]);
     }
 
     /** @param  array<string, mixed>  $job */

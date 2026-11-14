@@ -325,13 +325,14 @@ test('public build variables reach the build, secrets stay at runtime only', fun
         ->and($job['env']['DATABASE_URL'])->toBe('postgres://secret@db/app');
 });
 
-test('app templates need a repository and commit, and game servers need the EULA accepted', function () {
+test('app templates need a repository, and game servers need the EULA accepted', function () {
     [$workspace, , $url] = templateMachine();
     $owner = $workspace->owner;
 
     $this->actingAs($owner)->postJson($url, ['template' => 'laravel', 'service' => 'shop'])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['repo', 'commit']);
+        ->assertJsonValidationErrors(['repo'])
+        ->assertJsonMissingValidationErrors(['commit']);
 
     $this->actingAs($owner)->postJson($url, ['template' => 'minecraft-java', 'service' => 'survival'])
         ->assertUnprocessable()

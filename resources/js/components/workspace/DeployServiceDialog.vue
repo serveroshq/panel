@@ -1467,17 +1467,21 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                 :class="labelClass"
                                             >
                                                 {{
-                                                    ' ' + $t('Commit SHA') + ' '
+                                                    ' ' +
+                                                    $t(
+                                                        'Branch, tag or commit',
+                                                    ) +
+                                                    ' '
                                                 }}
                                             </label>
                                             <Input
                                                 id="deploy-commit"
                                                 v-model.trim="form.commit"
-                                                required
-                                                pattern="[a-fA-F0-9]{40}"
-                                                maxlength="40"
+                                                maxlength="255"
                                                 :placeholder="
-                                                    $t('40-character commit')
+                                                    $t(
+                                                        'Latest commit on the default branch',
+                                                    )
                                                 "
                                                 class="font-ui-mono"
                                             />
