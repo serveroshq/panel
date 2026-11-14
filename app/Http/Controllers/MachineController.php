@@ -89,7 +89,7 @@ class MachineController extends Controller
             ],
             'jobs' => DaemonJob::query()
                 ->where('machine_id', $machine->id)
-                ->whereNotIn('kind', ['discover', ...FileJobs::KINDS])
+                ->whereNotIn('kind', ['discover', 'database_query', ...FileJobs::KINDS])
                 ->latest()
                 ->limit(20)
                 ->get()

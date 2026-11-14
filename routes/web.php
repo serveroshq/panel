@@ -239,7 +239,15 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
             ->name('workspace.machines.services.show');
         Route::get('machines/{machine}/services/{service}/{tab}', [MachineServiceController::class, 'show'])
             ->where('service', '[A-Za-z0-9:._@-]+')
-            ->whereIn('tab', ['overview', 'logs', 'console', 'files', 'details']);
+            ->whereIn('tab', ['overview', 'logs', 'console', 'files', 'database', 'details']);
+        Route::post('machines/{machine}/services/{service}/database', [MachineServiceController::class, 'database'])
+            ->where('service', '[A-Za-z0-9:._@-]+')
+            ->middleware('throttle:60,1')
+            ->name('workspace.machines.services.database');
+        Route::get('machines/{machine}/services/{service}/database/{job}', [MachineServiceController::class, 'databaseResult'])
+            ->where('service', '[A-Za-z0-9:._@-]+')
+            ->middleware('throttle:600,1')
+            ->name('workspace.machines.services.database.result');
         Route::post('machines/{machine}/services/{service}/icon', [MachineServiceController::class, 'updateIcon'])
             ->where('service', '[A-Za-z0-9:._@-]+')
             ->middleware('throttle:20,1')

@@ -26,7 +26,7 @@ final class ListJobs extends Tool
     public function description(): string
     {
         return 'Lists recent jobs on the workspace’s machines, newest first: deploys, service actions (service_action: start, stop, restart, reload), service_logs, service_exec (commands), adopt, service_remove, backups, package updates, reboots and so on. Filters: machine; service (on that machine: key, name, label or app name; without a machine, the exact key or app name a job is filed under); kind; state (an exact state, or active for queued and running, finished for the rest). '
-            .'Automatic rescans (kind discover) are left out unless kind asks for them, as on the machine page. Each job comes with its last 3 log lines; get_job has the rest. limit up to 100 (default 20), offset to page.';
+            .'Automatic rescans (kind discover) and Database tab queries (database_query) are left out unless kind asks for them, as on the machine page. Each job comes with its last 3 log lines; get_job has the rest. limit up to 100 (default 20), offset to page.';
     }
 
     public function inputSchema(): array
@@ -63,7 +63,7 @@ final class ListJobs extends Tool
         if (isset($data['kind'])) {
             $query->where('kind', $data['kind']);
         } else {
-            $query->where('kind', '!=', 'discover');
+            $query->whereNotIn('kind', ['discover', 'database_query']);
         }
         if (($data['state'] ?? null) === 'active') {
             $query->whereIn('state', ['queued', 'running']);

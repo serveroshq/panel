@@ -14,6 +14,7 @@ use App\Support\Audit\Audited;
 use App\Support\Audit\NotAudited;
 use App\Support\ConsoleLock;
 use App\Support\DaemonJobQueue;
+use App\Support\Databases\DatabaseConsole;
 use App\Support\Deploys\AppReleases;
 use App\Support\Deploys\AppVersions;
 use App\Support\Deploys\ContainerNames;
@@ -66,6 +67,7 @@ class MachineServiceController extends Controller
                 'name' => ServiceClones::suggestedName($machine, (string) ($found['app'] ?? $found['name'] ?? 'service')),
                 'port' => ServiceClones::freePort($machine),
             ] : null,
+            'database' => ($engine = DatabaseConsole::engine($found)) !== null && $found['managed'] ? ['engine' => $engine] : null,
             'inspect' => str_starts_with($service, 'docker:') && (DaemonJobQueue::canInspect($machine) || DaemonJobQueue::inspectReleased())
                 ? ['available' => DaemonJobQueue::canInspect($machine)]
                 : null,
@@ -222,6 +224,84 @@ class MachineServiceController extends Controller
         }
 
         return response()->json(['jobId' => $record->id, 'state' => 'queued'], 202);
+    }
+
+    #[Audited]
+    public function database(Request $request, Workspace $workspace, Machine $machine, string $service, DaemonJobQueue $queue, ConsoleLock $console): JsonResponse
+    {
+        abort_unless($machine->workspace_id === $workspace->id, 404);
+        Gate::authorize('manageMachines', $workspace);
+        $found = $this->find($machine, $service);
+        $engine = DatabaseConsole::engine($found);
+
+        $data = $request->validate([
+            'action' => ['required', Rule::in(DatabaseConsole::ACTIONS)],
+            'database' => ['nullable', 'string', 'max:128', 'not_regex:/[\x00-\x1f]/'],
+            'query' => ['required_if:action,query', 'nullable', 'string', 'max:'.DatabaseConsole::MAX_QUERY],
+            'write' => ['nullable', 'boolean'],
+        ]);
+
+        if ($engine === null) {
+            return response()->json(['error' => 'ServerOS can only open PostgreSQL, MySQL and MariaDB containers.'], 409);
+        }
+        if (! $found['managed']) {
+            return response()->json(['error' => 'Adopt this service first so ServerOS can control it.'], 409);
+        }
+        if ($console->requiresSetup($request->user())) {
+            return response()->json(['error' => 'Turn on two-factor authentication to open databases.', 'code' => 'two_factor_required'], 403);
+        }
+        if (! $console->isUnlocked($request->user())) {
+            return response()->json(['error' => 'Unlock with a two-factor code first.', 'code' => 'console_locked'], 423);
+        }
+        if (($reason = $queue->unavailable($machine, 'service_exec')) !== null) {
+            return response()->json(['error' => $reason], 409);
+        }
+
+        $write = (bool) ($data['write'] ?? false);
+        $command = DatabaseConsole::command($engine, $data['action'], $data['database'] ?? null, $data['query'] ?? null, $write, bin2hex(random_bytes(16)));
+        // Its own kind keeps it off the machine's job list; the daemon only sees service_exec.
+        $meta = $data['action'] === 'query'
+            ? array_filter(['command' => mb_substr((string) $data['query'], 0, 500), 'database' => $data['database'] ?? null, 'write' => $write], fn ($v) => $v !== null)
+            : [];
+
+        try {
+            $record = $queue->queue($machine, $request->user(), 'database_query', [
+                'type' => 'service_exec',
+                'service' => (string) $found['key'],
+                'command' => $command,
+                'timeout_secs' => DatabaseConsole::TIMEOUT,
+            ], (string) $found['key'], DatabaseConsole::TIMEOUT + 30, meta: $meta);
+        } catch (RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 503);
+        }
+
+        return response()->json(['jobId' => $record->id, 'state' => 'queued'], 202);
+    }
+
+    public function databaseResult(Request $request, Workspace $workspace, Machine $machine, string $service, string $job): JsonResponse
+    {
+        abort_unless($machine->workspace_id === $workspace->id, 404);
+        Gate::authorize('manageMachines', $workspace);
+
+        $record = DaemonJob::query()
+            ->where('machine_id', $machine->id)
+            ->where('user_id', $request->user()->id)
+            ->where('kind', 'database_query')
+            ->whereKey($job)
+            ->firstOrFail();
+
+        $state = $record->isStale() ? 'timed_out' : $record->state;
+        $result = $record->finished_at !== null && $state === 'succeeded' ? DatabaseConsole::result($record) : null;
+        if ($record->finished_at !== null) {
+            // Rows are the customer's data: handed over once, not kept in the job.
+            $record->forceFill(['log' => []])->saveQuietly();
+        }
+        $error = $record->error === null ? null : (string) ($record->error['message'] ?? 'The machine couldn’t run that.');
+        if ($state === 'succeeded' && $result === null) {
+            $error = 'The database’s answer couldn’t be read.';
+        }
+
+        return response()->json(['state' => $state, 'result' => $result, 'error' => $error === null ? null : ['message' => $error]]);
     }
 
     #[Audited]

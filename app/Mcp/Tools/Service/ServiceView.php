@@ -135,6 +135,10 @@ final class ServiceView
             $out['result'] = null;
             $out['note'] = 'Console commands and their output are shown only to people who manage machines.';
         }
+        if ($job->kind === 'database_query') {
+            $out['log'] = [];
+            $out['note'] = 'A database query from a service’s Database tab. Its rows go only to the person who ran it.';
+        }
 
         return [
             ...$out,
