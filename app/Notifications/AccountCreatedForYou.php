@@ -26,7 +26,7 @@ class AccountCreatedForYou extends Notification
     public function toMail(User $notifiable): MailMessage
     {
         $url = rtrim((string) config('app.url'), '/').route('password.reset', [
-            'token' => Password::createToken($notifiable),
+            'token' => Password::broker()->createToken($notifiable),
             'email' => $notifiable->getEmailForPasswordReset(),
         ], absolute: false);
 
