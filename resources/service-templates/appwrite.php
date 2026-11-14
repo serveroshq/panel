@@ -11,7 +11,7 @@ return [
     'port_editable' => true,
     'health' => '/v1/health/version',
     'health_retries' => 40,
-    'notes' => 'Open the address for the console and make the first account there. The project it makes has an API endpoint of the same address and an API key to copy. Functions and sites build and run in Docker on this machine, so the panel asks before it deploys one. Idle it uses about 2 GB of memory, and the first start runs the database migrations, so give it a few minutes.',
+    'notes' => 'Open the address for the console and make the first account there. The project it makes has an API endpoint of the same address and an API key to copy. Functions and sites build and run in Docker on this machine. The containers Appwrite starts for them are not part of this stack: the panel lists them on their own, and removing Appwrite leaves them running. Idle it uses about 2 GB of memory, and the first start runs the database migrations, so give it a few minutes. The executor mounts the machine\'s /tmp, which Appwrite needs to hand code to the containers it starts; it only writes its own folders there.',
     'env' => [
         ['key' => '_APP_DOMAIN', 'label' => 'Domain', 'default' => '{host}', 'hint' => 'The address the console and API answer on, from the domain you add.'],
         ['key' => '_APP_OPENSSL_KEY_V1', 'label' => 'Encryption key', 'default' => '{random:32}', 'secret' => true],
@@ -44,7 +44,7 @@ x-app-env: &app-env
   _APP_OPTIONS_FORCE_HTTPS: disabled
   _APP_OPTIONS_ROUTER_FORCE_HTTPS: disabled
   _APP_OPTIONS_ROUTER_PROTECTION: disabled
-  _APP_OPTIONS_ABUSE: disabled
+  _APP_OPTIONS_ABUSE: enabled
   _APP_TRUSTED_HEADERS: x-forwarded-for
   _APP_TRUSTED_PROXIES: 127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
   _APP_MEMORY_LIMIT: 512M
@@ -66,7 +66,7 @@ x-app-env: &app-env
   _APP_STORAGE_PREVIEW_LIMIT: 20000000
   _APP_AUTOGRAVITY_HOST: http://appwrite-autogravity:8080
   _APP_EXIFTOOL_HOST: http://appwrite-exiftool:8080
-  _APP_EXECUTOR_HOST: http://exc1/v1
+  _APP_EXECUTOR_HOST: http://${COMPOSE_PROJECT_NAME}-exc1/v1
   _APP_EXECUTOR_SECRET: ${_APP_EXECUTOR_SECRET}
   _APP_EXECUTOR_IMAGES: openruntimes/node:v5-22,openruntimes/static:v5-1
   _APP_EXECUTOR_CONNECTION_STORAGE: local://localhost
@@ -74,6 +74,11 @@ x-app-env: &app-env
   _APP_FUNCTIONS_TIMEOUT: 900
   _APP_SITES_RUNTIMES: static-1,node-22
   _APP_SITES_TIMEOUT: 60
+  _APP_DOMAIN_FUNCTIONS: functions.${_APP_DOMAIN}
+  _APP_DOMAIN_SITES: sites.${_APP_DOMAIN}
+  # The console reads this to build domain instructions; without it the console
+  # answers 500 and cannot create sites or functions.
+  _APP_DOMAIN_TARGET_CNAME: ${_APP_DOMAIN}
   _APP_COMPUTE_CPUS: 4
   _APP_COMPUTE_MEMORY: 4096
   _APP_COMPUTE_SIZE_LIMIT: 30000000
@@ -81,8 +86,8 @@ x-app-env: &app-env
   _APP_COMPUTE_BUILD_TIMEOUT: 900
   _APP_COMPUTE_INACTIVE_THRESHOLD: 600
   _APP_COMPUTE_MAINTENANCE_INTERVAL: 600
-  _APP_COMPUTE_RUNTIMES_NETWORK: runtimes
-  _APP_BUILDS_VOLUME: appwrite-builds
+  _APP_COMPUTE_RUNTIMES_NETWORK: ${COMPOSE_PROJECT_NAME}_runtimes
+  _APP_BUILDS_VOLUME: ${COMPOSE_PROJECT_NAME}_builds
   _APP_JOBS_HOST: http://orchestrator:8080
   _APP_JOBS_SECRET: ${_APP_JOBS_SECRET}
   _APP_JOBS_ENDPOINT: http://appwrite
@@ -105,14 +110,14 @@ x-app-env: &app-env
 
 services:
   traefik:
-    image: traefik:3.6
+    image: traefik:3.7
     restart: unless-stopped
     command:
       - --providers.file.directory=/storage/config
       - --providers.file.watch=true
       - --providers.docker=true
       - --providers.docker.exposedByDefault=false
-      - --providers.docker.constraints=Label(`traefik.constraint-label-stack`,`appwrite`)
+      - --providers.docker.constraints=Label(`traefik.constraint-label-stack`,`${COMPOSE_PROJECT_NAME}`)
       - --entrypoints.appwrite_web.address=:80
     ports:
       - "127.0.0.1:${PORT}:80"
@@ -138,12 +143,18 @@ services:
       start_period: 120s
     labels:
       - traefik.enable=true
-      - traefik.constraint-label-stack=appwrite
-      - traefik.docker.network=appwrite
+      - traefik.constraint-label-stack=${COMPOSE_PROJECT_NAME}
+      - traefik.docker.network=${COMPOSE_PROJECT_NAME}_appwrite
       - traefik.http.services.appwrite_api.loadbalancer.server.port=80
       - traefik.http.routers.appwrite_api.entrypoints=appwrite_web
       - traefik.http.routers.appwrite_api.rule=PathPrefix(`/`)
       - traefik.http.routers.appwrite_api.service=appwrite_api
+      # Functions and sites are served from their own host names, so they need a
+      # router that wins over the console's catch-all path rule.
+      - traefik.http.routers.appwrite_public.entrypoints=appwrite_web
+      - traefik.http.routers.appwrite_public.rule=Host(`*.functions.${_APP_DOMAIN}`) || Host(`*.sites.${_APP_DOMAIN}`)
+      - traefik.http.routers.appwrite_public.service=appwrite_api
+      - traefik.http.routers.appwrite_public.priority=1000
     volumes:
       - appwrite-uploads:/storage/uploads:rw
       - appwrite-imports:/storage/imports:rw
@@ -157,6 +168,9 @@ services:
     networks:
       - appwrite
       - browser
+      # Builds run on the runtimes network and download their source from this
+      # container, so it has to answer to its name there too.
+      - runtimes
     depends_on:
       - redis
       - postgresql
@@ -172,8 +186,8 @@ services:
       - APPWRITE_ENDPOINT_SAME_ORIGIN=true
     labels:
       - traefik.enable=true
-      - traefik.constraint-label-stack=appwrite
-      - traefik.docker.network=appwrite
+      - traefik.constraint-label-stack=${COMPOSE_PROJECT_NAME}
+      - traefik.docker.network=${COMPOSE_PROJECT_NAME}_appwrite
       - traefik.http.services.appwrite_console.loadbalancer.server.port=3000
       - traefik.http.routers.appwrite_console.entrypoints=appwrite_web
       # The API, realtime and the console share one domain, so the console takes
@@ -189,8 +203,8 @@ services:
     restart: unless-stopped
     labels:
       - traefik.enable=true
-      - traefik.constraint-label-stack=appwrite
-      - traefik.docker.network=appwrite
+      - traefik.constraint-label-stack=${COMPOSE_PROJECT_NAME}
+      - traefik.docker.network=${COMPOSE_PROJECT_NAME}_appwrite
       - traefik.http.services.appwrite_realtime.loadbalancer.server.port=80
       - traefik.http.routers.appwrite_realtime.entrypoints=appwrite_web
       - traefik.http.routers.appwrite_realtime.rule=PathPrefix(`/v1/realtime`)
@@ -294,16 +308,17 @@ services:
     image: openruntimes/executor:1.1.2
     restart: unless-stopped
     # Appwrite reaches the executor by this name, and the executor finds itself by
-    # it (it looks up a container whose name is its hostname), so both are exc1.
-    container_name: exc1
-    hostname: exc1
+    # it (it looks up a container whose name is its hostname), so both carry the
+    # stack's project name.
+    container_name: ${COMPOSE_PROJECT_NAME}-exc1
+    hostname: ${COMPOSE_PROJECT_NAME}-exc1
     stop_signal: SIGINT
     environment:
       - OPR_EXECUTOR_IMAGES=openruntimes/node:v5-22,openruntimes/static:v5-1
       - OPR_EXECUTOR_RUNTIMES=node-22,static-1
       - OPR_EXECUTOR_SECRET=${_APP_EXECUTOR_SECRET}
       - OPR_EXECUTOR_ENV=production
-      - OPR_EXECUTOR_NETWORK=runtimes
+      - OPR_EXECUTOR_NETWORK=${COMPOSE_PROJECT_NAME}_runtimes
       - OPR_EXECUTOR_RUNTIME_VERSIONS=v5
       - OPR_EXECUTOR_INACTIVE_THRESHOLD=600
       - OPR_EXECUTOR_MAINTENANCE_INTERVAL=600
@@ -314,6 +329,8 @@ services:
       - appwrite-builds:/storage/builds:rw
       - appwrite-functions:/storage/functions:rw
       - appwrite-sites:/storage/sites:rw
+      # Runtime containers mount /tmp/<runtime>/src from the host for their code,
+      # so the executor has to see the host's /tmp at the same path.
       - /tmp:/tmp:rw
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS -H \"Authorization: Bearer $$OPR_EXECUTOR_SECRET\" http://localhost/v1/health >/dev/null"]
@@ -333,8 +350,8 @@ services:
     hostname: orchestrator
     environment:
       - ORCHESTRATOR_BACKEND=docker
-      - ORCHESTRATOR_NETWORK=runtimes
-      - DOCKER_NETWORK=runtimes
+      - ORCHESTRATOR_NETWORK=${COMPOSE_PROJECT_NAME}_runtimes
+      - DOCKER_NETWORK=${COMPOSE_PROJECT_NAME}_runtimes
       - ARTIFACT_ENDPOINT=http://orchestrator:8080
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -386,13 +403,10 @@ services:
 
 networks:
   gateway:
-    name: gateway
   appwrite:
-    name: appwrite
   runtimes:
-    name: runtimes
+    name: ${COMPOSE_PROJECT_NAME}_runtimes
   browser:
-    name: browser
 
 volumes:
   appwrite-postgresql:
@@ -405,9 +419,9 @@ volumes:
   appwrite-certificates:
   appwrite-functions:
   appwrite-sites:
-  # Unprefixed, so the executor and the orchestrator attach it by the same name.
+  # Named after the stack, so the executor and the orchestrator attach it by the same name.
   appwrite-builds:
-    name: appwrite-builds
+    name: ${COMPOSE_PROJECT_NAME}_builds
 APPWRITE_COMPOSE_YAML,
     ],
 ];

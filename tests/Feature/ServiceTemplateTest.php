@@ -61,7 +61,8 @@ test('the catalog has four hundred and forty-nine valid templates and every comp
         }
 
         preg_match_all('/\$\{([A-Z0-9_]+)\}/', $template->files['compose.yaml'], $m);
-        $provided = [...array_column($template->env, 'key'), 'PORT', 'DOCKER_BRIDGE'];
+        // Compose fills the project name in, so a template can key its names off it.
+        $provided = [...array_column($template->env, 'key'), 'PORT', 'DOCKER_BRIDGE', 'COMPOSE_PROJECT_NAME'];
 
         expect($template->files['compose.yaml'])->not->toContain('172.17.0.1', "{$template->slug} hardcodes Docker's bridge");
 
@@ -139,7 +140,16 @@ test('Appwrite gets its console and API on the domain, with its own keys and hea
         ->and($compose)->toContain('traefik.http.routers.appwrite_console')
         ->and($compose)->toContain('127.0.0.1:${PORT}:80')
         // The executor looks its own container up by hostname, so the name has to match it.
-        ->and($compose)->toContain("container_name: exc1\n    hostname: exc1");
+        ->and($compose)->toContain("container_name: \${COMPOSE_PROJECT_NAME}-exc1\n    hostname: \${COMPOSE_PROJECT_NAME}-exc1")
+        // Every fixed name is keyed off the project, so a second stack on the machine is separate.
+        ->and($compose)->toContain('traefik.constraint-label-stack=${COMPOSE_PROJECT_NAME}')
+        ->and($compose)->toContain('traefik.docker.network=${COMPOSE_PROJECT_NAME}_appwrite')
+        ->and($compose)->toContain('name: ${COMPOSE_PROJECT_NAME}_runtimes')
+        ->and($compose)->toContain('name: ${COMPOSE_PROJECT_NAME}_builds')
+        ->and($compose)->not->toContain('traefik.constraint-label-stack=appwrite')
+        // Abuse protection is Appwrite's rate limiting on auth, so it stays on.
+        ->and($compose)->toContain('_APP_OPTIONS_ABUSE: enabled')
+        ->and($compose)->toContain('_APP_DOMAIN_FUNCTIONS: functions.${_APP_DOMAIN}');
 });
 
 test('an install from the app installer is recorded with its app, for the admin Stats', function () {
