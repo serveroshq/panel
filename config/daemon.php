@@ -37,4 +37,8 @@ return [
     'local_node_port' => env('DAEMON_LOCAL_NODE_PORT'),
     'local_node_ports' => env('DAEMON_LOCAL_NODE_PORTS', ''),
     'panel_url' => env('DAEMON_PANEL_URL', rtrim((string) env('APP_URL', ''), '/')),
+    // The CA behind the panel's own HTTPS certificate, when machines can't
+    // check it against a public one (a home network, with Caddy's
+    // local_certs): the install command pins it (App\Support\PanelCa).
+    'panel_ca' => env('DAEMON_PANEL_CA'),
 ];

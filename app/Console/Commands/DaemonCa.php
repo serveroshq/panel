@@ -80,7 +80,9 @@ class DaemonCa extends Command
         }
 
         $this->ensureDirectory($out);
-        $config = $this->config("[server]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:{$host}\n");
+        // Machines check an address against an IP entry, never a DNS one.
+        $name = filter_var($host, FILTER_VALIDATE_IP) !== false ? "IP:{$host}" : "DNS:{$host}";
+        $config = $this->config("[server]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName={$name}\n");
         try {
             $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'secp384r1', 'private_key_bits' => 384]);
             $csr = openssl_csr_new(['commonName' => $host], $key, ['digest_alg' => 'sha256']);

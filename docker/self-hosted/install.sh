@@ -23,16 +23,23 @@
 # HTTPS. Machines still connect to the gateway directly, on a name of its
 # own that points at this server, DNS only (--gateway-host), port 8443.
 #
+# On a home network with no public domain (--local-certs), Caddy makes the
+# panel's certificates itself, and machines pin its CA as they connect. A
+# name like 192-168-1-20.sslip.io points at that address, and so does every
+# name under it, so workspaces work too.
+#
 # Options:
 #   --domain=NAME      the panel's address (required)
 #   --email=ADDRESS    for Let's Encrypt's expiry notices (required, unless
-#                      behind a tunnel)
+#                      behind a tunnel or with --local-certs)
 #   --tunnel-token=TOKEN
 #                      run behind this Cloudflare Tunnel (the token from the
 #                      tunnel's install command in Cloudflare, Networking > Tunnels)
 #   --gateway-host=NAME
 #                      where machines connect, behind a tunnel (like
 #                      gateway.example.com, DNS only, pointing here)
+#   --local-certs      a home network: Caddy's own certificates instead of
+#                      Let's Encrypt's
 #   --dir=PATH         where it lives (default /opt/serveros)
 #   --version=X.Y.Z    an image version instead of the latest
 #   --image=NAME       another image (default ghcr.io/serveroshq/panel,
@@ -50,6 +57,7 @@ VERSION="latest"
 IMAGE_GIVEN=0
 TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
 GATEWAY_HOST="${SERVEROS_GATEWAY_HOST:-}"
+LOCAL_CERTS=0
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -64,7 +72,8 @@ for arg in "$@"; do
         --image=*) IMAGE_NAME="${arg#--image=}"; IMAGE_GIVEN=1 ;;
         --tunnel-token=*) TUNNEL_TOKEN="${arg#--tunnel-token=}" ;;
         --gateway-host=*) GATEWAY_HOST="${arg#--gateway-host=}" ;;
-        -h|--help) sed -n '2,45p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --local-certs) LOCAL_CERTS=1 ;;
+        -h|--help) sed -n '2,49p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) fail "unknown option $arg (see --help)" ;;
     esac
 done
@@ -89,11 +98,13 @@ if [ -f "$DIR/.env" ]; then
     EMAIL="${EMAIL:-$(existing ACME_EMAIL)}"
     TUNNEL_TOKEN="${TUNNEL_TOKEN:-$(existing CLOUDFLARE_TUNNEL_TOKEN)}"
     GATEWAY_HOST="${GATEWAY_HOST:-$(existing SERVEROS_GATEWAY_HOST)}"
+    [ -z "$(existing DAEMON_PANEL_CA)" ] || LOCAL_CERTS=1
 fi
 # The whole install command pasted: the token is its last word.
 TUNNEL_TOKEN="$(printf '%s' "$TUNNEL_TOKEN" | awk '{print $NF}')"
 TUNNEL=0
 [ -z "$TUNNEL_TOKEN" ] || TUNNEL=1
+[ "$TUNNEL" = 0 ] || [ "$LOCAL_CERTS" = 0 ] || fail "--local-certs is for a home network. Behind a tunnel, Cloudflare does HTTPS, so leave it out."
 
 is_domain() { printf '%s' "$1" | grep -Eq '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'; }
 bare() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's|^https\?://||' -e 's|/.*$||' -e 's|:[0-9]*$||'; }
@@ -101,6 +112,10 @@ bare() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's|^https\?://||
 [ -n "$DOMAIN" ] || ask DOMAIN "The panel's domain (like panel.example.com):"
 DOMAIN="$(bare "$DOMAIN")"
 is_domain "$DOMAIN" || fail "\"$DOMAIN\" isn't a domain name. Use --domain=panel.example.com"
+# Workspaces open on names under the domain, which an address doesn't have.
+if printf '%s' "$DOMAIN" | grep -Eq '^[0-9.]+$'; then
+    fail "workspaces open on names under the domain, which an IP address doesn't have. Use --domain=$(printf '%s' "$DOMAIN" | tr . -).sslip.io, a name that points at $DOMAIN."
+fi
 if [ "$TUNNEL" = 1 ]; then
     printf '%s' "$TUNNEL_TOKEN" | grep -Eq '^[A-Za-z0-9+/=_-]{40,4096}$' \
         || fail "that isn't a Cloudflare Tunnel token. Copy it from the tunnel's install command in Cloudflare (Networking > Tunnels)."
@@ -108,7 +123,7 @@ if [ "$TUNNEL" = 1 ]; then
     GATEWAY_HOST="$(bare "$GATEWAY_HOST")"
     is_domain "$GATEWAY_HOST" || fail "give the gateway a name with --gateway-host=gateway.example.com"
     [ "$GATEWAY_HOST" != "$DOMAIN" ] || fail "machines can't connect through the tunnel, so the gateway needs a name of its own, not $DOMAIN (like gateway.example.com)."
-else
+elif [ "$LOCAL_CERTS" = 0 ]; then
     [ -n "$EMAIL" ] || ask EMAIL "Your email, for Let's Encrypt:"
     printf '%s' "$EMAIL" | grep -q '@' || fail "give an email address with --email=you@example.com"
 fi
@@ -134,12 +149,22 @@ if command -v ss >/dev/null 2>&1 && [ ! -f "$DIR/compose.yaml" ]; then
 fi
 
 # DNS: a warning only, since it may still be on its way.
-public_ip="$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+if [ "$LOCAL_CERTS" = 1 ]; then
+    # On a home network the names point at this server's own address.
+    public_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+else
+    public_ip="$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+fi
 check_dns() {
     local name="$1" found
     found="$(getent ahostsv4 "$name" 2>/dev/null | awk 'NR==1 {print $1}')"
     if [ -z "$found" ]; then
         warn "$name doesn't resolve yet. Add an A record pointing at ${public_ip:-this server}."
+    elif [ "$LOCAL_CERTS" = 1 ]; then
+        case " $(hostname -I 2>/dev/null || true) " in
+            *" $found "*) ;;
+            *) warn "$name points at $found, not this server." ;;
+        esac
     elif [ -n "$public_ip" ] && [ "$found" != "$public_ip" ]; then
         warn "$name points at $found, not this server ($public_ip)."
     fi
@@ -228,6 +253,13 @@ if [ "$TUNNEL" = 1 ]; then
     set_env CADDY_GLOBAL_OPTIONS local_certs
     set_env GATEWAY_PANEL_CA /gateway/panel-ca.crt
 fi
+if [ "$LOCAL_CERTS" = 1 ]; then
+    # A home network: Caddy makes the panel's certificates, the gateway
+    # checks the panel against its CA, and machines pin it (DAEMON_PANEL_CA).
+    set_env CADDY_GLOBAL_OPTIONS local_certs
+    set_env GATEWAY_PANEL_CA /gateway/panel-ca.crt
+    set_env DAEMON_PANEL_CA /gateway/panel-ca.crt
+fi
 grep -q '^DAEMON_RELEASE_PUBKEY=' .env || printf 'DAEMON_RELEASE_PUBKEY=%s\n' "5245716675785d7bf5dc36d783fa5c690c705da4d542082f398e3e79543d06f8" >> .env
 
 say "Pulling $IMAGE"
@@ -309,6 +341,12 @@ $(if [ "$TUNNEL" = 1 ]; then cat <<TUNNEL_EOF
   pointing at ${public_ip:-this server}, DNS only (grey cloud), and keep
   port 8443 open. Ports 80 and 443 can stay closed.
 TUNNEL_EOF
+elif [ "$LOCAL_CERTS" = 1 ]; then cat <<LOCAL_EOF
+  Make sure $DOMAIN and *.$DOMAIN point at this server on your network
+  (an sslip.io name already does), and that machines can reach ports 443
+  and 8443 here. Browsers warn about the panel's certificate until you
+  trust its CA: https://$DOMAIN/panel-ca.crt
+LOCAL_EOF
 else cat <<DIRECT_EOF
   Make sure DNS has both $DOMAIN and *.$DOMAIN pointing here, and that
   ports 80, 443 and 8443 are open to the internet.

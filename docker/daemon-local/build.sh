@@ -13,11 +13,11 @@ if [ ! -d "$SOURCE/.git" ]; then
   git clone https://github.com/serveroshq/daemon.git "$SOURCE"
 fi
 
-# The only change not in the daemon repo: let enrolment pin the local
-# panel's CA (Herd's), through SERVEROS_LOCAL_PANEL_CA. Everything else that
-# used to be a patch here (services, Caddy, backups...) is upstream now.
-if ! git -C "$SOURCE" apply --reverse --check "$ROOT/docker/daemon-local/panel-ca.patch" >/dev/null 2>&1; then
-  git -C "$SOURCE" apply "$ROOT/docker/daemon-local/panel-ca.patch"
+# The local panel's install command pins its CA (Herd's), which needs
+# `serverosd enrol --panel-ca`. A clone from before that has to be updated.
+if ! grep -q 'panel_ca' "$SOURCE/crates/serverosd/src/main.rs"; then
+  echo "$SOURCE is older than serverosd enrol --panel-ca. Update it: git -C $SOURCE checkout . && git -C $SOURCE pull" >&2
+  exit 1
 fi
 
 docker run --rm --platform "linux/$ARCH" \

@@ -8,6 +8,7 @@ use App\Models\MachinePolicy;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Audit\AuditContext;
+use App\Support\PanelCa;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -37,6 +38,9 @@ final class CreateJoinCommand
         $releases = config('daemon.releases_url');
         if (! filter_var($installer, FILTER_VALIDATE_URL) || ! filter_var($panel, FILTER_VALIDATE_URL) || ! filter_var($releases, FILTER_VALIDATE_URL)) {
             throw new RuntimeException('The daemon installer is not configured.');
+        }
+        if (PanelCa::configured() && PanelCa::pem() === null) {
+            throw new RuntimeException('The panel’s own certificate isn’t ready yet. Try again in a minute.');
         }
         foreach ([$policy, $group] as $chosen) {
             if ($chosen !== null && $chosen->workspace_id !== $workspace->id) {
@@ -88,9 +92,30 @@ final class CreateJoinCommand
         [$token, $enrolment] = $created;
 
         return [
-            'command' => 'curl -fsSL '.escapeshellarg($installer).' | sudo bash -s -- --token='.escapeshellarg($token).' --panel='.escapeshellarg($panel).' --releases='.escapeshellarg($releases),
+            'command' => self::command($token),
             'token' => $token,
             'enrolment' => $enrolment,
         ];
+    }
+
+    /** The one-line install command for an enrolment token. */
+    public static function command(string $token): string
+    {
+        $installer = escapeshellarg((string) config('daemon.install_url'));
+        $panel = (string) config('daemon.panel_url');
+        $args = '--token='.escapeshellarg($token).' --panel='.escapeshellarg($panel).' --releases='.escapeshellarg((string) config('daemon.releases_url'));
+        $ca = PanelCa::pem();
+        if ($ca === null) {
+            return 'curl -fsSL '.$installer.' | sudo bash -s -- '.$args;
+        }
+
+        // No public certificate to check the panel against: the command
+        // fetches its CA, stops unless it matches this SHA-256, and only
+        // then trusts it, for the script and (through it) the daemon.
+        $hash = hash('sha256', $ca);
+
+        return 'curl -fsSLk -o serveros-panel-ca.crt '.escapeshellarg(rtrim($panel, '/').'/panel-ca.crt')
+            .' && echo '.escapeshellarg($hash.'  serveros-panel-ca.crt').' | sha256sum -c'
+            .' && curl -fsSL --cacert serveros-panel-ca.crt '.$installer.' | sudo bash -s -- '.$args.' --panel-ca-sha256='.$hash;
     }
 }

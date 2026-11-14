@@ -20,18 +20,11 @@ RUN apt-get update \
 # /var/lib/docker), since overlay can't sit on the container's own overlay.
 COPY daemon.json /etc/docker/daemon.json
 
-# Trust this Mac's Herd CA, so https://serveros.test works from inside.
-# up.sh copies it in from Herd before building.
+# Trust this Mac's Herd CA, so https://serveros.test works from inside (the
+# daemon pins it as it enrols, from the install command). up.sh copies it in
+# from Herd before building.
 COPY herd-ca.pem /usr/local/share/ca-certificates/herd-ca.crt
 RUN update-ca-certificates
-
-# The daemon pins this CA when enrolling against the local panel (see
-# docker/daemon-local/panel-ca.patch). Keep it across sudo, since the
-# panel's install command runs `sudo bash`.
-ENV SERVEROS_LOCAL_PANEL_CA=/usr/local/share/ca-certificates/herd-ca.crt
-RUN echo 'Defaults env_keep += "SERVEROS_LOCAL_PANEL_CA"' > /etc/sudoers.d/serveros-local \
-    && chmod 0440 /etc/sudoers.d/serveros-local \
-    && echo 'SERVEROS_LOCAL_PANEL_CA=/usr/local/share/ca-certificates/herd-ca.crt' >> /etc/environment
 
 # serveros.test and gateway.serveros.test point at the Mac, on every boot.
 COPY serveros-local-hosts /usr/local/sbin/serveros-local-hosts
