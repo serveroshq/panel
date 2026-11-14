@@ -67,6 +67,8 @@ final class DatabaseConsole
             default => (string) $query,
         };
         $db = $database === null || $database === '' ? "''" : escapeshellarg($database);
+        // After a query, a line of its own says how many rows it changed.
+        $count = $action === 'query';
         $out = '"$O"';
 
         $run = $engine === 'postgres'
@@ -76,13 +78,15 @@ final class DatabaseConsole
                 'U="${POSTGRES_USER:-postgres}"',
                 "D={$db}; [ -n \"\$D\" ] || D=\"\${POSTGRES_DB:-\$U}\"",
                 'export PGPASSWORD="${POSTGRES_PASSWORD:-}" PGOPTIONS="-c statement_timeout=50s'.($write ? '' : ' -c default_transaction_read_only=on').'"',
-                'psql -X -q -v ON_ERROR_STOP=1 --csv -P null=NULL -U "$U" -d "$D" -c '.escapeshellarg($sql)." > {$out} 2> \"\$E\"",
+                'psql -X -q -v ON_ERROR_STOP=1 --csv -P null=NULL -U "$U" -d "$D" -c '.escapeshellarg($sql)
+                    .($count ? ' -c '.escapeshellarg("\\echo {$nonce} :ROW_COUNT") : '')." > {$out} 2> \"\$E\"",
             ])
             : implode("\n", [
                 'C=mysql; command -v mariadb >/dev/null 2>&1 && C=mariadb',
                 'export MYSQL_PWD="${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}"',
                 "D={$db}; [ -n \"\$D\" ] || D=\"\${MARIADB_DATABASE:-\$MYSQL_DATABASE}\"",
-                '$C -uroot --batch ${D:+-D "$D"} -e '.escapeshellarg(($write ? '' : 'SET SESSION TRANSACTION READ ONLY; ').$sql)." > {$out} 2> \"\$E\"",
+                '$C -uroot --batch ${D:+-D "$D"} -e '.escapeshellarg(($write ? '' : 'SET SESSION TRANSACTION READ ONLY; ').$sql
+                    .($count ? "\n;SELECT CONCAT('{$nonce} ', ROW_COUNT()) AS `{$nonce}`" : ''))." > {$out} 2> \"\$E\"",
             ]);
 
         return implode("\n", [
@@ -105,7 +109,7 @@ final class DatabaseConsole
     /**
      * What a finished job found: a table of rows, or the database's error.
      *
-     * @return array{database: string|null, columns: list<string>, rows: list<list<string|null>>, truncated: bool, error: string|null}|null
+     * @return array{database: string|null, columns: list<string>, rows: list<list<string|null>>, truncated: bool, changed: int|null, error: string|null}|null
      */
     public static function result(DaemonJob $job): ?array
     {
@@ -141,6 +145,21 @@ final class DatabaseConsole
         $text = implode("\n", $parts['result']);
         $truncated = $bytes > self::MAX_BYTES || $lines > self::MAX_LINES;
 
+        // The changed-rows line comes after the query's own output.
+        $changed = null;
+        $result = explode("\n", $text);
+        foreach ($result as $i => $line) {
+            if (str_starts_with($line, $nonce)) {
+                foreach (array_slice($result, $i) as $after) {
+                    if (preg_match('/^'.$nonce.' (-?\d+)$/', $after, $m) === 1) {
+                        $changed = (int) $m[1];
+                    }
+                }
+                $text = implode("\n", array_slice($result, 0, $i));
+                break;
+            }
+        }
+
         $table = $engine === 'postgres' ? self::csv($text, $truncated) : self::tsv($text, $truncated);
         $truncated = $truncated || count($table['rows']) > self::MAX_ROWS;
 
@@ -149,6 +168,7 @@ final class DatabaseConsole
             'columns' => $table['columns'],
             'rows' => array_slice($table['rows'], 0, self::MAX_ROWS),
             'truncated' => $truncated,
+            'changed' => $table['columns'] === [] && $changed !== null && $changed >= 0 ? $changed : null,
             'error' => $code === 0 ? null : ($error !== '' ? mb_substr($error, 0, 2000) : "The database client stopped (exit code {$code})."),
         ];
     }
