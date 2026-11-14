@@ -121,6 +121,37 @@ fi
 docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 isn't installed (the docker-compose-plugin package)."
 systemctl enable --now docker >/dev/null 2>&1 || true
 
+# Docker installed via snap runs confined and cannot read outside /home (e.g. /opt/serveros).
+docker_bin="$(command -v docker 2>/dev/null || true)"
+docker_target="$(readlink -f "$docker_bin" 2>/dev/null || true)"
+is_docker_snap=0
+case "$docker_bin" in
+    /snap/*) is_docker_snap=1 ;;
+esac
+case "$docker_target" in
+    /snap/*|*/snap|*/snapd) is_docker_snap=1 ;;
+esac
+if [ "$is_docker_snap" = 1 ]; then
+    case "$DIR" in
+        /*) abs_dir="$DIR" ;;
+        *) abs_dir="$PWD/$DIR" ;;
+    esac
+    user_example="${SUDO_USER:-username}"
+    [ "$user_example" != "root" ] || user_example="username"
+    case "$abs_dir" in
+        /home/*)
+            case "$abs_dir" in
+                */.*)
+                    fail "Docker was installed as a snap, which cannot access hidden directories in /home due to snap confinement. Use a non-hidden path like --dir=/home/$user_example/serveros, or install Docker from https://get.docker.com."
+                    ;;
+            esac
+            ;;
+        *)
+            fail "Docker was installed as a snap, which cannot access $DIR due to snap confinement. Install Docker from https://get.docker.com (or https://docs.docker.com/engine/install/), or run with --dir=/home/$user_example/serveros."
+            ;;
+    esac
+fi
+
 # Ports another program already holds.
 if command -v ss >/dev/null 2>&1 && [ ! -f "$DIR/compose.yaml" ]; then
     # Behind a tunnel the panel only listens on this server, on 18080 and 18443.
