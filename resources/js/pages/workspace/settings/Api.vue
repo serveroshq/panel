@@ -27,6 +27,8 @@ import AppButton from '@/components/workspace/AppButton.vue';
 import DangerButton from '@/components/workspace/DangerButton.vue';
 import SubmitButton from '@/components/workspace/SubmitButton.vue';
 import Tile from '@/components/workspace/Tile.vue';
+import WebhookEndpoints from '@/components/workspace/WebhookEndpoints.vue';
+import type { WebhookEndpoint } from '@/components/workspace/WebhookEndpoints.vue';
 import { timeAgo } from '@/lib/timeAgo';
 import type { Workspace } from '@/types';
 
@@ -62,6 +64,8 @@ const props = defineProps<{
     canChange: boolean;
     seesAll: boolean;
     keys: Key[];
+    webhooks: WebhookEndpoint[];
+    webhookEvents: string[];
     requests: ApiRequest[];
 }>();
 
@@ -399,6 +403,12 @@ const th = 'px-3 py-2.5 text-left text-[12px]/4 font-medium';
                 {{ ' ' + $t('No API keys yet.') + ' ' }}
             </p>
         </Tile>
+
+        <WebhookEndpoints
+            :webhooks="webhooks"
+            :events="webhookEvents"
+            :can-change="canChange"
+        />
 
         <Tile
             id="requests"

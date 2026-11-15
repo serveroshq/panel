@@ -6,6 +6,7 @@ use App\Enums\MachineEnvironment;
 use App\Models\Activity;
 use App\Models\Machine;
 use App\Support\Monitors\MonitorAlerts;
+use App\Support\Webhooks\Webhooks;
 
 class MachineWatcher
 {
@@ -62,6 +63,7 @@ class MachineWatcher
         } elseif ($quiet && $watchOffline && ! isset($state['offline']) && ! $maintenance) {
             $state['offline'] = $machine->last_seen_at->getTimestamp();
             Activity::system($machine->workspace_id, 'machine.offline', $machine->name, $machine);
+            Webhooks::dispatch($machine->workspace_id, 'machine.offline', ['machine_id' => $machine->id, 'state' => 'offline']);
             $this->alerts->notify($machine->workspace, 'machine.offline', "{$machine->name} stopped reporting", [
                 "Nothing from it since {$machine->last_seen_at->diffForHumans()}.",
                 'It may be down or unreachable, or the ServerOS daemon stopped. Check it in your provider’s console; if it’s running, restart the daemon with “systemctl restart serverosd”.',
@@ -71,6 +73,7 @@ class MachineWatcher
             $seconds = now()->getTimestamp() - $state['offline'];
             unset($state['offline']);
             Activity::system($machine->workspace_id, 'machine.online', $machine->name, $machine, ['seconds' => $seconds]);
+            Webhooks::dispatch($machine->workspace_id, 'machine.online', ['machine_id' => $machine->id, 'state' => 'online', 'offline_seconds' => $seconds]);
             $maintenance || $this->alerts->notify($machine->workspace, 'machine.online', "{$machine->name} is reporting again", [
                 'Back after '.MonitorAlerts::duration($seconds).' without a report.',
             ], $url, false, 'Open the machine', ['machine' => ['id' => $machine->id, 'name' => $machine->name]]);

@@ -15,6 +15,7 @@ use App\Models\McpToken;
 use App\Models\Operation;
 use App\Models\OperationMachine;
 use App\Support\Machines\MachineSelector;
+use App\Support\Webhooks\Webhooks;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -147,6 +148,7 @@ final class Operations
             return $operation;
         });
 
+        self::event($operation, 'operation.started');
         $this->advance($operation);
 
         // Recorded after the first batch: each machine's tool call starts its own audit record.
@@ -221,6 +223,7 @@ final class Operations
                     'state' => 'paused',
                     'paused_reason' => 'Paused after '.self::names(array_values($failed->skip($operation->failures_before)->map(fn (OperationMachine $t) => $t->machine_name)->all())).' failed. Resume to carry on, or cancel.',
                 ])->save();
+                self::event($operation, 'operation.paused');
 
                 return;
             }
@@ -228,6 +231,7 @@ final class Operations
             $pending = $targets->where('state', 'pending')->values();
             if ($pending->isEmpty()) {
                 $operation->forceFill(['state' => 'finished', 'finished_at' => now()])->save();
+                self::event($operation, 'operation.finished');
 
                 return;
             }
@@ -253,6 +257,7 @@ final class Operations
             throw new ToolError("Operation #{$operation->id} is {$operation->state}, so it can’t be paused.");
         }
         $operation->forceFill(['state' => 'paused', 'paused_reason' => 'Paused by '.$context->user->name.'.'])->save();
+        self::event($operation, 'operation.paused');
         $context->record('operation.pause', null, null, ['operation' => $operation->id, 'kind' => $operation->kind]);
     }
 
@@ -280,6 +285,7 @@ final class Operations
             $operation->forceFill(['state' => 'cancelled', 'finished_at' => now()])->save();
             $operation->targets()->where('state', 'pending')->update(['state' => 'skipped', 'outcome' => 'Cancelled before its turn.', 'finished_at' => now()]);
         });
+        self::event($operation, 'operation.finished');
         $context->record('operation.cancel', null, null, ['operation' => $operation->id, 'kind' => $operation->kind]);
     }
 
@@ -514,6 +520,17 @@ final class Operations
     private static function error(DaemonJob $job): string
     {
         return is_array($job->error) ? rtrim(trim((string) ($job->error['message'] ?? '')), '.') : '';
+    }
+
+    private static function event(Operation $operation, string $event): void
+    {
+        $counts = $operation->targets()->get()->countBy('state');
+        Webhooks::dispatch($operation->workspace_id, $event, [
+            'operation_id' => $operation->id,
+            'kind' => $operation->kind,
+            'state' => $operation->state,
+            'progress' => ['total' => $counts->sum(), ...array_map(fn (string $state) => (int) ($counts[$state] ?? 0), array_combine(OperationMachine::STATES, OperationMachine::STATES))],
+        ]);
     }
 
     /** @param  list<string>  $names */

@@ -8,10 +8,14 @@ use App\Mcp\Scopes;
 use App\Models\Activity;
 use App\Models\McpToken;
 use App\Models\McpToolCall;
+use App\Models\WebhookDelivery;
+use App\Models\WebhookEndpoint;
 use App\Models\Workspace;
 use App\Support\Audit\Audited;
 use App\Support\ConsoleLock;
 use App\Support\Docs\DocsUrl;
+use App\Support\Webhooks\WebhookEndpoints;
+use App\Support\Webhooks\Webhooks;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -65,6 +69,11 @@ class WorkspaceApiController extends Controller
                 'owner' => ['id' => $k->user->id, 'name' => $k->user->name, 'you' => $k->user_id === $user->id],
                 'lastUsedAt' => $k->last_used_at?->toIso8601String(),
                 'createdAt' => $k->created_at?->toIso8601String(),
+            ])->values(),
+            'webhookEvents' => Webhooks::EVENTS,
+            'webhooks' => WebhookEndpoint::query()->where('workspace_id', $workspace->id)->orderBy('id')->get()->map(fn (WebhookEndpoint $e) => [
+                ...WebhookEndpoints::view($e),
+                'deliveries' => $e->deliveries()->latest('id')->limit(10)->get()->map(fn (WebhookDelivery $d) => WebhookEndpoints::delivery($d))->all(),
             ])->values(),
             'requests' => $requests->map(fn (McpToolCall $c) => [
                 'id' => $c->id,

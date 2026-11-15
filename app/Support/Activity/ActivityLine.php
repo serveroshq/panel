@@ -294,6 +294,10 @@ final class ActivityLine
             'domain.active' => $set('is live', null, 'good'),
             'domain.remove' => $set('disconnected the domain', null, 'warn'),
             'api.key_revoke' => $set('revoked the API key', null, 'warn'),
+            'api.webhook_create' => $set('added a webhook to'),
+            'api.webhook_update' => $set(($meta['enabled'] ?? true) ? 'changed the webhook to' : 'turned off the webhook to', null, ($meta['enabled'] ?? true) ? 'neutral' : 'warn'),
+            'api.webhook_delete' => $set('removed the webhook to', null, 'warn'),
+            'api.webhook_disabled' => $set('turned off the webhook to', isset($meta['error']) ? $t('as deliveries kept failing: :error', ['error' => (string) $meta['error']]) : null, 'bad'),
             'mcp.revoke' => match (true) {
                 (bool) ($meta['by_client'] ?? false) => $set('disconnected itself from MCP', isset($meta['person']) ? $t('(:person’s connection)', ['person' => $meta['person']]) : null, 'warn'),
                 ($meta['kind'] ?? null) === 'oauth' => $set('disconnected', 'from MCP', 'warn'),

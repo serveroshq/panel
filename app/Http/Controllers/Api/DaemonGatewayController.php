@@ -26,6 +26,7 @@ use App\Support\Machines\PackageUpdates;
 use App\Support\Projects\ProjectData;
 use App\Support\Projects\ProjectLinks;
 use App\Support\Projects\ProjectNetwork;
+use App\Support\Webhooks\Webhooks;
 use App\Support\Workflows\WorkflowEngine;
 use App\Support\Workflows\WorkflowEvents;
 use Illuminate\Http\JsonResponse;
@@ -509,6 +510,7 @@ class DaemonGatewayController extends Controller
                 app(WorkflowEvents::class)->dispatch($machine->workspace_id, 'deploy.finished',
                     "{$job->service} on {$machine->name} ".($outcome === 'succeeded' ? 'deployed' : 'failed to deploy'),
                     ['machine_id' => $machine->id, 'machine' => $machine->name, 'service' => $job->service, 'outcome' => $outcome, 'job_id' => $job->id]);
+                Webhooks::dispatch($machine->workspace_id, 'deploy.finished', ['job_id' => $job->id, 'machine_id' => $machine->id, 'service' => $job->service, 'outcome' => $outcome]);
                 app(JobAlerts::class)->deployFinished($job);
             }
         });

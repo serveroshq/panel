@@ -7,6 +7,7 @@ final class ApiRoutes
     public const TAGS = [
         'Workspace' => 'The workspace itself, search, issues, activity and your own notification settings.',
         'Machines' => 'Servers running the ServerOS daemon: details, maintenance, updates, reboots and the firewall.',
+        'Webhooks' => 'Signed events sent to your own address as things happen: operations, jobs, deploys and machines going on or offline.',
         'Machine groups' => 'Groups of machines, for filtering and status pages.',
         'Operations' => 'One piece of work across many machines, in batches: deploy a new version, act on a service, or start and end maintenance. Pause, resume or cancel it as it goes.',
         'Services' => 'What runs on a machine: containers and systemd units, their lifecycle, logs and commands.',
@@ -86,6 +87,14 @@ final class ApiRoutes
                 ['POST', 'operations/{operation}/pause', 'pause_operation'],
                 ['POST', 'operations/{operation}/resume', 'resume_operation'],
                 ['POST', 'operations/{operation}/cancel', 'cancel_operation'],
+            ],
+            'Webhooks' => [
+                ['GET', 'webhooks', 'list_webhooks'],
+                ['POST', 'webhooks', 'create_webhook'],
+                ['PATCH', 'webhooks/{webhook}', 'update_webhook'],
+                ['DELETE', 'webhooks/{webhook}', 'delete_webhook'],
+                ['POST', 'webhooks/{webhook}/test', 'test_webhook'],
+                ['GET', 'webhooks/{webhook}/deliveries', 'list_webhook_deliveries'],
             ],
             'Machine groups' => [
                 ['GET', 'machine-groups', 'list_machine_groups'],
