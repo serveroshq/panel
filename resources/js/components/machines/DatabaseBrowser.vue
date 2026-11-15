@@ -9,6 +9,8 @@ import {
     SolarRefreshCw as RefreshCw,
     SolarShieldCheck as ShieldCheck,
 } from '@/lib/solarIcons';
+import hljs from 'highlight.js/lib/core';
+import sql from 'highlight.js/lib/languages/sql';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
 import { bytes } from '@/components/machines/serviceFormat';
@@ -311,6 +313,25 @@ function browse(table: Table): void {
     void run();
 }
 
+hljs.registerLanguage('sql', sql);
+
+// Coloured copy of the query, drawn behind the (see-through) textarea. The
+// trailing newline keeps a last empty line as tall as the textarea's.
+const highlighted = computed(
+    () =>
+        hljs.highlight(query.value, { language: 'sql', ignoreIllegals: true })
+            .value + '\n',
+);
+const backdrop = ref<HTMLElement | null>(null);
+
+function syncScroll(event: Event): void {
+    const editor = event.target as HTMLTextAreaElement;
+    if (backdrop.value) {
+        backdrop.value.scrollTop = editor.scrollTop;
+        backdrop.value.scrollLeft = editor.scrollLeft;
+    }
+}
+
 function onEditorKeydown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
@@ -579,19 +600,29 @@ const field =
                         <label class="sr-only" for="database-query">{{
                             $t('Query')
                         }}</label>
-                        <textarea
-                            id="database-query"
-                            v-model="query"
-                            rows="5"
-                            spellcheck="false"
-                            :placeholder="
-                                engine === 'postgres'
-                                    ? 'SELECT * FROM users LIMIT 10;'
-                                    : 'SELECT * FROM `users` LIMIT 10;'
-                            "
-                            class="min-h-24 w-full resize-y bg-transparent px-4 py-3 font-ui-mono text-[13px]/5 outline-none placeholder:text-(--ds-text-faint)"
-                            @keydown="onEditorKeydown"
-                        />
+                        <div class="relative">
+                            <!-- eslint-disable-next-line vue/no-v-html -- highlight.js escapes the query -->
+                            <pre
+                                ref="backdrop"
+                                aria-hidden="true"
+                                class="sql-highlight pointer-events-none absolute inset-0 m-0 [scrollbar-gutter:stable] overflow-hidden px-4 py-3 font-ui-mono text-[13px]/5 break-words whitespace-pre-wrap text-(--ds-text)"
+                                v-html="highlighted"
+                            />
+                            <textarea
+                                id="database-query"
+                                v-model="query"
+                                rows="5"
+                                spellcheck="false"
+                                :placeholder="
+                                    engine === 'postgres'
+                                        ? 'SELECT * FROM users LIMIT 10;'
+                                        : 'SELECT * FROM `users` LIMIT 10;'
+                                "
+                                class="relative block min-h-24 w-full resize-y [scrollbar-gutter:stable] bg-transparent px-4 py-3 font-ui-mono text-[13px]/5 break-words whitespace-pre-wrap text-transparent caret-(--ds-text) outline-none selection:bg-(--ds-accent-soft) placeholder:text-(--ds-text-faint)"
+                                @keydown="onEditorKeydown"
+                                @scroll="syncScroll"
+                            />
+                        </div>
                         <div
                             class="flex flex-wrap items-center gap-3 border-t border-(--ds-divider) px-3 py-2"
                         >
@@ -773,3 +804,34 @@ const field =
         </template>
     </div>
 </template>
+
+<style scoped>
+.sql-highlight :deep(.hljs-keyword),
+.sql-highlight :deep(.hljs-type),
+.sql-highlight :deep(.hljs-literal) {
+    color: var(--ds-blue);
+}
+
+.sql-highlight :deep(.hljs-string) {
+    color: var(--ds-green);
+}
+
+.sql-highlight :deep(.hljs-number) {
+    color: var(--ds-amber);
+}
+
+.sql-highlight :deep(.hljs-built_in),
+.sql-highlight :deep(.hljs-title) {
+    color: var(--ds-accent);
+}
+
+.sql-highlight :deep(.hljs-comment) {
+    color: var(--ds-text-muted);
+    font-style: italic;
+}
+
+.sql-highlight :deep(.hljs-operator),
+.sql-highlight :deep(.hljs-symbol) {
+    color: var(--ds-text-secondary);
+}
+</style>
