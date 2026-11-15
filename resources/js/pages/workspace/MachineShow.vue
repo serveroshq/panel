@@ -269,6 +269,18 @@ const canDeploy = computed(
     () =>
         canManage.value && props.deployEnabled && online.value && hasPlan.value,
 );
+// Why Deploy service is disabled, for its tooltip. The plan has its own
+// message with a link to Billing.
+const deployBlocked = computed<string | null>(() => {
+    if (!hasPlan.value) return 'plan';
+    if (!canManage.value)
+        return trans('You need permission to manage machines to deploy here.');
+    if (!props.deployEnabled)
+        return trans('Deploys aren’t set up on this panel yet.');
+    if (!online.value) return trans('The machine is offline.');
+
+    return null;
+});
 const tab = usePathTab(`/machines/${props.machine.id}`, [
     'services',
     'scheduled',
@@ -862,11 +874,11 @@ function usage(mount: string): { percent: number; free: number } | null {
             </DropdownMenu>
 
             <TooltipProvider :delay-duration="100">
-                <Tooltip :disabled="hasPlan">
+                <Tooltip :disabled="deployBlocked === null">
                     <TooltipTrigger as-child>
                         <span
                             class="inline-flex"
-                            :tabindex="hasPlan ? undefined : 0"
+                            :tabindex="deployBlocked === null ? undefined : 0"
                         >
                             <button
                                 type="button"
@@ -887,14 +899,17 @@ function usage(mount: string): { percent: number; free: number } | null {
                         align="end"
                         class="max-w-64 px-3 py-2 text-left text-[13px]/5"
                     >
-                        {{
+                        <template v-if="deployBlocked !== 'plan'">{{
+                            deployBlocked
+                        }}</template>
+                        <template v-else>{{
                             ' ' +
                             $t(
                                 'Your plan has ended, so deploys are paused. Everything already running keeps running.',
                             )
-                        }}
+                        }}</template>
                         <Link
-                            v-if="upgrade"
+                            v-if="deployBlocked === 'plan' && upgrade"
                             :href="upgrade.href"
                             class="mt-1 block font-semibold underline underline-offset-2"
                             >{{ $t('Resubscribe in Billing') }}</Link
