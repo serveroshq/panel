@@ -39,8 +39,9 @@ export function statusGroup(service: Service): StatusGroup {
 
 export function bytes(value: number | null | undefined): string {
     if (value === null || value === undefined) return '—';
-    if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GiB`;
-    if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(1)} MiB`;
+    const short = (n: number) => n.toFixed(1).replace(/\.0$/, '');
+    if (value >= 1024 ** 3) return `${short(value / 1024 ** 3)} GiB`;
+    if (value >= 1024 ** 2) return `${short(value / 1024 ** 2)} MiB`;
     if (value >= 1024) return `${Math.round(value / 1024)} KiB`;
 
     return `${value} B`;

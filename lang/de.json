@@ -653,6 +653,7 @@
     "Copy URL": "URL kopieren",
     "Copy answer": "Antwort kopieren",
     "Copy command": "Befehl kopieren",
+    "Copy setup key": "Einrichtungsschlüssel kopieren",
     "Copy the :name": "Den :name kopieren",
     "Copy the IP address": "Die IP-Adresse kopieren",
     "Copy the SSH tunnel command": "Den SSH-Tunnel-Befehl kopieren",
@@ -1824,6 +1825,7 @@
     "Settings": "Einstellungen",
     "Setup": "Setup",
     "Setup guide": "Einrichtungsleitfaden",
+    "Setup key": "Einrichtungsschlüssel",
     "Setup: :label": "Setup: :label",
     "Ship an app, database or worker to one of your machines.": "Bring eine App, eine Datenbank oder einen Worker auf eine deiner Maschinen.",
     "Shop": "Shop",
@@ -3539,5 +3541,7 @@
     "Port it publishes on this machine": "Port, den es auf dieser Maschine freigibt",
     "Compose file": "Compose-Datei",
     "Its path in the repository. Every service in it runs as one stack.": "Der Pfad im Repository. Alle Dienste darin laufen als ein Stack.",
-    "They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.": "Sie füllen ${NAME} in der Compose-Datei aus. Gib sie einem Dienst unter environment weiter, etwa DATABASE_URL: ${DATABASE_URL}."
+    "They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.": "Sie füllen ${NAME} in der Compose-Datei aus. Gib sie einem Dienst unter environment weiter, etwa DATABASE_URL: ${DATABASE_URL}.",
+    "You need permission to manage machines to deploy here.": "Zum Deployen hier brauchst du die Berechtigung, Maschinen zu verwalten.",
+    "Deploys aren’t set up on this panel yet.": "Deploys sind auf diesem Panel noch nicht eingerichtet."
 }
