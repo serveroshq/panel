@@ -234,10 +234,16 @@ final class DatabaseConsole
         return $text === false ? null : $text;
     }
 
-    /** A value that isn't text (a BINARY id, a blob) shows as hex. */
+    /**
+     * A value that isn't text (a BINARY id, a blob) shows as hex: bytes that
+     * aren't UTF-8, or control characters text doesn't hold (a BINARY(16)
+     * padded with zero bytes is still valid UTF-8).
+     */
     private static function cell(string $value): string
     {
-        return mb_check_encoding($value, 'UTF-8') ? $value : '0x'.strtoupper(bin2hex($value));
+        return mb_check_encoding($value, 'UTF-8') && preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $value) !== 1
+            ? $value
+            : '0x'.strtoupper(bin2hex($value));
     }
 
     /** @return list<string> */

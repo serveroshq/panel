@@ -279,8 +279,8 @@ test('results that aren’t plain text still read: cut mid-character, other alph
         ->toMatchArray(['columns' => ['name'], 'rows' => [['Zoë']], 'truncated' => true]);
 
     // MySQL --batch prints a BINARY(4) id as its raw bytes (with \0 escaped).
-    expect($run('docker:bbb222bbb222', "id\tname\n\\0\x01\xff\xfe\tAnn\n"))
-        ->toMatchArray(['columns' => ['id', 'name'], 'rows' => [['0x0001FFFE', 'Ann']]]);
+    expect($run('docker:bbb222bbb222', "id\tname\n\\0\x01\xff\xfe\tAnn\nAB\\0\\0\tBo\n"))
+        ->toMatchArray(['columns' => ['id', 'name'], 'rows' => [['0x0001FFFE', 'Ann'], ['0x41420000', 'Bo']]]);
 
     // The daemon scrubs `token=…` from what it reads; the rows are base64 by then, so nothing is lost.
     expect($run('docker:aaa111aaa111', "a,b,c\n1,token=abc,foo\n"))
