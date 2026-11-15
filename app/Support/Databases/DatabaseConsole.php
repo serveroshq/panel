@@ -197,7 +197,7 @@ final class DatabaseConsole
             }
         }
 
-        $table = $engine === 'postgres' ? self::csv($text, $truncated) : self::tsv($text, $truncated);
+        $table = $engine === 'postgres' ? self::csv($text, $truncated) : self::tsv($text);
         $truncated = $truncated || count($table['rows']) > self::MAX_ROWS;
 
         return [
@@ -297,7 +297,7 @@ final class DatabaseConsole
      *
      * @return array{columns: list<string>, rows: list<list<string|null>>}
      */
-    private static function tsv(string $text, bool $truncated): array
+    private static function tsv(string $text): array
     {
         $records = [];
         foreach (explode("\n", rtrim($text, "\n")) as $line) {
@@ -309,20 +309,22 @@ final class DatabaseConsole
             }
         }
 
-        return self::table($records, $truncated);
+        // result() already cut at a whole line, which is a whole row here.
+        return self::table($records, false);
     }
 
     /**
-     * ponytail: both clients print NULL as the word NULL, so a text value
-     * that is literally "NULL" shows as a null too.
+     * Both clients print NULL as the word NULL, so a text value that is
+     * literally "NULL" shows as a null too. A partial result drops its last
+     * record, which in psql's CSV can be a quoted value cut mid-line.
      *
      * @param  list<list<string>>  $records
      * @return array{columns: list<string>, rows: list<list<string|null>>}
      */
-    private static function table(array $records, bool $truncated): array
+    private static function table(array $records, bool $partial): array
     {
         $columns = array_shift($records) ?? [];
-        if ($truncated && $records !== []) {
+        if ($partial && $records !== []) {
             array_pop($records);
         }
         $width = count($columns);

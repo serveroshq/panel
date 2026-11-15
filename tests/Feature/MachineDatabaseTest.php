@@ -277,6 +277,9 @@ test('results that aren’t plain text still read: cut mid-character, other alph
     $cut = substr("name\nZoë\n日本語\n東京", 0, -2);
     expect($run('docker:aaa111aaa111', $cut, [900000, 3]))
         ->toMatchArray(['columns' => ['name'], 'rows' => [['Zoë']], 'truncated' => true]);
+    // MySQL keeps one row per line, so every whole line before the cut stays.
+    expect($run('docker:bbb222bbb222', $cut, [900000, 3]))
+        ->toMatchArray(['columns' => ['name'], 'rows' => [['Zoë'], ['日本語']], 'truncated' => true]);
 
     // MySQL --batch prints a BINARY(4) id as its raw bytes (with \0 escaped).
     expect($run('docker:bbb222bbb222', "id\tname\n\\0\x01\xff\xfe\tAnn\nAB\\0\\0\tBo\n"))
