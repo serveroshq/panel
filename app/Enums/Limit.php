@@ -21,4 +21,10 @@ enum Limit: string
     case StatusSubscribers = 'status_subscribers';
 
     case ApiRequestsPerMinute = 'api_requests_per_minute';
+
+    /** Machines one operation may touch. */
+    case OperationMachines = 'operation_machines';
+
+    /** Operations running or paused at once. */
+    case OperationsRunning = 'operations_running';
 }

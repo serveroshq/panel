@@ -3579,5 +3579,15 @@
     "Its path in the repository. Every service in it runs as one stack.": "रिपॉज़िटरी में इसका पाथ। इसकी हर सर्विस एक स्टैक के रूप में चलती है।",
     "They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.": "ये Compose फ़ाइल में ${NAME} भरते हैं। इन्हें किसी सर्विस के environment में दें, जैसे DATABASE_URL: ${DATABASE_URL}।",
     "You need permission to manage machines to deploy here.": "यहाँ डिप्लॉय करने के लिए आपको मशीनें मैनेज करने की अनुमति चाहिए।",
-    "Deploys aren’t set up on this panel yet.": "इस पैनल पर अभी डिप्लॉय सेट अप नहीं है।"
+    "Deploys aren’t set up on this panel yet.": "इस पैनल पर अभी डिप्लॉय सेट अप नहीं है।",
+    "shipped a new version of": "ने इसका नया वर्ज़न भेजा",
+    "to :count machine": ":count मशीन पर",
+    "to :count machines": ":count मशीनों पर",
+    ":count machine": ":count मशीन",
+    "on :count machine": ":count मशीन पर",
+    "on :count machines": ":count मशीनों पर",
+    ":count at a time": "एक बार में :count",
+    "paused the operation": "ने ऑपरेशन रोका",
+    "resumed the operation": "ने ऑपरेशन फिर शुरू किया",
+    "cancelled the operation": "ने ऑपरेशन रद्द किया"
 }

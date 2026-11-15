@@ -3579,5 +3579,15 @@
     "Its path in the repository. Every service in it runs as one stack.": "Su ruta en el repositorio. Todos sus servicios se ejecutan como un solo stack.",
     "They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.": "Rellenan ${NAME} en el archivo Compose. Pásalas a un servicio en su environment, como DATABASE_URL: ${DATABASE_URL}.",
     "You need permission to manage machines to deploy here.": "Para desplegar aquí necesitas permiso para gestionar máquinas.",
-    "Deploys aren’t set up on this panel yet.": "Los despliegues aún no están configurados en este panel."
+    "Deploys aren’t set up on this panel yet.": "Los despliegues aún no están configurados en este panel.",
+    "shipped a new version of": "publicó una nueva versión de",
+    "to :count machine": "en :count máquina",
+    "to :count machines": "en :count máquinas",
+    ":count machine": ":count máquina",
+    "on :count machine": "en :count máquina",
+    "on :count machines": "en :count máquinas",
+    ":count at a time": ":count a la vez",
+    "paused the operation": "pausó la operación",
+    "resumed the operation": "reanudó la operación",
+    "cancelled the operation": "canceló la operación"
 }

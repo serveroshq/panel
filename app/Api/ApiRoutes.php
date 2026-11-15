@@ -8,6 +8,7 @@ final class ApiRoutes
         'Workspace' => 'The workspace itself, search, issues, activity and your own notification settings.',
         'Machines' => 'Servers running the ServerOS daemon: details, maintenance, updates, reboots and the firewall.',
         'Machine groups' => 'Groups of machines, for filtering and status pages.',
+        'Operations' => 'One piece of work across many machines, in batches: deploy a new version, act on a service, or start and end maintenance. Pause, resume or cancel it as it goes.',
         'Services' => 'What runs on a machine: containers and systemd units, their lifecycle, logs and commands.',
         'Service groups' => 'Groups of services on one machine.',
         'Jobs' => 'Work on a machine runs as a job. Follow it until it’s finished.',
@@ -77,6 +78,14 @@ final class ApiRoutes
                 ['GET', 'machines/{machine}/firewall', 'get_firewall'],
                 ['POST', 'machines/{machine}/firewall/ports', 'open_port'],
                 ['DELETE', 'machines/{machine}/firewall/ports/{port}', 'close_port'],
+            ],
+            'Operations' => [
+                ['GET', 'operations', 'list_operations'],
+                ['POST', 'operations', 'create_operation'],
+                ['GET', 'operations/{operation}', 'get_operation'],
+                ['POST', 'operations/{operation}/pause', 'pause_operation'],
+                ['POST', 'operations/{operation}/resume', 'resume_operation'],
+                ['POST', 'operations/{operation}/cancel', 'cancel_operation'],
             ],
             'Machine groups' => [
                 ['GET', 'machine-groups', 'list_machine_groups'],

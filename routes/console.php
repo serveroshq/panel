@@ -26,6 +26,7 @@ Schedule::command('machines:watch')->everyMinute()->withoutOverlapping(5);
 Schedule::command('maintenance:tick')->everyMinute()->withoutOverlapping(5);
 Schedule::command('updates:check-due')->hourlyAt(23)->withoutOverlapping(30);
 Schedule::command('updates:tick')->everyMinute()->withoutOverlapping(5);
+Schedule::command('operations:tick')->everyMinute()->withoutOverlapping(5);
 Schedule::command('domains:check')->everyMinute()->withoutOverlapping(5);
 Schedule::command('email-domains:recheck')->dailyAt('04:19')->withoutOverlapping();
 Schedule::command('workflows:tick')->everyThirtySeconds()->withoutOverlapping(5);

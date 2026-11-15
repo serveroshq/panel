@@ -311,6 +311,27 @@ final class ActivityLine
                 isset($meta['batch']) ? $t(':count at a time', ['count' => (int) $meta['batch']]) : null,
                 isset($meta['scheduled_for']) ? $t('for :when', ['when' => Carbon::parse($meta['scheduled_for'])->format('j M, H:i').' UTC']) : null,
             ]))) ?: null, 'warn'),
+            'operation.start' => (function () use ($set, $t, $meta) {
+                $count = (int) ($meta['machines'] ?? 0);
+                $where = $t(match ($meta['kind'] ?? null) {
+                    'deploy_version' => $count === 1 ? 'to :count machine' : 'to :count machines',
+                    'maintenance' => $count === 1 ? ':count machine' : ':count machines',
+                    default => $count === 1 ? 'on :count machine' : 'on :count machines',
+                }, ['count' => $count]).(isset($meta['batch']) ? ', '.$t(':count at a time', ['count' => (int) $meta['batch']]) : '');
+                match ($meta['kind'] ?? null) {
+                    'deploy_version' => $set('shipped a new version of', $where),
+                    'service_action' => $set(match ($meta['action'] ?? null) {
+                        'start' => 'started',
+                        'stop' => 'stopped',
+                        'reload' => 'reloaded',
+                        default => 'restarted',
+                    }, $where, ($meta['action'] ?? null) === 'stop' ? 'warn' : 'neutral'),
+                    default => $set(($meta['action'] ?? null) === 'end' ? 'ended maintenance on' : 'started maintenance on', $where, ($meta['action'] ?? null) === 'end' ? 'good' : 'warn'),
+                };
+            })(),
+            'operation.pause' => $set('paused the operation', isset($meta['operation']) ? '#'.$meta['operation'] : null, 'warn'),
+            'operation.resume' => $set('resumed the operation', isset($meta['operation']) ? '#'.$meta['operation'] : null),
+            'operation.cancel' => $set('cancelled the operation', isset($meta['operation']) ? '#'.$meta['operation'] : null, 'warn'),
             'updates.rollout_cancel' => $set('cancelled the rollout', null, 'warn'),
             'updates.rollout_done' => $set('finished the rollout', $t(':done done, :failed failed, :skipped skipped', [
                 'done' => (int) ($meta['done'] ?? 0), 'failed' => (int) ($meta['failed'] ?? 0), 'skipped' => (int) ($meta['skipped'] ?? 0),
