@@ -14,6 +14,8 @@ use App\Models\Machine;
 use App\Models\McpToken;
 use App\Models\Operation;
 use App\Models\OperationMachine;
+use App\Support\Deploys\AppReleases;
+use App\Support\Deploys\AppVersions;
 use App\Support\Machines\MachineSelector;
 use App\Support\Webhooks\Webhooks;
 use Illuminate\Support\Arr;
@@ -53,10 +55,18 @@ final class Operations
         }
         $params = $this->params($kind, $input[$kind] ?? null);
 
-        // The person (or key) needs to be allowed to run the single-machine tool itself.
-        $tool = $this->tools->find(self::tool($kind, $params));
-        if ($tool !== null && ($denied = $this->tools->denial($tool, $context)) !== null) {
-            throw new ToolError($denied);
+        // The person (or key) needs to be allowed to run the single-machine tools themselves.
+        foreach (self::toolsFor($kind, $params) as $name) {
+            $tool = $this->tools->find($name);
+            if ($tool !== null && ($denied = $this->tools->denial($tool, $context)) !== null) {
+                throw new ToolError($denied);
+            }
+        }
+        if ($kind === 'command' && ! $context->user->hasEnabledTwoFactorAuthentication()) {
+            throw new ToolError('Running commands needs two-factor authentication on your account, as the console does: turn it on under Settings › Security.');
+        }
+        if ($kind === 'rollback' && ($params['confirm'] ?? null) !== $params['app']) {
+            throw new ToolError("This rolls {$params['app']} back on every machine picked. Ask the person first, then pass rollback.confirm set to “{$params['app']}” exactly.");
         }
 
         $strategy = Validator::make(is_array($input['strategy'] ?? null) ? $input['strategy'] : [], [
@@ -335,10 +345,29 @@ final class Operations
      */
     public static function tool(string $kind, array $params): string
     {
+        return self::toolsFor($kind, $params)[0];
+    }
+
+    /**
+     * The single-machine tools a kind runs on each machine, in order.
+     *
+     * @param  array<string, mixed>  $params
+     * @return non-empty-list<string>
+     */
+    public static function toolsFor(string $kind, array $params): array
+    {
         return match ($kind) {
-            'deploy_version' => 'deploy_new_version',
-            'service_action' => $params['action'].'_service',
-            'maintenance' => $params['action'].'_maintenance',
+            'deploy' => [isset($params['template']) ? 'deploy_template' : 'deploy_from_git'],
+            'deploy_version' => ['deploy_new_version'],
+            'rollback' => ['rollback_app'],
+            'service_action' => [$params['action'].'_service'],
+            'command' => ['run_command'],
+            'maintenance' => [$params['action'].'_maintenance'],
+            'update_machines' => match (true) {
+                isset($params['group']) && array_diff(array_keys($params), ['group']) !== [] => ['update_machine', 'update_machine_group'],
+                isset($params['group']) => ['update_machine_group'],
+                default => ['update_machine'],
+            },
             default => throw new ToolError('Invalid arguments: kind is one of '.implode(', ', Operation::KINDS).'.'),
         };
     }
@@ -348,12 +377,42 @@ final class Operations
     {
         if (! is_array($given) || ($given !== [] && array_is_list($given))) {
             throw new ToolError("Invalid arguments: say what to do under {$kind}, like ".match ($kind) {
+                'deploy' => '{"deploy": {"template": "redis", "name": "cache"}}',
                 'deploy_version' => '{"deploy_version": {"app": "shop", "ref": "v2.4.1"}}',
+                'rollback' => '{"rollback": {"app": "shop", "confirm": "shop"}}',
                 'service_action' => '{"service_action": {"service": "shop", "action": "restart"}}',
+                'command' => '{"command": {"service": "shop", "command": "php artisan migrate --force"}}',
+                'update_machines' => '{"update_machines": {"labels": {"env": "prod"}, "tier": "web"}}',
                 default => '{"maintenance": {"action": "start", "minutes": 60}}',
             }.'.');
         }
         $rules = match ($kind) {
+            'deploy' => [
+                'template' => ['required_without:repo', 'nullable', 'string', 'max:120'],
+                'repo' => ['required_without:template', 'nullable', 'string', 'max:500'],
+                'name' => ['required', 'string', 'max:63', 'regex:/^[a-z][a-z0-9-]*$/'],
+                'ref' => ['sometimes', 'nullable', 'string', 'max:255'],
+                'port' => ['required_without:template', 'nullable', 'integer', 'min:1', 'max:65535'],
+                'health_path' => ['sometimes', 'nullable', 'string', 'max:255'],
+                'env' => ['sometimes', 'nullable', 'array'],
+                'replace' => ['sometimes', 'boolean'],
+            ],
+            'rollback' => [
+                'app' => ['required', 'string', 'max:120'],
+                'commit' => ['sometimes', 'nullable', 'string', 'min:4', 'max:64'],
+                'with_data' => ['sometimes', 'boolean'],
+                'confirm' => ['sometimes', 'nullable', 'string', 'max:120'],
+            ],
+            'command' => [
+                'service' => ['required', 'string', 'max:255'],
+                'command' => ['required', 'string', 'max:2000'],
+            ],
+            'update_machines' => [
+                'labels' => ['sometimes', 'array', 'max:20'],
+                'tier' => ['sometimes', 'nullable', 'string', 'max:60'],
+                'environment' => ['sometimes', 'in:production,staging,development'],
+                'group' => ['sometimes', 'string', 'max:120'],
+            ],
             'deploy_version' => [
                 'app' => ['required', 'string', 'max:120'],
                 'ref' => ['sometimes', 'nullable', 'string', 'max:255'],
@@ -378,8 +437,12 @@ final class Operations
         if (($unknown = array_diff(array_keys($given), array_keys($rules))) !== []) {
             throw new ToolError("Invalid arguments: {$kind} doesn’t take ".implode(', ', $unknown).'. It takes '.implode(', ', array_keys($rules)).'.');
         }
+        $params = array_filter($validator->validated(), fn ($v) => $v !== null);
+        if ($kind === 'update_machines' && $params === []) {
+            throw new ToolError('Invalid arguments: update_machines needs labels, tier, environment or group.');
+        }
 
-        return array_filter($validator->validated(), fn ($v) => $v !== null);
+        return $params;
     }
 
     /** The context each machine's tool runs in: the person who started it, through the same key. */
@@ -419,15 +482,36 @@ final class Operations
         if ($tool === null) {
             return $this->settle($target, 'failed', 'Not started: this panel can’t do that any more.');
         }
-        $args = ['machine' => (string) $machine->id, ...match (true) {
-            $operation->kind === 'deploy_version' => $operation->params,
-            $operation->kind === 'maintenance' && $operation->params['action'] === 'end' => [],
-            default => Arr::except($operation->params, ['action']),
+        $params = $operation->params;
+        $id = (string) $machine->id;
+        if ($operation->kind === 'rollback' && ! isset($params['commit'])) {
+            $params['commit'] = self::previousVersion($machine, (string) $params['app']);
+            if ($params['commit'] === null) {
+                return $this->settle($target, 'failed', "Not started: {$params['app']} has no earlier version kept here to go back to.");
+            }
+        }
+        // Jobs are followed here, so never hold the call open waiting for one.
+        $args = ['machine' => $id, ...match ($operation->kind) {
+            'maintenance' => $params['action'] === 'end' ? [] : Arr::except($params, ['action']),
+            'service_action' => ['service' => $params['service'], 'wait' => 0],
+            'rollback' => [...Arr::except($params, ['confirm']), 'confirm' => $params['app'], 'wait' => 0],
+            'update_machines' => Arr::except($params, ['group']),
+            default => [...$params, 'wait' => 0],
         }];
 
-        [$status, $body] = $this->runner->run($context, $tool, $args);
-        if ($status >= 400) {
-            return $this->settle($target, 'failed', (string) ($body['error']['message'] ?? "It answered {$status}."));
+        if ($tool->name() !== 'update_machine_group') {
+            [$status, $body] = $this->runner->run($context, $tool, $args);
+            if ($status >= 400) {
+                return $this->settle($target, 'failed', (string) ($body['error']['message'] ?? "It answered {$status}."));
+            }
+        }
+        if ($operation->kind === 'update_machines' && isset($params['group'])) {
+            $group = $this->tools->find('update_machine_group');
+            [$status, $groupBody] = $group === null ? [404, []] : $this->runner->run($context, $group, ['group' => $params['group'], 'add' => [$id]]);
+            if ($status >= 400) {
+                return $this->settle($target, 'failed', (string) ($groupBody['error']['message'] ?? "It answered {$status}."));
+            }
+            $body ??= $groupBody;
         }
 
         $data = is_array($body['data'] ?? null) ? $body['data'] : [];
@@ -450,6 +534,7 @@ final class Operations
                 $job === null => $this->settle($target, 'failed', 'Its job went missing.'),
                 $job->isStale() => $this->settle($target, 'failed', 'The machine stopped answering while it ran.'),
                 in_array($job->state, ['failed', 'timed_out', 'refused', 'cancelled'], true) => $this->settle($target, 'failed', 'It didn’t finish: '.(self::error($job) ?: str_replace('_', ' ', $job->state)).'.'),
+                $job->state === 'succeeded' && $operation->kind === 'command' && is_numeric($job->result['exit_code'] ?? null) && (int) $job->result['exit_code'] !== 0 => $this->settle($target, 'failed', 'The command exited with code '.(int) $job->result['exit_code'].'.'),
                 $job->state === 'succeeded' => $this->done($target, $operation),
                 default => null,
             };
@@ -467,11 +552,7 @@ final class Operations
 
             return;
         }
-        try {
-            $status = $context->service($machine, $service)['status'] ?? null;
-        } catch (ToolError) {
-            $status = null;
-        }
+        $status = self::healthStatus($operation, $machine, $context);
         if ($status !== 'running') {
             $this->settle($target, 'failed', "Done, but {$service} stopped running before {$operation->wait_healthy_seconds} seconds were up ".($status === null ? '(it’s gone).' : "(it’s {$status})."));
         } elseif ($target->healthy_at !== null && ! $target->healthy_at->isFuture()) {
@@ -491,14 +572,47 @@ final class Operations
         return $this->settle($target, 'succeeded', 'Done.');
     }
 
-    /** The service that must stay running after this kind of work, if any. */
+    /** The service or app that must stay running after this kind of work, if any. */
     private static function healthService(Operation $operation): ?string
     {
         return match (true) {
-            $operation->kind === 'deploy_version' => 'app:'.$operation->params['app'],
+            $operation->kind === 'deploy_version', $operation->kind === 'rollback' => (string) $operation->params['app'],
+            $operation->kind === 'deploy' => (string) $operation->params['name'],
             $operation->kind === 'service_action' && $operation->params['action'] !== 'stop' => (string) $operation->params['service'],
             default => null,
         };
+    }
+
+    /**
+     * How it's doing now, from the machine's last scan: a service's status; an
+     * app's live release; or, for a stack, running only if every container in it is.
+     * Null when it's gone.
+     */
+    private static function healthStatus(Operation $operation, Machine $machine, McpContext $context): ?string
+    {
+        $name = (string) self::healthService($operation);
+        if ($operation->kind === 'service_action') {
+            try {
+                return $context->service($machine, $name)['status'] ?? null;
+            } catch (ToolError) {
+                return null;
+            }
+        }
+        if (($release = AppReleases::find($machine, $name)) !== null) {
+            return is_string($release['status'] ?? null) ? $release['status'] : null;
+        }
+        $found = false;
+        foreach ((array) ($machine->inventory['services'] ?? []) as $service) {
+            if (! is_array($service) || ($service['details']['compose_project'] ?? null) !== "serveros-{$name}") {
+                continue;
+            }
+            $found = true;
+            if (($service['status'] ?? null) !== 'running') {
+                return is_string($service['status'] ?? null) ? $service['status'] : 'unknown';
+            }
+        }
+
+        return $found ? 'running' : null;
     }
 
     private function settle(OperationMachine $target, string $state, string $outcome): string
@@ -511,10 +625,20 @@ final class Operations
     private static function subject(Operation $operation): ?string
     {
         return match ($operation->kind) {
-            'deploy_version' => (string) $operation->params['app'],
-            'service_action' => (string) $operation->params['service'],
+            'deploy_version', 'rollback' => (string) $operation->params['app'],
+            'deploy' => (string) $operation->params['name'],
+            'service_action', 'command' => (string) $operation->params['service'],
             default => null,
         };
+    }
+
+    /** The version kept just before the live one, for a rollback without a commit. */
+    private static function previousVersion(Machine $machine, string $app): ?string
+    {
+        $versions = AppVersions::for($machine, $app);
+        $live = array_search(true, array_column($versions, 'live'), true);
+
+        return $live === false ? null : ($versions[$live + 1]['commit'] ?? null);
     }
 
     private static function error(DaemonJob $job): string

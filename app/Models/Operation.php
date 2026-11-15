@@ -40,7 +40,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class Operation extends Model
 {
-    public const array KINDS = ['deploy_version', 'service_action', 'maintenance'];
+    public const array KINDS = ['deploy', 'deploy_version', 'rollback', 'service_action', 'command', 'maintenance', 'update_machines'];
 
     public const array OPEN = ['running', 'paused'];
 

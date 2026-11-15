@@ -30,7 +30,7 @@ final class CreateOperation extends Tool
 
     public function description(): string
     {
-        return 'Runs one piece of work on many machines, in batches: deploy_version (ship a new version of an app already on them), service_action (start, stop, restart or reload a service) or maintenance (start or end it). '
+        return 'Runs one piece of work on many machines, in batches: deploy (a template or a Git repository, under one name), deploy_version (ship a new version of an app already on them), rollback (back to each machine’s previous version, or a commit), service_action (start, stop, restart or reload a service), command (run a shell command in a container; needs the commands scope and two-factor authentication, as the console does), maintenance (start or end it) or update_machines (labels, tier, environment, or move them into a group). '
             .'Pick the machines with a selector (groups, labels, provider, region, tier, online) or machines (ids or names); they are fixed when it starts, so a machine that joins later isn’t touched. Each machine runs the same tool you would call for one machine, with the same checks. '
             .'strategy: batch_size (a number, or a percentage like "25%"; leave out to run all at once) runs that many at a time, and the next batch starts once every machine in it has finished; wait_healthy_seconds makes the service stay running that long first; pause_between_seconds waits between batches. When more than max_failures (default 0) machines fail, it pauses for a person to look, unless stop_on_failure is false. A machine that’s offline at its turn is skipped. '
             .'dry_run: true shows the machines and batches without starting anything. Follow it with get_operation; pause_operation, resume_operation and cancel_operation steer it.';
@@ -41,6 +41,32 @@ final class CreateOperation extends Tool
         return Schema::object([
             'kind' => Schema::string('What to do on each machine.', Operation::KINDS),
             ...MachineSelector::arguments(),
+            'deploy' => Schema::object([
+                'template' => Schema::string('A template’s key, as list_templates shows it. Leave out to build from repo instead.', maxLength: 120),
+                'repo' => Schema::string('The HTTPS Git repository: what an app template builds, or, without template, the app to build.', maxLength: 500),
+                'name' => Schema::string('The name to deploy it as on every machine: lowercase letters, digits and dashes, starting with a letter.', maxLength: 63),
+                'ref' => Schema::string('The branch, tag or full commit to deploy.', maxLength: 255),
+                'port' => Schema::integer('The port it listens on: needed without template, and for templates whose port can change.', 1, 65535),
+                'health_path' => Schema::string('A path that answers 200 once it’s up, like /health.', maxLength: 255),
+                'env' => ['type' => 'object', 'description' => 'The template’s settings by key, as list_templates with template shows them.', 'additionalProperties' => ['type' => 'string']],
+                'replace' => Schema::boolean('Replace whatever is already deployed under this name.'),
+            ], ['name']) + ['description' => 'For kind deploy: template, or repo (with port), and name.'],
+            'rollback' => Schema::object([
+                'app' => Schema::string('The app, by the name it was deployed as.', maxLength: 120),
+                'commit' => Schema::string('The version to go back to on every machine. Leave out to go back to each machine’s previous version.', maxLength: 64),
+                'with_data' => Schema::boolean('Also put its data back as it was just before the next deploy.'),
+                'confirm' => Schema::string('Type the app’s name exactly, to confirm. Ask the person first.', maxLength: 120),
+            ], ['app', 'confirm']) + ['description' => 'For kind rollback.'],
+            'command' => Schema::object([
+                'service' => Schema::string('The container on each machine: its key, name or label.', maxLength: 255),
+                'command' => Schema::string('The shell command to run. A non-zero exit code counts as a failure.', maxLength: 2000),
+            ], ['service', 'command']) + ['description' => 'For kind command.'],
+            'update_machines' => Schema::object([
+                'labels' => ['type' => 'object', 'description' => 'Labels to set, like {"env": "prod"}; a null or empty value takes that label off. Others stay.', 'additionalProperties' => ['type' => ['string', 'null']]],
+                'tier' => Schema::string('The tier to set. Empty: none.', maxLength: 60),
+                'environment' => Schema::string('The environment to set.', ['production', 'staging', 'development']),
+                'group' => Schema::string('Move them into this group (its id or name).', maxLength: 120),
+            ]) + ['description' => 'For kind update_machines.'],
             'deploy_version' => Schema::object([
                 'app' => Schema::string('The app, by the name it was deployed as (like shop). It must already run on every machine.', maxLength: 120),
                 'ref' => Schema::string('The branch, tag or full commit to deploy. Defaults to the default branch’s latest commit.', maxLength: 255),

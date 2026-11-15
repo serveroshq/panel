@@ -318,12 +318,16 @@ final class ActivityLine
             'operation.start' => (function () use ($set, $t, $meta) {
                 $count = (int) ($meta['machines'] ?? 0);
                 $where = $t(match ($meta['kind'] ?? null) {
-                    'deploy_version' => $count === 1 ? 'to :count machine' : 'to :count machines',
-                    'maintenance' => $count === 1 ? ':count machine' : ':count machines',
+                    'deploy_version', 'deploy' => $count === 1 ? 'to :count machine' : 'to :count machines',
+                    'maintenance', 'update_machines' => $count === 1 ? ':count machine' : ':count machines',
                     default => $count === 1 ? 'on :count machine' : 'on :count machines',
                 }, ['count' => $count]).(isset($meta['batch']) ? ', '.$t(':count at a time', ['count' => (int) $meta['batch']]) : '');
                 match ($meta['kind'] ?? null) {
                     'deploy_version' => $set('shipped a new version of', $where),
+                    'deploy' => $set('deployed', $where),
+                    'rollback' => $set('rolled back', $where, 'warn'),
+                    'command' => $set('ran a command in', $where),
+                    'update_machines' => $set('changed the settings of', $where),
                     'service_action' => $set(match ($meta['action'] ?? null) {
                         'start' => 'started',
                         'stop' => 'stopped',

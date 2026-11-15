@@ -3622,5 +3622,6 @@
     "The test event got through (:status).": "El evento de prueba llegó (:status).",
     "The test event didn’t get through.": "El evento de prueba no llegó.",
     "Adding…": "Añadiendo…",
-    "Removed the webhook to :host.": "Se quitó el webhook a :host."
+    "Removed the webhook to :host.": "Se quitó el webhook a :host.",
+    "changed the settings of": "cambió los ajustes de"
 }

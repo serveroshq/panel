@@ -3622,5 +3622,6 @@
     "The test event got through (:status).": "टेस्ट इवेंट पहुँच गया (:status)।",
     "The test event didn’t get through.": "टेस्ट इवेंट नहीं पहुँचा।",
     "Adding…": "जोड़ा जा रहा है…",
-    "Removed the webhook to :host.": ":host वाला वेबहुक हटाया गया।"
+    "Removed the webhook to :host.": ":host वाला वेबहुक हटाया गया।",
+    "changed the settings of": "ने इनकी सेटिंग बदली"
 }
