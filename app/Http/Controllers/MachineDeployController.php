@@ -21,6 +21,8 @@ use RuntimeException;
 
 class MachineDeployController extends Controller
 {
+    private const REF_RULES = ['nullable', 'string', 'max:255'];
+
     #[Audited]
     public function __invoke(Request $request, Workspace $workspace, Machine $machine, DaemonJobQueue $queue, ServiceTemplateCatalog $catalog, RefResolver $refs): JsonResponse
     {
@@ -39,12 +41,18 @@ class MachineDeployController extends Controller
             $request->merge(['domain' => DeployRequest::bareDomain($domain)]);
         }
 
-        $this->resolveCommit($request, $workspace, $refs, DeployRequest::gitRules());
-        $data = $request->validate(DeployRequest::gitRules());
+        $data = $request->validate([...DeployRequest::gitRules(), 'commit' => self::REF_RULES]);
 
+        DeployRequest::assertPublicRepo($data['repo']);
         DeployRequest::assertWildcard($machine, $data['domain'] ?? null, (bool) ($data['wildcard'] ?? false));
+        DeployRequest::assertDocker($machine, $request->user());
+        $data['commit'] = $this->resolveCommit($data['repo'], $data['commit'] ?? null, $workspace, $refs);
 
-        return $this->dispatch($request, $machine, $queue, DeployRequest::gitJob($data));
+        $response = $this->dispatch($request, $machine, $queue, DeployRequest::gitJob($data));
+
+        return $response->getStatusCode() === 202
+            ? response()->json([...$response->getData(true), 'commit' => $data['commit']], 202)
+            : $response;
     }
 
     public function taken(Workspace $workspace, Machine $machine): JsonResponse
@@ -66,13 +74,16 @@ class MachineDeployController extends Controller
             $request->merge(['domain' => DeployRequest::bareDomain($domain)]);
         }
 
-        if ($template->isApp()) {
-            $this->resolveCommit($request, $workspace, $refs, DeployRequest::templateRules($template));
-        }
-        $data = $request->validate(DeployRequest::templateRules($template));
+        $rules = DeployRequest::templateRules($template);
+        $data = $request->validate($template->isApp() ? [...$rules, 'commit' => self::REF_RULES] : $rules);
 
         DeployRequest::assertWildcard($machine, $template->web ? ($data['domain'] ?? null) : null, (bool) ($data['wildcard'] ?? false));
         DeployRequest::assertComposeFromRepo($machine, $template);
+        DeployRequest::assertDocker($machine, $request->user());
+        if ($template->isApp()) {
+            DeployRequest::assertPublicRepo($data['repo']);
+            $data['commit'] = $this->resolveCommit($data['repo'], $data['commit'] ?? null, $workspace, $refs);
+        }
 
         $deployment = new TemplateDeployment($template, $machine, $data);
         $response = $this->dispatch($request, $machine, $queue, $deployment->job());
@@ -86,35 +97,28 @@ class MachineDeployController extends Controller
         return response()->json([
             ...$response->getData(true),
             ...DeployRequest::templateResult($deployment, $data),
+            'commit' => $template->isApp() ? $deployment->commit() : null,
         ], 202);
     }
 
     /**
      * What to deploy can be a branch, a tag or a commit, and is the default
      * branch's latest commit when left out. Either way the job gets the
-     * exact commit it stands for now, as the MCP deploy tools do.
-     *
-     * @param  array<string, list<string>>  $rules
+     * exact commit it stands for now, as the MCP deploy tools do. It runs
+     * after the cheap checks, so a refused deploy doesn't call GitHub.
      */
-    private function resolveCommit(Request $request, Workspace $workspace, RefResolver $refs, array $rules): void
+    private function resolveCommit(string $repo, ?string $ref, Workspace $workspace, RefResolver $refs): string
     {
-        $request->validate([...$rules, 'commit' => ['nullable', 'string', 'max:255']]);
-        DeployRequest::assertPublicRepo((string) $request->input('repo'));
-
         try {
-            $resolved = $refs->resolve((string) $request->input('repo'), $request->input('commit'), $workspace);
+            return $refs->resolve($repo, $ref, $workspace)['commit'];
         } catch (ToolError $e) {
             throw ValidationException::withMessages(['commit' => $e->getMessage()]);
         }
-
-        $request->merge(['commit' => $resolved['commit']]);
     }
 
     /** @param  array<string, mixed>  $job */
     private function dispatch(Request $request, Machine $machine, DaemonJobQueue $queue, array $job): JsonResponse
     {
-        DeployRequest::assertDocker($machine, $request->user());
-
         try {
             $record = $queue->deploy($machine, $request->user(), $job);
         } catch (RuntimeException $e) {

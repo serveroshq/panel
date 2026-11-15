@@ -10,9 +10,11 @@ use App\Support\Monitors\HostResolver;
 use App\Support\ServiceTemplates\RepositoryDetector;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 final class RefResolver
 {
@@ -172,6 +174,7 @@ final class RefResolver
         $ip = str_contains($addresses[0], ':') ? "[{$addresses[0]}]" : $addresses[0];
         $port = $parts['port'] ?? 443;
 
+        $tooBig = false;
         try {
             return Http::timeout(10)
                 ->withHeaders(['User-Agent' => 'git/2.0 (ServerOS)', 'Accept' => 'application/x-git-upload-pack-advertisement'])
@@ -179,21 +182,19 @@ final class RefResolver
                     'allow_redirects' => false,
                     'curl' => [CURLOPT_RESOLVE => ["{$host}:{$port}:{$ip}"]],
                     // Guzzle turns down CURLOPT_MAXFILESIZE, so the cap is kept as it downloads.
-                    'progress' => function (int $total, int $downloaded): void {
+                    'progress' => function (int $total, int $downloaded) use (&$tooBig): void {
                         if ($total > self::MAX_BYTES || $downloaded > self::MAX_BYTES) {
-                            throw new ToolError('That repository has too many branches and tags to look through. Give the full 40-character commit instead of a branch.');
+                            $tooBig = true;
+                            throw new RuntimeException('Too large');
                         }
                     },
                 ])
                 ->get($url);
-        } catch (ConnectionException $e) {
-            for ($cause = $e->getPrevious(); $cause !== null; $cause = $cause->getPrevious()) {
-                if ($cause instanceof ToolError) {
-                    throw $cause;
-                }
-            }
-
-            throw new ToolError("Couldn’t reach {$host}. Check the repository address, or try again in a moment.");
+        } catch (ConnectionException|RequestException) {
+            // An error status cut off by the cap comes back as a RequestException.
+            throw new ToolError($tooBig
+                ? 'That repository has too many branches and tags to look through. Give the full 40-character commit instead of a branch.'
+                : "Couldn’t reach {$host}. Check the repository address, or try again in a moment.");
         }
     }
 
