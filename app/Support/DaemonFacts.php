@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use Symfony\Component\HttpFoundation\IpUtils;
+
 final class DaemonFacts
 {
     /** @param array<string, mixed> $facts */
@@ -23,13 +25,27 @@ final class DaemonFacts
             }
             foreach ($interface['addresses'] ?? [] as $address) {
                 $address = explode('/', (string) $address)[0];
-                if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                if (self::routable($address)) {
                     return $address;
                 }
             }
         }
 
         return null;
+    }
+
+    /**
+     * IPv4 ranges that PHP's private and reserved range flags let through but
+     * the internet can't reach: shared address space for carrier NAT and
+     * overlay networks like Netbird and Tailscale (RFC 6598), IETF protocol
+     * assignments (RFC 6890) and benchmarking (RFC 2544).
+     */
+    private const array NOT_ROUTED = ['100.64.0.0/10', '192.0.0.0/24', '198.18.0.0/15'];
+
+    private static function routable(string $address): bool
+    {
+        return filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false
+            && ! IpUtils::checkIp($address, self::NOT_ROUTED);
     }
 
     public const DEFAULT_BRIDGE = '172.17.0.1';

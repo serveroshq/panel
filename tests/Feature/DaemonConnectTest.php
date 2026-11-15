@@ -131,6 +131,50 @@ test('a machine keeps the name someone gave it when its daemon reconnects, and f
     expect($machine->fresh()->name)->toBe('Shop database');
 });
 
+test('a machine behind NAT on an overlay network shows the address it connects from, not its overlay address', function () {
+    config()->set('daemon.install_ready', true);
+    $workspace = Workspace::factory()->onPlan(Plan::Pro)->create();
+    $dir = sys_get_temp_dir().'/serveros-ca-test-'.bin2hex(random_bytes(5));
+    config()->set('daemon.ca_cert', $dir.'/ca.crt');
+    config()->set('daemon.ca_key', $dir.'/ca.key');
+    config()->set('daemon.gateway_host', 'gateway.serveros.test');
+    config()->set('daemon.gateway_secret', 'test-gateway-secret');
+    Artisan::call('daemon:ca', ['action' => 'init']);
+
+    try {
+        $command = $this->actingAs($workspace->owner)->postJson(connectUrl($workspace))->assertOk()->json('command');
+        preg_match('/--token=\x27([a-f0-9]{64})\x27/', $command, $match);
+
+        $facts = ['hostname' => 'oci-1', 'os' => 'ubuntu', 'interfaces' => [
+            ['name' => 'lo', 'addresses' => ['127.0.0.1/8']],
+            ['name' => 'enp0s6', 'addresses' => ['10.0.0.12/24']],
+            ['name' => 'wt0', 'addresses' => ['100.92.14.7/16']],
+            ['name' => 'docker0', 'addresses' => ['172.17.0.1/16']],
+        ]];
+        $this->app['auth']->forgetGuards();
+        $uid = $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.20'])->postJson('/api/daemon/enrol', [
+            'token' => $match[1], 'csr' => daemonCsr(), 'daemon_version' => 'v0.1.0',
+            'protocol_majors' => [1], 'facts' => $facts,
+        ])->assertCreated()->json('machine_id');
+        $machine = Machine::query()->where('uid', $uid)->firstOrFail();
+        expect($machine->ip_address)->toBe('198.51.100.20');
+
+        $headers = ['X-Gateway-Secret' => 'test-gateway-secret'];
+        $this->postJson('/api/gateway/hello', [
+            'serial' => $machine->certificate_serial,
+            'hello' => ['machine_id' => $uid, 'daemon_version' => 'v0.1.0', 'supported_majors' => [1], 'facts' => $facts],
+        ], $headers)->assertOk();
+        $this->postJson("/api/gateway/machines/{$uid}/ingest", [
+            'envelopes' => [['v' => 1, 'kind' => 'facts', 'payload' => $facts]],
+        ], $headers)->assertOk();
+        expect($machine->fresh()->ip_address)->toBe('198.51.100.20');
+    } finally {
+        @unlink($dir.'/ca.crt');
+        @unlink($dir.'/ca.key');
+        @rmdir($dir);
+    }
+});
+
 test('a machine joining with a command staff left reads as ServerOS Support, with no IP on either row', function () {
     config()->set('daemon.install_ready', true);
     Queue::fake([SendNtfy::class]);
