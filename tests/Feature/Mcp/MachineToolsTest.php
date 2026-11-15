@@ -80,7 +80,7 @@ test('tools are listed by what the connection and role allow', function () {
 
     $all = collect(mcpRequest($workspace, mcpKey($workspace), 'tools/list')->json('result.tools'))->keyBy('name');
     expect($all->keys()->all())->toEqualCanonicalizing([
-        'list_machines', 'get_machine', 'update_machine', 'set_machine_icon', 'remove_machine_icon',
+        'list_machines', 'resolve_selector', 'get_machine', 'update_machine', 'set_machine_icon', 'remove_machine_icon',
         'list_machine_groups', 'create_machine_group', 'update_machine_group', 'delete_machine_group',
         'list_machine_policies', 'create_machine_policy', 'update_machine_policy',
         'start_maintenance', 'end_maintenance', 'rescan_machine', 'check_updates', 'get_updates_result',
@@ -99,11 +99,11 @@ test('tools are listed by what the connection and role allow', function () {
         ->and($all['update_machine']['annotations']['readOnlyHint'])->toBeFalse();
 
     $read = collect(mcpRequest($workspace, mcpKey($workspace, scopes: [Scopes::READ]), 'tools/list')->json('result.tools'))->pluck('name');
-    expect($read->all())->toEqualCanonicalizing(['list_machines', 'get_machine', 'list_machine_groups', 'list_machine_policies', 'rescan_machine', 'get_updates_result', 'get_machine_connection_status', 'get_firewall', 'list_package_updates', 'get_package_rollout'])
+    expect($read->all())->toEqualCanonicalizing(['list_machines', 'resolve_selector', 'get_machine', 'list_machine_groups', 'list_machine_policies', 'rescan_machine', 'get_updates_result', 'get_machine_connection_status', 'get_firewall', 'list_package_updates', 'get_package_rollout'])
         ->and($all['check_updates']['annotations']['readOnlyHint'])->toBeFalse();
 
     $viewer = collect(mcpRequest($workspace, machineToolsViewer($workspace), 'tools/list')->json('result.tools'))->pluck('name');
-    expect($viewer->all())->toEqualCanonicalizing(['list_machines', 'get_machine', 'list_machine_groups', 'list_machine_policies', 'rescan_machine', 'get_updates_result', 'get_firewall', 'list_package_updates', 'get_package_rollout']);
+    expect($viewer->all())->toEqualCanonicalizing(['list_machines', 'resolve_selector', 'get_machine', 'list_machine_groups', 'list_machine_policies', 'rescan_machine', 'get_updates_result', 'get_firewall', 'list_package_updates', 'get_package_rollout']);
 });
 
 test('list_machines filters, sorts and pages like the machines page', function () {

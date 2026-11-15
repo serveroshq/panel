@@ -29,6 +29,7 @@ use App\Mcp\Tools\Machine\RebootMachine;
 use App\Mcp\Tools\Machine\RemoveMachine;
 use App\Mcp\Tools\Machine\RemoveMachineIcon;
 use App\Mcp\Tools\Machine\RescanMachine;
+use App\Mcp\Tools\Machine\ResolveSelector;
 use App\Mcp\Tools\Machine\SetMachineIcon;
 use App\Mcp\Tools\Machine\StartMaintenance;
 use App\Mcp\Tools\Machine\UpdateMachine;
@@ -41,6 +42,7 @@ final class MachineTools implements ToolGroup
     {
         return [
             ListMachines::class,
+            ResolveSelector::class,
             GetMachine::class,
             UpdateMachine::class,
             SetMachineIcon::class,

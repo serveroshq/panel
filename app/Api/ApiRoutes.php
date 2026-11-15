@@ -52,6 +52,7 @@ final class ApiRoutes
             ],
             'Machines' => [
                 ['GET', 'machines', 'list_machines'],
+                ['POST', 'selectors/resolve', 'resolve_selector'],
                 ['POST', 'machines', 'add_machine'],
                 ['GET', 'machines/connections/{enrolment}', 'get_machine_connection_status'],
                 ['GET', 'machines/{machine}', 'get_machine'],
