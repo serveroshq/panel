@@ -102,15 +102,15 @@ final class DatabaseConsole
             // stops a SELECT, MariaDB any statement.
             : implode("\n", [
                 'C=mysql; command -v mariadb >/dev/null 2>&1 && C=mariadb',
-                // MySQL prints binary columns as hex when it can; MariaDB's client
-                // would print NULL as 0x too, so there the panel turns them to hex.
-                'L="SET SESSION max_execution_time='.(self::QUERY_TIMEOUT * 1000).';" H=',
-                'if $C --version 2>/dev/null | grep -qi mariadb; then L="SET SESSION max_statement_time='.self::QUERY_TIMEOUT.';"; else $C --help 2>/dev/null | grep -q -- --binary-as-hex && H=--binary-as-hex; fi',
+                // Binary columns come as raw bytes and the panel shows them as hex:
+                // the clients' own --binary-as-hex prints NULL as 0x in MariaDB and MySQL 5.7.
+                'L="SET SESSION max_execution_time='.(self::QUERY_TIMEOUT * 1000).';"',
+                '$C --version 2>/dev/null | grep -qi mariadb && L="SET SESSION max_statement_time='.self::QUERY_TIMEOUT.';"',
                 'export MYSQL_PWD="${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}"',
                 "D={$db}; [ -n \"\$D\" ] || D=\"\${MARIADB_DATABASE:-\$MYSQL_DATABASE}\"",
                 // Its own connection comes first (unbuffered, so it is written even if the
                 // client is stopped), to stop the statement too.
-                '$T $C -uroot --batch --unbuffered --binary-mode --default-character-set=utf8mb4 $H ${D:+-D "$D"} -e "SELECT CONNECTION_ID() AS id;$L"'.escapeshellarg(($write ? '' : 'SET SESSION TRANSACTION READ ONLY; ').$sql
+                '$T $C -uroot --batch --unbuffered --binary-mode --default-character-set=utf8mb4 ${D:+-D "$D"} -e "SELECT CONNECTION_ID() AS id;$L"'.escapeshellarg(($write ? '' : 'SET SESSION TRANSACTION READ ONLY; ').$sql
                     .($count ? "\n;SELECT CONCAT('{$nonce} ', ROW_COUNT()) AS `{$nonce}`" : ''))." > {$out} 2> \"\$E\"",
                 'code=$?',
                 'I=$(sed -n 2p "$O"); sed -i 1,2d "$O"',
