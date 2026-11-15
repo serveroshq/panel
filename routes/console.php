@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\ApiIdempotencyKey;
+use App\Models\WebhookDelivery;
 use App\Support\Edition;
 use App\Support\InstallPing;
 use App\Support\SchedulerHeartbeat;
@@ -25,6 +27,8 @@ Schedule::command('machines:watch')->everyMinute()->withoutOverlapping(5);
 Schedule::command('maintenance:tick')->everyMinute()->withoutOverlapping(5);
 Schedule::command('updates:check-due')->hourlyAt(23)->withoutOverlapping(30);
 Schedule::command('updates:tick')->everyMinute()->withoutOverlapping(5);
+Schedule::command('operations:tick')->everyMinute()->withoutOverlapping(5);
+Schedule::command('webhooks:retry')->everyMinute()->withoutOverlapping(5);
 Schedule::command('domains:check')->everyMinute()->withoutOverlapping(5);
 Schedule::command('email-domains:recheck')->dailyAt('04:19')->withoutOverlapping();
 Schedule::command('workflows:tick')->everyThirtySeconds()->withoutOverlapping(5);
@@ -33,6 +37,7 @@ Schedule::command('summaries:send')->weeklyOn(1, '07:41')->withoutOverlapping();
 Schedule::command('plans:expire-manual')->hourly()->withoutOverlapping();
 Schedule::command('plans:end-grace')->hourly()->withoutOverlapping();
 Schedule::command('deploy-sources:prune')->hourly()->withoutOverlapping();
+Schedule::command('model:prune', ['--model' => [ApiIdempotencyKey::class, WebhookDelivery::class]])->dailyAt('03:31')->withoutOverlapping();
 
 if (Edition::selfHosted()) {
     Schedule::command('daemon:sync-releases')->hourlyAt(29)->withoutOverlapping();

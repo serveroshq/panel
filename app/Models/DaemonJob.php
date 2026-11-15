@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Mcp\McpContext;
 use App\Models\Concerns\CreditsWhoStartedIt;
+use App\Support\Webhooks\Webhooks;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -48,6 +50,33 @@ class DaemonJob extends Model
     protected $hidden = ['command'];
 
     public const STALE_AFTER_MINUTES = 10;
+
+    protected static function booted(): void
+    {
+        // Every way a job ends (the daemon's answer, a timeout, a cancel) goes through here.
+        $finished = function (DaemonJob $job): void {
+            $workspace = Machine::query()->whereKey($job->machine_id)->value('workspace_id');
+            if ($workspace !== null) {
+                Webhooks::dispatch((int) $workspace, 'job.finished', [
+                    'job_id' => $job->id,
+                    'kind' => $job->kind,
+                    'state' => $job->state,
+                    'machine_id' => $job->machine_id,
+                    'service' => $job->service,
+                ]);
+            }
+        };
+        static::created(function (DaemonJob $job) use ($finished) {
+            if (in_array($job->state, McpContext::FINISHED, true)) {
+                $finished($job);
+            }
+        });
+        static::updated(function (DaemonJob $job) use ($finished) {
+            if ($job->wasChanged('state') && in_array($job->state, McpContext::FINISHED, true) && ! in_array($job->getOriginal('state'), McpContext::FINISHED, true)) {
+                $finished($job);
+            }
+        });
+    }
 
     protected function casts(): array
     {

@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools\Deploy;
 
 use App\Mcp\McpContext;
+use App\Mcp\Paging;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
@@ -41,7 +42,7 @@ final class ListTemplates extends Tool
             'category' => Schema::string('Only this category.', ServiceTemplate::CATEGORIES),
             'kind' => Schema::string('Only ready-made stacks, or only app frameworks that build a repository.', ['stack', 'app']),
             'limit' => Schema::integer('How many to return (1–150, default 50).', 1, 150),
-            'offset' => Schema::integer('Skip this many, to page through (default 0).', 0),
+            ...Paging::schema(),
         ]);
     }
 
@@ -53,7 +54,7 @@ final class ListTemplates extends Tool
             'category' => ['sometimes', 'string', 'in:'.implode(',', ServiceTemplate::CATEGORIES)],
             'kind' => ['sometimes', 'string', 'in:stack,app'],
             'limit' => ['sometimes', 'integer', 'min:1', 'max:150'],
-            'offset' => ['sometimes', 'integer', 'min:0'],
+            ...Paging::rules(),
         ]);
 
         if (isset($data['template'])) {
@@ -83,7 +84,7 @@ final class ListTemplates extends Tool
             return true;
         }));
 
-        $offset = (int) ($data['offset'] ?? 0);
+        $offset = Paging::offset($data);
         $limit = (int) ($data['limit'] ?? 50);
         $page = array_slice($matches, $offset, $limit);
 
@@ -91,6 +92,7 @@ final class ListTemplates extends Tool
             'total' => count($matches),
             'offset' => $offset,
             'more' => $offset + count($page) < count($matches),
+            'next_cursor' => Paging::next($offset + count($page), count($matches)),
             'categories' => ServiceTemplate::CATEGORIES,
             'templates' => array_map(fn (ServiceTemplate $t) => self::row($t), $page),
         ];

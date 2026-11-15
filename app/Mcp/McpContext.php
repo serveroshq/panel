@@ -38,6 +38,9 @@ final class McpContext
 
     public ?string $callId = null;
 
+    /** The operation this call is part of, so each machine's activity links to it. */
+    public ?int $operation = null;
+
     /** @var array{role: ?WorkspaceRole, custom: ?WorkspaceCustomRole}|null */
     private ?array $access = null;
 
@@ -183,7 +186,7 @@ final class McpContext
     /** @param  array<string, mixed>  $meta */
     public function record(string $action, ?string $subject = null, ?Machine $machine = null, array $meta = []): void
     {
-        Activity::record($this->workspace, $action, $subject, $machine, $this->user, [...$meta, 'via' => $this->via, 'client' => $this->client()]);
+        Activity::record($this->workspace, $action, $subject, $machine, $this->user, [...$meta, 'via' => $this->via, 'client' => $this->client(), ...($this->operation === null ? [] : ['operation' => $this->operation])]);
     }
 
     /**
@@ -199,6 +202,7 @@ final class McpContext
             'client' => $this->client(),
             'tool' => $this->tool,
             'call' => $this->callId,
+            'operation' => $this->operation,
         ], fn ($value) => $value !== null), $work);
     }
 

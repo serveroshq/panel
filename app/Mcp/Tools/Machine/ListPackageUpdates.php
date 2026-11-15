@@ -4,6 +4,7 @@ namespace App\Mcp\Tools\Machine;
 
 use App\Http\Controllers\UpdatesController;
 use App\Mcp\McpContext;
+use App\Mcp\Paging;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
 use App\Models\Machine;
@@ -24,7 +25,7 @@ final class ListPackageUpdates extends Tool
     public function description(): string
     {
         return 'Lists the operating system package updates waiting across the workspace’s machines, one entry per package, as each machine’s last check found it (machines are checked about once a day; check_updates asks one now). Each package has whether it’s a security update, the machines it waits on, the versions offered (each with the OS release and the machines offering it: exact versions in create_package_rollout must be one of these), the versions installed now, and the machines holding it at its version. '
-            .'Also a summary (updates, packages, security, machines with updates, machines never checked, machines needing a restart, the oldest check) and each machine’s counts. Filter with security (only security updates), machine (one machine’s id or name) and query (part of a package name). Up to limit packages (default 100) from offset.';
+            .'Also a summary (updates, packages, security, machines with updates, machines never checked, machines needing a restart, the oldest check) and each machine’s counts. Filter with security (only security updates), machine (one machine’s id or name) and query (part of a package name). Up to limit packages (default 100); next_cursor (passed as cursor) gets the next page.';
     }
 
     public function inputSchema(): array
@@ -34,7 +35,7 @@ final class ListPackageUpdates extends Tool
             'machine' => Schema::machine('Only updates waiting on this machine: its id or name.'),
             'query' => Schema::string('Only packages whose name contains this.', maxLength: 120),
             'limit' => Schema::integer('How many packages to return (1–500, default 100).', 1, 500),
-            'offset' => Schema::integer('How many to skip, for the next page (default 0).', 0),
+            ...Paging::schema(),
         ]);
     }
 
@@ -45,7 +46,7 @@ final class ListPackageUpdates extends Tool
             'machine' => ['sometimes', 'nullable', ServerWork::reference()],
             'query' => ['sometimes', 'nullable', 'string', 'max:120'],
             'limit' => ['sometimes', 'integer', 'min:1', 'max:500'],
-            'offset' => ['sometimes', 'integer', 'min:0'],
+            ...Paging::rules(),
         ]);
 
         $machines = $context->workspace->machines()->whereNotNull('uid')->orderBy('name')->get();
@@ -63,7 +64,7 @@ final class ListPackageUpdates extends Tool
             ->filter(fn (array $p) => $search === '' || str_contains(mb_strtolower($p['name']), $search))
             ->values();
 
-        $offset = (int) ($data['offset'] ?? 0);
+        $offset = Paging::offset($data);
         $page = $packages->slice($offset, (int) ($data['limit'] ?? 100))->values();
         $machineRef = fn (int $id) => ['id' => $id, 'name' => $names[$id] ?? null];
 
@@ -84,6 +85,7 @@ final class ListPackageUpdates extends Tool
             'count' => $page->count(),
             'offset' => $offset,
             'more' => $offset + $page->count() < $packages->count(),
+            'next_cursor' => Paging::next($offset + $page->count(), $packages->count()),
             'packages' => $page->map(fn (array $p) => [
                 'name' => $p['name'],
                 'security' => $p['security'],

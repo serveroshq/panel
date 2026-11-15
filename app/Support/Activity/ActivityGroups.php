@@ -10,7 +10,7 @@ final class ActivityGroups
     public const GROUPS = [
         'deploys' => ['Deploys and apps', ['service.deploy', 'service.rollback', 'app.', 'github.', 'project.']],
         'services' => ['Services', ['service.', 'service_group.'], ['service.deploy', 'service.rollback']],
-        'machines' => ['Machines and console', ['machine.', 'machines.', 'cloud.', 'machine_group.', 'machine_policy.', 'updates.', 'daemon.', 'console.', 'file.', 'job.']],
+        'machines' => ['Machines and console', ['machine.', 'machines.', 'cloud.', 'machine_group.', 'machine_policy.', 'updates.', 'operation.', 'daemon.', 'console.', 'file.', 'job.']],
         'monitors' => ['Monitors and alerts', ['monitor.', 'alerts.', 'issues.', 'status_page.']],
         'backups' => ['Backups', ['backup.', 'backups.', 'backup_destination.']],
         'workflows' => ['Workflows and fixes', ['workflow.', 'fix.']],

@@ -6,6 +6,8 @@ return [
     'groups' => [
         Tools\WorkspaceTools::class,
         Tools\MachineTools::class,
+        Tools\OperationTools::class,
+        Tools\WebhookTools::class,
         Tools\ServiceTools::class,
         Tools\DeployTools::class,
         Tools\ProjectTools::class,

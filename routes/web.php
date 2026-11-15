@@ -51,6 +51,7 @@ use App\Http\Controllers\StatusIncidentController;
 use App\Http\Controllers\StatusSubscriptionController;
 use App\Http\Controllers\UnsubscribeController;
 use App\Http\Controllers\UpdatesController;
+use App\Http\Controllers\WebhookEndpointController;
 use App\Http\Controllers\WorkflowController;
 use App\Http\Controllers\WorkspaceAiController;
 use App\Http\Controllers\WorkspaceApiController;
@@ -330,6 +331,10 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
         Route::get('settings/api', [WorkspaceApiController::class, 'show'])->name('workspace.settings.api');
         Route::post('settings/api/keys', [WorkspaceApiController::class, 'store'])->middleware('throttle:20,1')->name('workspace.settings.api.keys.store');
         Route::delete('settings/api/keys/{key}', [WorkspaceApiController::class, 'destroy'])->withoutScopedBindings()->name('workspace.settings.api.keys.destroy');
+        Route::post('settings/api/webhooks', [WebhookEndpointController::class, 'store'])->middleware('throttle:20,1')->name('workspace.settings.api.webhooks.store');
+        Route::patch('settings/api/webhooks/{webhook}', [WebhookEndpointController::class, 'update'])->withoutScopedBindings()->name('workspace.settings.api.webhooks.update');
+        Route::delete('settings/api/webhooks/{webhook}', [WebhookEndpointController::class, 'destroy'])->withoutScopedBindings()->name('workspace.settings.api.webhooks.destroy');
+        Route::post('settings/api/webhooks/{webhook}/test', [WebhookEndpointController::class, 'test'])->middleware('throttle:20,1')->withoutScopedBindings()->name('workspace.settings.api.webhooks.test');
         Route::get('settings/mcp', [WorkspaceMcpController::class, 'show'])->name('workspace.settings.mcp');
         Route::put('settings/ai/{provider}', [WorkspaceAiController::class, 'update'])->middleware('throttle:10,1')->whereIn('provider', ['anthropic', 'openai'])->name('workspace.settings.ai.update');
         Route::delete('settings/ai/{provider}', [WorkspaceAiController::class, 'destroy'])->whereIn('provider', ['anthropic', 'openai'])->name('workspace.settings.ai.destroy');

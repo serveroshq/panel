@@ -14,6 +14,9 @@ use Illuminate\Http\Request;
 
 class ApiController extends Controller
 {
+    /** When offset paging was deprecated in favour of cursor: 2026-11-15. */
+    private const OFFSET_DEPRECATED = 1794700800;
+
     public function __construct(
         private readonly ToolRegistry $tools,
         private readonly ApiRunner $runner,
@@ -31,7 +34,15 @@ class ApiController extends Controller
         $path = array_map(fn ($v) => is_string($v) ? rawurldecode($v) : $v, array_diff_key($request->route()?->parameters() ?? [], ['tool' => true]));
         $arguments = ApiRunner::coerce($tool, [...$request->query(), ...$body, ...$path]);
 
-        return $this->answer($this->runner->run($this->context($request), $tool, $arguments));
+        $response = $this->answer($this->runner->run($this->context($request), $tool, $arguments));
+
+        // offset still pages, but cursor replaces it (RFC 9745).
+        if (array_key_exists('offset', $arguments) && isset($tool->inputSchema()['properties']['cursor'])) {
+            $response->headers->set('Deprecation', '@'.self::OFFSET_DEPRECATED);
+            $response->headers->set('Link', '<'.DocsUrl::page('guides', 'api').'>; rel="deprecation"');
+        }
+
+        return $response;
     }
 
     public function tools(Request $request): JsonResponse

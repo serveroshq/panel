@@ -51,6 +51,8 @@ return [
         'min_monitor_interval' => env('SERVEROS_SELF_HOSTED_MIN_MONITOR_INTERVAL', 30),
         'status_subscribers' => env('SERVEROS_SELF_HOSTED_STATUS_SUBSCRIBERS', 100_000),
         'api_requests_per_minute' => env('SERVEROS_SELF_HOSTED_API_REQUESTS_PER_MINUTE', 1_000),
+        'operation_machines' => env('SERVEROS_SELF_HOSTED_OPERATION_MACHINES', 1_000),
+        'operations_running' => env('SERVEROS_SELF_HOSTED_OPERATIONS_RUNNING', 20),
     ],
 
     'workflow_outside_emails_per_day' => (int) env('SERVEROS_WORKFLOW_OUTSIDE_EMAILS_PER_DAY', 200),

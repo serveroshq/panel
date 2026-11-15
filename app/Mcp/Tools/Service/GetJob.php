@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -31,6 +32,11 @@ final class GetJob extends Tool
             'log_lines' => Schema::integer('How many of the latest log lines to include (0–500, default 40).', 0, 500),
             'wait' => ServiceWork::waitSchema(),
         ], ['job']);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::ref('Job');
     }
 
     public function handle(McpContext $context, array $arguments): array

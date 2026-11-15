@@ -53,6 +53,8 @@ class PlanEntitlements implements Entitlements
             Limit::MinMonitorInterval => $plan?->minMonitorInterval() ?? 300,
             Limit::StatusSubscribers => $plan?->statusSubscriberLimit() ?? 0,
             Limit::ApiRequestsPerMinute => $plan === null ? 60 : (int) (config('api.rate_limits')[$plan->value] ?? 60),
+            Limit::OperationMachines => (int) config('api.operations.machines'),
+            Limit::OperationsRunning => (int) config('api.operations.running'),
         };
     }
 

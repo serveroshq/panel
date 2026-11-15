@@ -2,8 +2,10 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Enums\MachineEnvironment;
 use App\Mcp\McpContext;
+use App\Mcp\Paging;
 use App\Mcp\Present;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -30,7 +32,7 @@ final class ListMachines extends Tool
     public function description(): string
     {
         return 'Lists the workspace’s machines (Linux servers running the ServerOS daemon). Each has its id and name (use either in other tools), environment (production, staging, development), status (online; offline: hasn’t reported for a minute; connecting: installed but not reported yet; demo: a sample machine with no daemon), IP, provider, OS, CPU %, memory used, fullest disk %, service count, group, any maintenance window, and its panel URL. '
-            .'Filter with environment, status ("maintenance" means in a maintenance window now), group (a group’s id or name, or "none" for machines in no group), provider, region, tier, label ("key=value", or just "key" for any value) and query (part of a name, IP or provider). Sorted by name, or by cpu, memory or disk (busiest first). Up to limit machines (default 50) from offset; "more" says whether there are others. get_machine gives one machine in full.';
+            .'Filter with environment, status ("maintenance" means in a maintenance window now), group (a group’s id or name, or "none" for machines in no group), provider, region, tier, label ("key=value", or just "key" for any value) and query (part of a name, IP or provider). Sorted by name, or by cpu, memory or disk (busiest first). Up to limit machines (default 50); "more" says whether there are others, and next_cursor (passed as cursor) gets the next page. get_machine gives one machine in full.';
     }
 
     public function inputSchema(): array
@@ -46,8 +48,13 @@ final class ListMachines extends Tool
             'query' => Schema::string('Only machines whose name, IP or provider contains this.', maxLength: 120),
             'sort' => Schema::string('Order: name (default), or cpu, memory or disk, busiest first.', self::SORTS),
             'limit' => Schema::integer('How many to return (1–200, default 50).', 1, 200),
-            'offset' => Schema::integer('How many to skip, for the next page (default 0).', 0),
+            ...Paging::schema(),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::page('machines', ResponseSchemas::ref('Machine'));
     }
 
     public function handle(McpContext $context, array $arguments): array
@@ -63,7 +70,7 @@ final class ListMachines extends Tool
             'query' => ['sometimes', 'nullable', 'string', 'max:120'],
             'sort' => ['sometimes', 'nullable', Rule::in(self::SORTS)],
             'limit' => ['sometimes', 'integer', 'min:1', 'max:200'],
-            'offset' => ['sometimes', 'integer', 'min:0'],
+            ...Paging::rules(),
         ]);
 
         $groups = $context->workspace->machineGroups()->get()->keyBy('id');
@@ -110,7 +117,7 @@ final class ListMachines extends Tool
         };
 
         $total = $machines->count();
-        $offset = (int) ($data['offset'] ?? 0);
+        $offset = Paging::offset($data);
         $page = $machines->slice($offset, (int) ($data['limit'] ?? 50))->values();
 
         return [
@@ -118,6 +125,7 @@ final class ListMachines extends Tool
             'count' => $page->count(),
             'offset' => $offset,
             'more' => $offset + $page->count() < $total,
+            'next_cursor' => Paging::next($offset + $page->count(), $total),
             'machines' => $page->map(fn (Machine $m) => MachineView::row($m, $context, $m->machine_group_id === null ? null : $groups->get($m->machine_group_id)))->all(),
             'url' => $context->url('/machines'),
         ];
