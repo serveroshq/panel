@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ApiIdempotencyKey;
 use App\Support\Edition;
 use App\Support\InstallPing;
 use App\Support\SchedulerHeartbeat;
@@ -33,6 +34,7 @@ Schedule::command('summaries:send')->weeklyOn(1, '07:41')->withoutOverlapping();
 Schedule::command('plans:expire-manual')->hourly()->withoutOverlapping();
 Schedule::command('plans:end-grace')->hourly()->withoutOverlapping();
 Schedule::command('deploy-sources:prune')->hourly()->withoutOverlapping();
+Schedule::command('model:prune', ['--model' => [ApiIdempotencyKey::class]])->dailyAt('03:31')->withoutOverlapping();
 
 if (Edition::selfHosted()) {
     Schedule::command('daemon:sync-releases')->hourlyAt(29)->withoutOverlapping();

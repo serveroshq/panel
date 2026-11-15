@@ -75,6 +75,9 @@ final class OpenApi
                 ];
             }
 
+            if ($method !== 'get') {
+                $parameters[] = ['$ref' => '#/components/parameters/IdempotencyKey'];
+            }
             $operation['parameters'] = array_map(fn (array $p) => array_filter($p, fn ($v) => $v !== null), $parameters);
             $operation['responses'] = [
                 '200' => ['description' => 'Done. What the tool answered is under data.', 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Data']]]],
@@ -84,6 +87,9 @@ final class OpenApi
                 '422' => ['$ref' => '#/components/responses/Unprocessable'],
                 '429' => ['$ref' => '#/components/responses/RateLimited'],
             ];
+            if ($method !== 'get') {
+                $operation['responses']['409'] = ['$ref' => '#/components/responses/Conflict'];
+            }
 
             $paths['/'.$route['path']][$method] = $operation;
         }
@@ -116,13 +122,23 @@ final class OpenApi
                             'type' => 'object',
                             'required' => ['type', 'message'],
                             'properties' => [
-                                'type' => ['type' => 'string', 'enum' => ['unauthenticated', 'forbidden', 'plan_required', 'not_found', 'invalid_json', 'invalid_arguments', 'unprocessable', 'rate_limited', 'server_error']],
+                                'type' => ['type' => 'string', 'enum' => ['unauthenticated', 'forbidden', 'plan_required', 'not_found', 'invalid_json', 'invalid_arguments', 'unprocessable', 'conflict', 'rate_limited', 'server_error']],
                                 'message' => ['type' => 'string', 'description' => 'What went wrong, in plain words.'],
                             ],
                         ]],
                     ],
                 ],
+                'parameters' => [
+                    'IdempotencyKey' => [
+                        'name' => 'Idempotency-Key',
+                        'in' => 'header',
+                        'required' => false,
+                        'description' => 'Makes the request safe to send again: the same key from the same API key within 24 hours answers what the first request answered, without doing it twice. Use a new key, like a UUID, for each new request.',
+                        'schema' => ['type' => 'string', 'maxLength' => 255],
+                    ],
+                ],
                 'responses' => [
+                    'Conflict' => self::errorResponse('The Idempotency-Key was already used for a different request, or that request is still running.'),
                     'Unauthenticated' => self::errorResponse('No API key, or one that’s invalid or revoked.'),
                     'Forbidden' => self::errorResponse('The key’s access or its owner’s role doesn’t allow this.'),
                     'NotFound' => self::errorResponse('It doesn’t exist in this workspace.'),
