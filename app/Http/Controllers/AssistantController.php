@@ -24,7 +24,7 @@ class AssistantController extends Controller
             'chat' => ['nullable', 'string', 'uuid'],
             'message' => ['required', 'string', 'max:6000'],
             'path' => ['nullable', 'string', 'max:300'],
-            'model' => ['nullable', 'string', 'max:100', 'regex:/^(anthropic|openai):[A-Za-z0-9._:\/\[\]-]{1,80}$/'],
+            'model' => ['nullable', 'string', 'max:100', 'regex:/^(anthropic|openai|custom):[A-Za-z0-9._:\/\[\]-]{1,80}$/'],
         ]);
 
         $user = $request->user();

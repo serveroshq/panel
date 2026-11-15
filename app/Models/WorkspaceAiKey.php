@@ -13,6 +13,7 @@ use Illuminate\Support\Carbon;
  * @property string $key
  * @property string $hint
  * @property string|null $model
+ * @property string|null $base_url
  * @property int|null $user_id
  * @property Carbon|null $verified_at
  * @property Carbon $created_at
