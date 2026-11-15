@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Activity\ActivityLine;
 use App\Support\Databases\DatabaseConsole;
+use App\Support\Fixes\FixEvidence;
 use Illuminate\Http\Client\Request as GatewayRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -67,27 +68,30 @@ function unlockDatabases(User $user, Workspace $workspace): void
 }
 
 /**
- * What the job's command prints, as the daemon would log it.
+ * What the job's command prints, base64 like the command does, sealed as the
+ * panel keeps it. $output is what the client wrote, line by line (or exactly,
+ * as a string); $counts stands in for the whole output's size when it was cut.
  *
- * @param  list<string>  $output
+ * @param  list<string>|string  $output
+ * @param  array{0: int, 1: int}|null  $counts
  */
-function answerDatabaseJob(DaemonJob $job, array $output, int $code = 0, string $error = '', string $database = 'shop'): void
+function answerDatabaseJob(DaemonJob $job, array|string $output, int $code = 0, string $error = '', string $database = 'shop', ?array $counts = null): void
 {
     preg_match("/^echo '([0-9a-f]{32}) result'$/m", (string) $job->command['job']['command'], $m);
-    $text = implode("\n", $output);
+    $text = is_string($output) ? $output : ($output === [] ? '' : implode("\n", $output)."\n");
+    $encode = fn (string $bytes) => $bytes === '' ? [''] : [...str_split(rtrim(base64_encode($bytes), '='), 3000), ''];
+    [$bytes, $lines] = $counts ?? [strlen($text), substr_count($text, "\n")];
     $job->forceFill([
         'state' => 'succeeded',
         'finished_at' => now(),
-        'log' => [
+        'log' => [DatabaseConsole::seal([
             "{$m[1]} database {$database}",
             "{$m[1]} result",
-            ...$output,
-            '',
+            ...$encode($text),
             "{$m[1]} error",
-            ...($error === '' ? [] : [$error]),
-            '',
-            "{$m[1]} end {$code} ".strlen($text).' '.count($output),
-        ],
+            ...$encode($error),
+            "{$m[1]} end {$code} {$bytes} {$lines}",
+        ])],
     ])->save();
 }
 
@@ -141,7 +145,12 @@ test('a query runs read-only in the container unless changes are allowed, and go
         // The query and the name go in as quoted words, never through the shell.
         ->and($job['command'])->toContain(escapeshellarg($sql))
         ->and($job['command'])->toContain("D='shop'")
-        ->and($job['command'])->toContain('default_transaction_read_only=on');
+        ->and($job['command'])->toContain('default_transaction_read_only=on')
+        // Stopped by the database, then the client, before the daemon gives up.
+        ->and($job['command'])->toContain('statement_timeout=50s')
+        ->and($job['command'])->toContain('timeout 55')
+        // What it prints comes back as base64, safe to read line by line.
+        ->and($job['command'])->toContain("| base64 | tr -d '=\\n' | fold -w 3000");
 
     $record = DaemonJob::query()->sole();
     expect($record->kind)->toBe('database_query')
@@ -151,11 +160,15 @@ test('a query runs read-only in the container unless changes are allowed, and go
     $activity = $queries()->sole();
     expect($activity->action)->toBe('console.command')
         ->and($activity->meta)->toBe(['command' => $sql, 'database' => 'shop', 'write' => false])
-        ->and(ActivityLine::sentence($activity))->toContain('ran a read-only query in shop-db-1');
+        ->and(ActivityLine::sentence($activity))->toContain('ran a query in shop-db-1 (read-only mode)');
 
     $this->actingAs($owner)->postJson($url.'docker:bbb222bbb222/database', ['action' => 'query', 'query' => 'DELETE FROM posts', 'write' => true])
         ->assertAccepted();
     expect(lastDatabaseJob()['command'])->not->toContain('READ ONLY')
+        // The client's own commands (system, \!) are off, and the server stops a slow statement.
+        ->and(lastDatabaseJob()['command'])->toContain('--binary-mode')
+        ->and(lastDatabaseJob()['command'])->toContain('max_statement_time=50')
+        ->and(lastDatabaseJob()['command'])->toContain('max_execution_time=50000')
         ->and(ActivityLine::sentence($queries()->latest('id')->first()))->toContain('ran a query that can change data in blog-db-1');
 
     // Looking at the list of tables isn't worth an entry.
@@ -223,11 +236,7 @@ test('the result says how many rows changed, what went wrong, and when it was cu
 
     $many = ['n', ...array_map('strval', range(1, 399))];
     $id = $this->actingAs($owner)->postJson($url.'docker:aaa111aaa111/database', ['action' => 'query', 'query' => 'SELECT n FROM big'])->json('jobId');
-    answerDatabaseJob(DaemonJob::query()->findOrFail($id), $many);
-    $job = DaemonJob::query()->findOrFail($id);
-    $log = $job->log;
-    $log[count($log) - 1] = preg_replace('/ \d+ \d+$/', ' 900000 5000', $log[count($log) - 1]);
-    $job->forceFill(['log' => $log])->save();
+    answerDatabaseJob(DaemonJob::query()->findOrFail($id), $many, counts: [900000, 5000]);
 
     $result = $this->actingAs($owner)->getJson($url."docker:aaa111aaa111/database/{$id}")->json('result');
     expect($result['truncated'])->toBeTrue()
@@ -244,6 +253,77 @@ test('a database name or query the panel won’t send is turned away', function 
     $ask(['action' => 'query'])->assertJsonValidationErrors('query');
     $ask(['action' => 'tables', 'database' => "shop\nrm -rf /"])->assertJsonValidationErrors('database');
     $ask(['action' => 'query', 'query' => str_repeat('x', DatabaseConsole::MAX_QUERY + 1)])->assertJsonValidationErrors('query');
+    // psql runs a query that starts with \ as its own command, and \! is a shell.
+    $ask(['action' => 'query', 'query' => '  \\! id'])->assertJsonValidationErrors(['query' => 'Backslash commands']);
+    // A connection string would send the container's password elsewhere.
+    $ask(['action' => 'tables', 'database' => 'host=elsewhere user=x'])->assertJsonValidationErrors('database');
+    $ask(['action' => 'tables', 'database' => 'postgresql://elsewhere/db'])->assertJsonValidationErrors('database');
 
     expect(DaemonJob::query()->count())->toBe(0);
+});
+
+test('results that aren’t plain text still read: cut mid-character, other alphabets, binary columns and token-like values', function () {
+    [$workspace, , $url] = databaseMachine();
+    $owner = $workspace->owner;
+    unlockDatabases($owner, $workspace);
+    $run = function (string $service, string|array $output, ?array $counts = null) use ($url, $owner) {
+        $id = $this->actingAs($owner)->postJson($url."{$service}/database", ['action' => 'query', 'query' => 'SELECT * FROM t'])->json('jobId');
+        answerDatabaseJob(DaemonJob::query()->findOrFail($id), $output, counts: $counts);
+
+        return $this->actingAs($owner)->getJson($url."{$service}/database/{$id}")->assertOk()->json('result');
+    };
+
+    // Cut off inside a three-byte character: the partial last line is dropped, not the reply.
+    $cut = substr("name\nZoë\n日本語\n東京", 0, -2);
+    expect($run('docker:aaa111aaa111', $cut, [900000, 3]))
+        ->toMatchArray(['columns' => ['name'], 'rows' => [['Zoë']], 'truncated' => true]);
+
+    // MySQL --batch prints a BINARY(4) id as its raw bytes (with \0 escaped).
+    expect($run('docker:bbb222bbb222', "id\tname\n\\0\x01\xff\xfe\tAnn\n"))
+        ->toMatchArray(['columns' => ['id', 'name'], 'rows' => [['0x0001FFFE', 'Ann']]]);
+
+    // The daemon scrubs `token=…` from what it reads; the rows are base64 by then, so nothing is lost.
+    expect($run('docker:aaa111aaa111', "a,b,c\n1,token=abc,foo\n"))
+        ->toMatchArray(['columns' => ['a', 'b', 'c'], 'rows' => [['1', 'token=abc', 'foo']]]);
+});
+
+test('an answer that was changed on the way, or a query that ran too long, says so', function () {
+    [$workspace, , $url] = databaseMachine();
+    $owner = $workspace->owner;
+    unlockDatabases($owner, $workspace);
+    $ask = fn () => $this->actingAs($owner)->postJson($url.'docker:aaa111aaa111/database', ['action' => 'query', 'query' => 'SELECT 1'])->json('jobId');
+
+    $id = $ask();
+    answerDatabaseJob(DaemonJob::query()->findOrFail($id), [], 124);
+    expect($this->actingAs($owner)->getJson($url."docker:aaa111aaa111/database/{$id}")->json('result.error'))
+        ->toBe('The query ran for over 50 seconds, so it was stopped.');
+
+    $id = $ask();
+    $job = DaemonJob::query()->findOrFail($id);
+    preg_match("/^echo '([0-9a-f]{32}) result'$/m", (string) $job->command['job']['command'], $m);
+    $job->forceFill(['state' => 'succeeded', 'finished_at' => now(), 'log' => [
+        "{$m[1]} database shop", "{$m[1]} result", 'YSxi[redacted]', "{$m[1]} error", '', "{$m[1]} end 0 9 2",
+    ]])->save();
+    $this->actingAs($owner)->getJson($url."docker:aaa111aaa111/database/{$id}")
+        ->assertJson(['result' => null, 'error' => ['message' => 'The database’s answer couldn’t be read.']]);
+});
+
+test('what the machine sends back is encrypted as it arrives, and kept out of Fixes', function () {
+    [$workspace, $machine, $url] = databaseMachine();
+    $owner = $workspace->owner;
+    unlockDatabases($owner, $workspace);
+    $id = $this->actingAs($owner)->postJson($url.'docker:aaa111aaa111/database', ['action' => 'query', 'query' => 'SELECT email FROM users'])->json('jobId');
+
+    $this->postJson('/api/gateway/machines/'.$machine->uid.'/ingest', ['envelopes' => [['v' => 1, 'kind' => 'job_update', 'payload' => [
+        'job_id' => $id, 'state' => 'failed', 'log' => ['$ psql -c \'SELECT email FROM users\'', 'ann@example.com'],
+        'error' => ['message' => 'the command was still running after 60s'],
+    ]]]], ['X-Gateway-Secret' => 'test-gateway-secret'])->assertOk();
+
+    $log = DaemonJob::query()->findOrFail($id)->log;
+    expect($log)->toHaveCount(1)
+        ->and($log[0])->toStartWith('sealed:')
+        ->and(implode("\n", $log))->not->toContain('ann@example.com')
+        ->and(implode("\n", $log))->not->toContain('SELECT email');
+
+    expect(FixEvidence::gather($machine, null)['jobs'])->toBe([]);
 });

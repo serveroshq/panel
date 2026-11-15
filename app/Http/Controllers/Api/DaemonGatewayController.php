@@ -12,6 +12,7 @@ use App\Models\StatusPage;
 use App\Support\Backups\BackupRunner;
 use App\Support\DaemonFacts;
 use App\Support\DaemonJobQueue;
+use App\Support\Databases\DatabaseConsole;
 use App\Support\Deploys\ServiceLabels;
 use App\Support\Files\FileJobs;
 use App\Support\Fixes\FixRunner;
@@ -218,6 +219,10 @@ class DaemonGatewayController extends Controller
                         break;
                     }
                     $lines = is_array($payload['log'] ?? null) ? array_values(array_filter($payload['log'], 'is_string')) : [];
+                    if ($job->kind === 'database_query' && $lines !== []) {
+                        // The database's rows, and the query itself: kept encrypted until read.
+                        $lines = [DatabaseConsole::seal($lines)];
+                    }
                     $log = array_slice([...($job->log ?? []), ...$lines], -500);
                     $job->forceFill([
                         'state' => $state,

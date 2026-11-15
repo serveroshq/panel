@@ -3,6 +3,8 @@
 namespace App\Support\Databases;
 
 use App\Models\DaemonJob;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Support\Facades\Crypt;
 
 /**
  * Looks inside a database container from the panel: its databases, its
@@ -12,8 +14,11 @@ use App\Models\DaemonJob;
  * password), so nothing new is stored or asked for.
  *
  * The result comes back as the job's log, so it's capped well under what
- * the panel keeps of a log (500 lines) and marked with a per-job nonce so
- * nothing the query prints can pass for the markers.
+ * the daemon keeps of a log (256 KB) and marked with a per-job nonce so
+ * nothing the query prints can pass for the markers. What the client prints
+ * goes through base64 first: the daemon reads output as UTF-8 lines (binary
+ * columns and a cut-off character would stop it) and scrubs anything that
+ * looks like `token=…`, and unpadded base64 has neither.
  */
 final class DatabaseConsole
 {
@@ -23,12 +28,22 @@ final class DatabaseConsole
 
     public const MAX_QUERY = 20_000;
 
-    /** Kept under the panel's 500 log lines and well under the daemon's 256 KB log. */
     private const MAX_LINES = 400;
 
     private const MAX_BYTES = 160_000;
 
+    /** The daemon stops the job after this long; the client and the query stop first. */
     public const TIMEOUT = 60;
+
+    private const CLIENT_TIMEOUT = 55;
+
+    private const QUERY_TIMEOUT = 50;
+
+    /** Marks a log entry the panel encrypted as it arrived. */
+    private const SEALED = 'sealed:';
+
+    /** Base64 without its `=` padding or line breaks, in lines short enough to send. */
+    private const ENCODE = "base64 | tr -d '=\\n' | fold -w 3000";
 
     /** @param  array<string, mixed>  $service */
     public static function engine(array $service): ?string
@@ -72,35 +87,49 @@ final class DatabaseConsole
         $out = '"$O"';
 
         $run = $engine === 'postgres'
-            // Read-only is a guard against mistakes, not a wall: whoever may
-            // run queries here may also open the console.
+            // Read-only mode is a guard against mistakes, not a wall: whoever
+            // may run queries here may also open the console.
             ? implode("\n", [
                 'U="${POSTGRES_USER:-postgres}"',
                 "D={$db}; [ -n \"\$D\" ] || D=\"\${POSTGRES_DB:-\$U}\"",
-                'export PGPASSWORD="${POSTGRES_PASSWORD:-}" PGOPTIONS="-c statement_timeout=50s'.($write ? '' : ' -c default_transaction_read_only=on').'"',
-                'psql -X -q -v ON_ERROR_STOP=1 --csv -P null=NULL -U "$U" -d "$D" -c '.escapeshellarg($sql)
+                'export PGPASSWORD="${POSTGRES_PASSWORD:-}" PGCLIENTENCODING=UTF8 PGOPTIONS="-c statement_timeout='.self::QUERY_TIMEOUT.'s'.($write ? '' : ' -c default_transaction_read_only=on').'"',
+                '$T psql -X -q -v ON_ERROR_STOP=1 --csv -P null=NULL -U "$U" -d "$D" -c '.escapeshellarg($sql)
                     .($count ? ' -c '.escapeshellarg("\\echo {$nonce} :ROW_COUNT") : '')." > {$out} 2> \"\$E\"",
+                'code=$?',
             ])
+            // --binary-mode turns off the client's own commands (system, \!),
+            // and the server stops a statement that runs too long: MySQL only
+            // stops a SELECT, MariaDB any statement.
             : implode("\n", [
                 'C=mysql; command -v mariadb >/dev/null 2>&1 && C=mariadb',
+                // MySQL prints binary columns as hex when it can; MariaDB's client
+                // would print NULL as 0x too, so there the panel turns them to hex.
+                'L="SET SESSION max_execution_time='.(self::QUERY_TIMEOUT * 1000).';" H=',
+                'if $C --version 2>/dev/null | grep -qi mariadb; then L="SET SESSION max_statement_time='.self::QUERY_TIMEOUT.';"; else $C --help 2>/dev/null | grep -q -- --binary-as-hex && H=--binary-as-hex; fi',
                 'export MYSQL_PWD="${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}"',
                 "D={$db}; [ -n \"\$D\" ] || D=\"\${MARIADB_DATABASE:-\$MYSQL_DATABASE}\"",
-                '$C -uroot --batch ${D:+-D "$D"} -e '.escapeshellarg(($write ? '' : 'SET SESSION TRANSACTION READ ONLY; ').$sql
+                // Its own connection comes first (unbuffered, so it is written even if the
+                // client is stopped), to stop the statement too.
+                '$T $C -uroot --batch --unbuffered --binary-mode --default-character-set=utf8mb4 $H ${D:+-D "$D"} -e "SELECT CONNECTION_ID() AS id;$L"'.escapeshellarg(($write ? '' : 'SET SESSION TRANSACTION READ ONLY; ').$sql
                     .($count ? "\n;SELECT CONCAT('{$nonce} ', ROW_COUNT()) AS `{$nonce}`" : ''))." > {$out} 2> \"\$E\"",
+                'code=$?',
+                'I=$(sed -n 2p "$O"); sed -i 1,2d "$O"',
+                // MySQL keeps running a write whose client is gone: stop it, and roll it back.
+                'case "$I" in *[!0-9]*|\'\') ;; *) [ "$code" = 124 ] && $C -uroot -e "KILL $I" >/dev/null 2>&1 ;; esac',
             ]);
 
         return implode("\n", [
             'O=$(mktemp) E=$(mktemp)',
             'trap \'rm -f "$O" "$E"\' EXIT',
+            // Stops the client, and with it the query, before the daemon gives up on the job.
+            'T=; command -v timeout >/dev/null 2>&1 && T="timeout '.self::CLIENT_TIMEOUT.'"',
             $run,
-            'code=$?',
             "echo '{$nonce} database' \"\$D\"",
             "echo '{$nonce} result'",
-            'head -c '.self::MAX_BYTES.' "$O" | head -n '.self::MAX_LINES,
-            // A result cut short ends on a line of its own.
+            'head -c '.self::MAX_BYTES.' "$O" | head -n '.self::MAX_LINES.' | '.self::ENCODE,
             'echo',
             "echo '{$nonce} error'",
-            'head -c 4000 "$E"',
+            'head -c 4000 "$E" | '.self::ENCODE,
             'echo',
             "echo '{$nonce} end' \"\$code\" \$(wc -c < \"\$O\") \$(wc -l < \"\$O\")",
         ]);
@@ -119,7 +148,7 @@ final class DatabaseConsole
             return null;
         }
         $nonce = $match[1];
-        $engine = str_contains($command, "\npsql ") ? 'postgres' : 'mysql';
+        $engine = str_contains($command, ' psql -X ') ? 'postgres' : 'mysql';
 
         $section = null;
         $parts = ['database' => [], 'result' => [], 'error' => [], 'end' => []];
@@ -141,9 +170,17 @@ final class DatabaseConsole
             return null;
         }
         [$code, $bytes, $lines] = array_map('intval', array_pad(preg_split('/\s+/', trim($parts['end'][0])) ?: [], 3, '0'));
-        $error = trim(implode("\n", $parts['error']));
-        $text = implode("\n", $parts['result']);
+        $text = self::decode($parts['result']);
+        $error = self::decode($parts['error']);
+        if ($text === null || $error === null) {
+            return null;
+        }
+        $error = trim(mb_scrub($error, 'UTF-8'));
         $truncated = $bytes > self::MAX_BYTES || $lines > self::MAX_LINES;
+        if ($truncated && ($end = strrpos($text, "\n")) !== false) {
+            // Cut at the last whole line, not inside a row or a character.
+            $text = substr($text, 0, $end + 1);
+        }
 
         // The changed-rows line comes after the query's own output.
         $changed = null;
@@ -169,8 +206,38 @@ final class DatabaseConsole
             'rows' => array_slice($table['rows'], 0, self::MAX_ROWS),
             'truncated' => $truncated,
             'changed' => $table['columns'] === [] && $changed !== null && $changed >= 0 ? $changed : null,
-            'error' => $code === 0 ? null : ($error !== '' ? mb_substr($error, 0, 2000) : "The database client stopped (exit code {$code})."),
+            'error' => match (true) {
+                $code === 0 => null,
+                $code === 124 => 'The query ran for over '.self::QUERY_TIMEOUT.' seconds, so it was stopped.',
+                $error !== '' => mb_substr($error, 0, 2000),
+                default => "The database client stopped (exit code {$code}).",
+            },
         ];
+    }
+
+    /**
+     * Lines as they arrive from the machine, encrypted: they can hold rows
+     * of the customer's data, and stay in the job until the result is read.
+     *
+     * @param  list<string>  $lines
+     */
+    public static function seal(array $lines): string
+    {
+        return self::SEALED.Crypt::encryptString(implode("\n", $lines));
+    }
+
+    /** @param  list<string>  $lines  base64 split over lines */
+    private static function decode(array $lines): ?string
+    {
+        $text = base64_decode(preg_replace('/\s+/', '', implode('', $lines)) ?? '', true);
+
+        return $text === false ? null : $text;
+    }
+
+    /** A value that isn't text (a BINARY id, a blob) shows as hex. */
+    private static function cell(string $value): string
+    {
+        return mb_check_encoding($value, 'UTF-8') ? $value : '0x'.strtoupper(bin2hex($value));
     }
 
     /** @return list<string> */
@@ -178,7 +245,15 @@ final class DatabaseConsole
     {
         $lines = [];
         foreach ((array) ($job->log ?? []) as $entry) {
-            foreach (explode("\n", (string) $entry) as $line) {
+            $entry = (string) $entry;
+            if (str_starts_with($entry, self::SEALED)) {
+                try {
+                    $entry = Crypt::decryptString(substr($entry, strlen(self::SEALED)));
+                } catch (DecryptException) {
+                    continue;
+                }
+            }
+            foreach (explode("\n", $entry) as $line) {
                 $lines[] = $line;
             }
         }
@@ -247,9 +322,9 @@ final class DatabaseConsole
         $width = count($columns);
 
         return [
-            'columns' => $columns,
+            'columns' => array_map(self::cell(...), $columns),
             'rows' => array_map(
-                fn (array $row) => array_map(fn (string $v) => $v === 'NULL' ? null : $v, array_pad(array_slice($row, 0, $width), $width, '')),
+                fn (array $row) => array_map(fn (string $v) => $v === 'NULL' ? null : self::cell($v), array_pad(array_slice($row, 0, $width), $width, '')),
                 $records,
             ),
         ];

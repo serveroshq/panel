@@ -49,7 +49,8 @@ final class ActivityLine
             'service.remove' => $set('removed', ($meta['deleted_data'] ?? false) ? 'and deleted its data' : null, 'bad'),
             'console.command' => match ($meta['write'] ?? null) {
                 true => $set('ran a query that can change data in', null, 'warn'),
-                false => $set('ran a read-only query in'),
+                // Read-only mode guards against mistakes; the query box can still lift it.
+                false => $set('ran a query in', '(read-only mode)'),
                 default => $set('ran a command in'),
             },
             'file.write' => $set('saved'),

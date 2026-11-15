@@ -236,9 +236,15 @@ class MachineServiceController extends Controller
 
         $data = $request->validate([
             'action' => ['required', Rule::in(DatabaseConsole::ACTIONS)],
-            'database' => ['nullable', 'string', 'max:128', 'not_regex:/[\x00-\x1f]/'],
-            'query' => ['required_if:action,query', 'nullable', 'string', 'max:'.DatabaseConsole::MAX_QUERY],
+            // Not a connection string (`host=… user=…`, `postgres://…`): psql
+            // would send the container's password wherever it pointed.
+            'database' => ['nullable', 'string', 'max:128', 'not_regex:/[\x00-\x1f]/', 'not_regex:/=|^\s*postgres(ql)?:/i'],
+            // psql runs a query starting with \ as its own command (\! runs a shell).
+            'query' => ['required_if:action,query', 'nullable', 'string', 'max:'.DatabaseConsole::MAX_QUERY, 'not_regex:/^\s*\\\\/'],
             'write' => ['nullable', 'boolean'],
+        ], [
+            'database.not_regex' => 'Give the database’s name only.',
+            'query.not_regex' => 'Backslash commands like \\d aren’t run here. Use SQL instead.',
         ]);
 
         if ($engine === null) {

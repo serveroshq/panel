@@ -332,6 +332,11 @@ function syncScroll(event: Event): void {
     }
 }
 
+// ⌘ on a Mac, Ctrl elsewhere: both run the query.
+const submitKeys = /Mac|iPhone|iPad/.test(navigator.userAgent)
+    ? '⌘↵'
+    : 'Ctrl+↵';
+
 function onEditorKeydown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
@@ -340,13 +345,20 @@ function onEditorKeydown(event: KeyboardEvent): void {
 }
 
 // ponytail: only the rows on screen; a full export is a dump, not a query.
+// A spreadsheet would run a value starting with = + - @ as a formula
+// (a plain number like -2 is just a number).
+const formula = /^[=+\-@\t\r]/;
+const number = /^[-+]?\d+(\.\d+)?(e[-+]?\d+)?$/i;
+
 function downloadCsv(shown: Result): void {
-    const cell = (value: string | null): string =>
-        value === null
-            ? ''
-            : /[",\r\n]/.test(value)
-              ? `"${value.replaceAll('"', '""')}"`
-              : value;
+    const cell = (raw: string | null): string => {
+        if (raw === null) return '';
+        const value = formula.test(raw) && !number.test(raw) ? `'${raw}` : raw;
+
+        return /[",\r\n]/.test(value)
+            ? `"${value.replaceAll('"', '""')}"`
+            : value;
+    };
     const text = [shown.columns, ...shown.rows]
         .map((row) => row.map(cell).join(','))
         .join('\r\n');
@@ -453,7 +465,7 @@ const field =
                 <InputError :message="unlockError ?? undefined" />
                 <SubmitButton
                     :label="$t('Unlock')"
-                    busy-label="Checking…"
+                    :busy-label="$t('Checking…')"
                     :processing="unlocking"
                     :disabled="unlockCode.length !== 6"
                 />
@@ -641,7 +653,9 @@ const field =
                                         ? $t(
                                               'Queries can change and delete data.',
                                           )
-                                        : $t('Read-only: nothing can change.')
+                                        : $t(
+                                              'Read-only mode guards against changes by mistake.',
+                                          )
                                 }}
                             </span>
                             <AppButton
@@ -664,7 +678,7 @@ const field =
                                 <kbd
                                     class="ml-0.5 font-ui text-[11px] opacity-70"
                                     aria-hidden="true"
-                                    >⌘↵</kbd
+                                    >{{ submitKeys }}</kbd
                                 >
                             </AppButton>
                         </div>

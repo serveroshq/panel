@@ -47,9 +47,11 @@ class DaemonJobQueue
             return null;
         }
 
-        return in_array($kind, ['service_exec', 'database_query'], true)
-            ? 'The console needs a plan. Choose one in Billing to run commands again.'
-            : 'Deploys need a plan. Choose one in Billing to deploy again. Everything that’s already running keeps running.';
+        return match ($kind) {
+            'service_exec' => 'The console needs a plan. Choose one in Billing to run commands again.',
+            'database_query' => 'The Database tab needs a plan. Choose one in Billing to run queries again.',
+            default => 'Deploys need a plan. Choose one in Billing to deploy again. Everything that’s already running keeps running.',
+        };
     }
 
     /**
