@@ -717,6 +717,7 @@
     "Deployed :value": ":value डिप्लॉय हुआ",
     "Deploying": "डिप्लॉय हो रहा है",
     "Deploying :service": ":service डिप्लॉय हो रहा है",
+    "Deploying :service at :commit": ":service को :commit पर डिप्लॉय किया जा रहा है",
     "Deploying needs a machine that is online": "डिप्लॉय करने के लिए ऑनलाइन मशीन चाहिए",
     "Deployments": "डिप्लॉयमेंट",
     "Deployments and backups": "डिप्लॉयमेंट और बैकअप",

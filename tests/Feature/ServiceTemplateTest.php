@@ -331,20 +331,20 @@ test('public build variables reach the build, secrets stay at runtime only', fun
         ->and($job['env']['DATABASE_URL'])->toBe('postgres://secret@db/app');
 });
 
-test('an app template without a commit deploys the default branch’s latest, and says which', function () {
+test('an app template without a commit deploys the default branch’s latest, a branch takes its own, and it says which', function () {
     [$workspace, , $url] = templateMachine();
     config()->set('services.github.token', null);
     Http::fake([
         'api.github.com/repos/example/shop' => Http::response(['default_branch' => 'main']),
         'api.github.com/repos/example/shop/commits/main' => Http::response(['sha' => str_repeat('d', 40)]),
-        'api.github.com/repos/example/shop/commits/v2.1' => Http::response(['sha' => str_repeat('e', 40)]),
+        'api.github.com/repos/example/shop/commits/develop' => Http::response(['sha' => str_repeat('e', 40)]),
     ]);
     $payload = ['template' => 'laravel', 'service' => 'shop', 'repo' => 'https://github.com/example/shop.git'];
 
     $this->actingAs($workspace->owner)->postJson($url, $payload)->assertAccepted()->assertJsonPath('commit', str_repeat('d', 40));
     expect(sentJob()['commit'])->toBe(str_repeat('d', 40));
 
-    $this->actingAs($workspace->owner)->postJson($url, [...$payload, 'service' => 'shop-v2', 'commit' => 'v2.1'])
+    $this->actingAs($workspace->owner)->postJson($url, [...$payload, 'service' => 'shop-develop', 'commit' => 'develop'])
         ->assertAccepted()->assertJsonPath('commit', str_repeat('e', 40));
     expect(collect(Http::recorded())->map(fn ($pair) => $pair[0])->filter(fn ($request) => str_ends_with($request->url(), '/commands'))->last()['command']['job']['commit'])
         ->toBe(str_repeat('e', 40));

@@ -766,6 +766,7 @@
     "Deployed :value": "Desplegado :value",
     "Deploying": "Desplegar",
     "Deploying :service": "Desplegando :service",
+    "Deploying :service at :commit": "Desplegando :service en :commit",
     "Deploying needs a machine that is online": "Para desplegar hace falta una máquina en línea",
     "Deployments": "Despliegues",
     "Deployments and backups": "Despliegues y copias de seguridad",

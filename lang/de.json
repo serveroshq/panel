@@ -766,6 +766,7 @@
     "Deployed :value": "Deployt :value",
     "Deploying": "Deployen",
     "Deploying :service": ":service wird deployt",
+    "Deploying :service at :commit": ":service wird auf :commit deployt",
     "Deploying needs a machine that is online": "Zum Deployen braucht es eine Maschine, die online ist",
     "Deployments": "Deployments",
     "Deployments and backups": "Deployments und Backups",
