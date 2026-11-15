@@ -384,14 +384,17 @@ test('branches come with the workspace’s token, or the operator’s for a publ
         'api.github.com/repos/someone/public-app/branches*' => Http::response([['name' => 'main'], ['name' => 'dev']]),
         'api.github.com/repos/operator/private-app' => Http::response(['private' => true, 'visibility' => 'private']),
         'api.github.com/repos/operator/private-app/branches*' => Http::response([['name' => 'leak']]),
+        'api.github.com/repos/operator/odd-app' => Http::response(''),
+        'api.github.com/repos/operator/odd-app/branches*' => Http::response([['name' => 'leak']]),
     ]);
     $branches = fn (string $repo) => $this->actingAs($workspace->owner)->getJson(workspaceUrl($workspace, "/github/repositories/{$repo}/branches"))->assertOk()->json('branches');
 
     expect($branches('acme/secret-app'))->toHaveCount(101)->toContain('b1', 'zzz')
         ->and($branches('someone/public-app'))->toBe(['main', 'dev'])
-        ->and($branches('operator/private-app'))->toBe([]);
+        ->and($branches('operator/private-app'))->toBe([])
+        ->and($branches('operator/odd-app'))->toBe([]);
 
     Http::assertSent(fn (HttpRequest $r) => str_contains($r->url(), 'someone/public-app/branches') && $r->hasHeader('Authorization', 'Bearer ghp_operator'));
-    Http::assertNotSent(fn (HttpRequest $r) => str_contains($r->url(), 'operator/private-app/branches'));
+    Http::assertNotSent(fn (HttpRequest $r) => str_contains($r->url(), 'private-app/branches') || str_contains($r->url(), 'odd-app/branches'));
     $this->actingAs($workspace->owner)->getJson(workspaceUrl($workspace, '/github/repositories/acme/../branches'))->assertNotFound();
 });

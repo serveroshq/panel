@@ -173,9 +173,10 @@ const branchOptions = computed<SelectMenuOption<string>[]>(() => {
         return [];
     }
 
-    const names = branches.value.names.includes(found.branch)
-        ? branches.value.names
-        : [found.branch, ...branches.value.names];
+    const names =
+        !found.branch || branches.value.names.includes(found.branch)
+            ? branches.value.names
+            : [found.branch, ...branches.value.names];
 
     return names.map((name) => ({ value: name, label: name }));
 });
@@ -220,11 +221,11 @@ async function loadBranches(found: Detection): Promise<void> {
             },
         );
 
-        if (response.ok) {
-            branches.value = {
-                repo: found.repo,
-                names: (await response.json()).branches,
-            };
+        const names = response.ok ? (await response.json()).branches : null;
+
+        // An answer for a repository that's no longer shown is dropped.
+        if (names && detection.value?.repo === found.repo) {
+            branches.value = { repo: found.repo, names };
         }
     } catch {}
 }

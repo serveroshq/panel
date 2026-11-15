@@ -352,8 +352,8 @@ final class GitHubApp
 
         try {
             if ($shared) {
-                $response = $client->get($path);
-                if (! $response->successful() || ! RepositoryDetector::isPublic((array) $response->json())) {
+                $found = $client->get($path)->json();
+                if (! is_array($found) || ($found['private'] ?? null) !== false || ! RepositoryDetector::isPublic($found)) {
                     return null;
                 }
             }
