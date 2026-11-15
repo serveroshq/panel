@@ -150,7 +150,9 @@ const github = ref<{
     connected: boolean;
     repositories: Repository[];
 } | null>(null);
-const branches = ref<string[]>([]);
+// Kept with the repository they belong to, so the menu never offers another
+// repository's branches (after Try another, an upload, or a slow answer).
+const branches = ref<{ repo: string; names: string[] } | null>(null);
 
 const repositoryMatches = computed(() => {
     const term = query.value.trim().toLowerCase();
@@ -164,9 +166,19 @@ const repositoryMatches = computed(() => {
         .slice(0, 8);
 });
 
-const branchOptions = computed<SelectMenuOption<string>[]>(() =>
-    branches.value.map((name) => ({ value: name, label: name })),
-);
+const branchOptions = computed<SelectMenuOption<string>[]>(() => {
+    const found = detection.value;
+
+    if (!found || found.upload || branches.value?.repo !== found.repo) {
+        return [];
+    }
+
+    const names = branches.value.names.includes(found.branch)
+        ? branches.value.names
+        : [found.branch, ...branches.value.names];
+
+    return names.map((name) => ({ value: name, label: name }));
+});
 
 async function loadRepositories(): Promise<void> {
     if (github.value || !page.props.githubApp) {
@@ -191,7 +203,6 @@ function pickRepository(repository: Repository): void {
 }
 
 async function loadBranches(found: Detection): Promise<void> {
-    branches.value = [];
     const match = found.upload
         ? null
         : found.repo.match(/^https:\/\/github\.com\/([^/]+)\/(.+?)(?:\.git)?$/);
@@ -210,7 +221,10 @@ async function loadBranches(found: Detection): Promise<void> {
         );
 
         if (response.ok) {
-            branches.value = (await response.json()).branches;
+            branches.value = {
+                repo: found.repo,
+                names: (await response.json()).branches,
+            };
         }
     } catch {}
 }
@@ -1128,7 +1142,11 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                         'Paste a GitHub repository above',
                                                     )
                                                 }}<template
-                                                    v-if="page.props.githubApp"
+                                                    v-if="
+                                                        page.props.githubApp &&
+                                                        github?.connected !==
+                                                            false
+                                                    "
                                                 >
                                                     {{
                                                         ' ' +

@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Workspace;
 use App\Support\GitHub\GitHubApp;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 
 class GitHubRepositoryController extends Controller
@@ -21,7 +20,7 @@ class GitHubRepositoryController extends Controller
             'enabled' => GitHubApp::enabled(),
             'connected' => $connected,
             'repositories' => $connected
-                ? Cache::remember("github:repositories:{$workspace->id}", 60, fn () => $github->repositoriesFor($workspace))
+                ? $github->repositoriesFor($workspace)
                 : [],
         ]);
     }
@@ -29,6 +28,7 @@ class GitHubRepositoryController extends Controller
     public function branches(Workspace $workspace, string $owner, string $repo, GitHubApp $github): JsonResponse
     {
         Gate::authorize('manageMachines', $workspace);
+        abort_if($repo === '.' || $repo === '..', 404);
 
         return response()->json(['branches' => $github->branchesFor($workspace, $owner, $repo) ?? []]);
     }

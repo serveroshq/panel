@@ -6,6 +6,7 @@ use App\Models\GitHubAppSetting;
 use App\Models\GitHubInstallation;
 use App\Models\Workspace;
 use App\Support\Edition;
+use App\Support\ServiceTemplates\RepositoryDetector;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Cache;
@@ -262,7 +263,8 @@ final class GitHubApp
 
     /**
      * The repositories the workspace's GitHub connections share with ServerOS,
-     * most recently pushed first, for picking one to deploy.
+     * most recently pushed first, for picking one to deploy. Kept for a minute
+     * when every connection answered; a connection changing forgets it.
      *
      * @return list<array{name: string, url: string, private: bool, branch: string, pushed: string}>
      */
@@ -272,7 +274,19 @@ final class GitHubApp
             return [];
         }
 
+        $list = Cache::remember(self::repositoriesKey($workspace->id), 60, fn () => $this->listRepositories($workspace));
+        if (! $list['complete']) {
+            Cache::forget(self::repositoriesKey($workspace->id));
+        }
+
+        return $list['repositories'];
+    }
+
+    /** @return array{complete: bool, repositories: list<array{name: string, url: string, private: bool, branch: string, pushed: string}>} */
+    private function listRepositories(Workspace $workspace): array
+    {
         $found = [];
+        $complete = true;
         foreach ($workspace->githubInstallations()->get() as $installation) {
             try {
                 $response = $this->asApp()->post(self::API."/app/installations/{$installation->installation_id}/access_tokens", [
@@ -286,10 +300,16 @@ final class GitHubApp
                 $token = $response->json('token');
                 $repositories = is_string($token) ? $this->repositories($this->client()->withToken($token), self::API.'/installation/repositories') : null;
             } catch (ConnectionException) {
+                $repositories = null;
+            }
+
+            if ($repositories === null) {
+                $complete = false;
+
                 continue;
             }
 
-            foreach ($repositories ?? [] as $repository) {
+            foreach ($repositories as $repository) {
                 $name = $repository['full_name'] ?? null;
                 if (is_string($name) && $installation->allows((int) ($repository['id'] ?? 0))) {
                     $found[$name] = [
@@ -305,27 +325,61 @@ final class GitHubApp
 
         usort($found, fn (array $a, array $b) => strcmp($b['pushed'], $a['pushed']));
 
-        return $found;
+        return ['complete' => $complete, 'repositories' => $found];
     }
 
-    /** @return list<string>|null */
+    public static function repositoriesKey(int $workspaceId): string
+    {
+        return "github:repositories:{$workspaceId}";
+    }
+
+    /**
+     * A repository's branches, with the workspace's token when it's connected.
+     * Otherwise the operator's token is used, but only for a public repository,
+     * so it never lists the operator's own private ones.
+     *
+     * @return list<string>|null
+     */
     public function branchesFor(Workspace $workspace, string $owner, string $repo): ?array
     {
+        $path = self::API.'/repos/'.rawurlencode($owner).'/'.rawurlencode($repo);
         $token = $this->tokenFor($workspace, $owner, $repo);
+        $shared = $token === null && filled(config('services.github.token'));
+        $client = $this->client()->when(
+            $token !== null || $shared,
+            fn (PendingRequest $http) => $http->withToken((string) ($token ?? config('services.github.token'))),
+        );
 
         try {
-            $response = $this->client()
-                ->when($token !== null, fn (PendingRequest $http) => $http->withToken((string) $token))
-                ->get(self::API.'/repos/'.rawurlencode($owner).'/'.rawurlencode($repo).'/branches', ['per_page' => 100]);
+            if ($shared) {
+                $response = $client->get($path);
+                if (! $response->successful() || ! RepositoryDetector::isPublic((array) $response->json())) {
+                    return null;
+                }
+            }
+
+            $names = [];
+            // ponytail: up to 500 branches; the dialog adds the current one if it's past that.
+            for ($page = 1; $page <= 5; $page++) {
+                $response = $client->get("{$path}/branches", ['per_page' => 100, 'page' => $page]);
+                $branches = $response->json();
+                if (! $response->successful() || ! is_array($branches)) {
+                    return $names === [] ? null : $names;
+                }
+                foreach ($branches as $branch) {
+                    if (is_array($branch) && is_string($branch['name'] ?? null)) {
+                        $names[] = $branch['name'];
+                    }
+                }
+                if (count($branches) < 100) {
+                    break;
+                }
+            }
         } catch (ConnectionException) {
             return null;
         }
-        $branches = $response->json();
-        if (! $response->successful() || ! is_array($branches)) {
-            return null;
-        }
 
-        return array_values(array_filter(array_map(fn (mixed $branch) => is_array($branch) ? ($branch['name'] ?? null) : null, $branches), 'is_string'));
+        return $names;
     }
 
     public static function connected(Workspace $workspace, string $owner): bool

@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Support\GitHub\GitHubApp;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * @property int $id
@@ -19,6 +21,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class GitHubInstallation extends Model
 {
     protected $table = 'github_installations';
+
+    protected static function booted(): void
+    {
+        // Connecting, limiting or disconnecting an account changes the repository list.
+        $forget = fn (self $installation) => Cache::forget(GitHubApp::repositoriesKey($installation->workspace_id));
+        static::saved($forget);
+        static::deleted($forget);
+    }
 
     protected function casts(): array
     {
