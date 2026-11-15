@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -30,6 +31,11 @@ final class ResolveSelector extends Tool
     public function inputSchema(): array
     {
         return Schema::object(MachineSelector::arguments());
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object(['count' => ['type' => 'integer'], 'machines' => ['type' => 'array', 'items' => ResponseSchemas::ref('Machine')]], ['count', 'machines']);
     }
 
     public function handle(McpContext $context, array $arguments): array

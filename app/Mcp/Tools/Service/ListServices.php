@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools\Service;
 
 use App\Mcp\McpContext;
+use App\Mcp\Paging;
 use App\Mcp\Present;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -48,7 +49,7 @@ final class ListServices extends Tool
             'query' => Schema::string('Search text, matched against names, key, kind, manager, image, ports and the machine’s name.', maxLength: 200),
             'sort' => Schema::string('cpu (default), memory, uptime or name.', self::SORTS),
             'limit' => Schema::integer('How many to return (1–200, default 50).', 1, 200),
-            'offset' => Schema::integer('How many to skip, to page through (default 0).', 0),
+            ...Paging::schema(),
         ]);
     }
 
@@ -65,7 +66,7 @@ final class ListServices extends Tool
             'query' => ['sometimes', 'string', 'max:200'],
             'sort' => ['sometimes', 'string', 'in:'.implode(',', self::SORTS)],
             'limit' => ['sometimes', 'integer', 'min:1', 'max:200'],
-            'offset' => ['sometimes', 'integer', 'min:0'],
+            ...Paging::rules(),
         ]);
 
         $machines = isset($data['machine'])
@@ -126,7 +127,7 @@ final class ListServices extends Tool
         }
 
         $sorted = $this->sort($matching, $data['sort'] ?? 'cpu');
-        $offset = (int) ($data['offset'] ?? 0);
+        $offset = Paging::offset($data);
         $limit = (int) ($data['limit'] ?? 50);
         $page = $sorted->slice($offset, $limit)->values();
 
@@ -134,6 +135,7 @@ final class ListServices extends Tool
             'total' => $sorted->count(),
             'offset' => $offset,
             'limit' => $limit,
+            'next_cursor' => Paging::next($offset + $page->count(), $sorted->count()),
             'counts' => $counts,
             'hidden' => $hidden,
             'services' => $page->map(fn (array $row) => ServiceView::row($context, $row['machine'], $row['service'], $row['group']))->all(),

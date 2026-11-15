@@ -2,7 +2,9 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
+use App\Mcp\Paging;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
@@ -26,7 +28,7 @@ final class ListJobs extends Tool
     public function description(): string
     {
         return 'Lists recent jobs on the workspace’s machines, newest first: deploys, service actions (service_action: start, stop, restart, reload), service_logs, service_exec (commands), adopt, service_remove, backups, package updates, reboots and so on. Filters: machine; service (on that machine: key, name, label or app name; without a machine, the exact key or app name a job is filed under); kind; state (an exact state, or active for queued and running, finished for the rest). '
-            .'Automatic rescans (kind discover) and Database tab queries (database_query) are left out unless kind asks for them, as on the machine page. Each job comes with its last 3 log lines; get_job has the rest. limit up to 100 (default 20), offset to page.';
+            .'Automatic rescans (kind discover) and Database tab queries (database_query) are left out unless kind asks for them, as on the machine page. Each job comes with its last 3 log lines; get_job has the rest. limit up to 100 (default 20), and next_cursor (passed as cursor) for the next page.';
     }
 
     public function inputSchema(): array
@@ -37,8 +39,13 @@ final class ListJobs extends Tool
             'kind' => Schema::string('Only this kind of job, like deploy, service_action, service_exec, service_logs, adopt, service_remove, backup_to, package_updates, reboot or discover.', maxLength: 40),
             'state' => Schema::string('Only jobs in this state: queued, running, succeeded, failed, cancelled, timed_out, refused, or active / finished.', self::STATES),
             'limit' => Schema::integer('How many to return (1–100, default 20).', 1, 100),
-            'offset' => Schema::integer('How many to skip, to page through (default 0).', 0),
+            ...Paging::schema(),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::page('jobs', ResponseSchemas::ref('Job'));
     }
 
     public function handle(McpContext $context, array $arguments): array
@@ -49,7 +56,7 @@ final class ListJobs extends Tool
             'kind' => ['sometimes', 'string', 'max:40', 'regex:/^[a-z_]+$/'],
             'state' => ['sometimes', 'string', 'in:'.implode(',', self::STATES)],
             'limit' => ['sometimes', 'integer', 'min:1', 'max:100'],
-            'offset' => ['sometimes', 'integer', 'min:0'],
+            ...Paging::rules(),
         ], ['kind.regex' => 'The kind is a word like deploy or service_action.']);
 
         $machine = isset($data['machine']) ? $context->machine($data['machine']) : null;
@@ -75,13 +82,14 @@ final class ListJobs extends Tool
 
         $total = (clone $query)->count();
         $limit = (int) ($data['limit'] ?? 20);
-        $offset = (int) ($data['offset'] ?? 0);
+        $offset = Paging::offset($data);
         $jobs = $query->latest()->orderByDesc('id')->offset($offset)->limit($limit)->get();
 
         return [
             'total' => $total,
             'offset' => $offset,
             'limit' => $limit,
+            'next_cursor' => Paging::next($offset + $jobs->count(), $total),
             'jobs' => $jobs->map(fn (DaemonJob $job) => ServiceView::job($context, $job, 3))->all(),
         ];
     }

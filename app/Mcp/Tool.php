@@ -25,6 +25,17 @@ abstract class Tool
         return Schema::object();
     }
 
+    /**
+     * What it answers, as JSON Schema, for the API's OpenAPI document. Null when
+     * it isn't described yet (the document then says only "under data").
+     *
+     * @return array<string, mixed>|null
+     */
+    public function responseSchema(): ?array
+    {
+        return null;
+    }
+
     public function scope(): string
     {
         return Scopes::READ;

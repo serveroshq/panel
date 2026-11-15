@@ -61,6 +61,7 @@ final class OpenApi
                         'schema' => self::loose($property),
                         'style' => ($property['type'] ?? null) === 'array' ? 'form' : null,
                         'explode' => ($property['type'] ?? null) === 'array' ? false : null,
+                        'deprecated' => ($property['deprecated'] ?? false) ? true : null,
                     ], fn ($v) => $v !== null);
                 }
             } elseif ($rest !== []) {
@@ -79,13 +80,20 @@ final class OpenApi
                 $parameters[] = ['$ref' => '#/components/parameters/IdempotencyKey'];
             }
             $operation['parameters'] = array_map(fn (array $p) => array_filter($p, fn ($v) => $v !== null), $parameters);
+            $answer = $tool->responseSchema();
             $operation['responses'] = [
-                '200' => ['description' => 'Done. What the tool answered is under data.', 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Data']]]],
+                '200' => ['description' => 'Done. What the tool answered is under data.', 'content' => ['application/json' => ['schema' => $answer === null
+                    ? ['$ref' => '#/components/schemas/Data']
+                    : ['type' => 'object', 'required' => ['data'], 'properties' => ['data' => $answer]],
+                ]]],
+                '400' => ['$ref' => '#/components/responses/InvalidJson'],
                 '401' => ['$ref' => '#/components/responses/Unauthenticated'],
+                '402' => ['$ref' => '#/components/responses/PlanRequired'],
                 '403' => ['$ref' => '#/components/responses/Forbidden'],
                 '404' => ['$ref' => '#/components/responses/NotFound'],
                 '422' => ['$ref' => '#/components/responses/Unprocessable'],
                 '429' => ['$ref' => '#/components/responses/RateLimited'],
+                '500' => ['$ref' => '#/components/responses/ServerError'],
             ];
             if ($method !== 'get') {
                 $operation['responses']['409'] = ['$ref' => '#/components/responses/Conflict'];
@@ -98,7 +106,7 @@ final class OpenApi
             'openapi' => '3.1.0',
             'info' => [
                 'title' => 'ServerOS API',
-                'version' => '1.0.0',
+                'version' => '1.1.0',
                 'description' => 'Everything in a ServerOS workspace: machines, services, deploys, jobs, monitors, status pages, workflows, backups, logs and the team. Authenticate with a workspace API key from Settings › API as a bearer token. Every route runs the same tool an AI app connected over MCP would, with the same checks.',
                 'contact' => ['name' => 'ServerOS support', 'email' => (string) config('mail.support.address'), 'url' => DocsUrl::page('guides', 'api')],
             ],
@@ -114,6 +122,7 @@ final class OpenApi
                     ],
                 ],
                 'schemas' => [
+                    ...ResponseSchemas::components(),
                     'Data' => ['type' => 'object', 'required' => ['data'], 'properties' => ['data' => ['description' => 'What the tool answered.']]],
                     'Error' => [
                         'type' => 'object',
@@ -122,7 +131,7 @@ final class OpenApi
                             'type' => 'object',
                             'required' => ['type', 'message'],
                             'properties' => [
-                                'type' => ['type' => 'string', 'enum' => ['unauthenticated', 'forbidden', 'plan_required', 'not_found', 'invalid_json', 'invalid_arguments', 'unprocessable', 'conflict', 'rate_limited', 'server_error']],
+                                'type' => ['type' => 'string', 'enum' => ['unauthenticated', 'forbidden', 'plan_required', 'not_found', 'invalid_json', 'invalid_arguments', 'unprocessable', 'conflict', 'rate_limited', 'server_error', 'error']],
                                 'message' => ['type' => 'string', 'description' => 'What went wrong, in plain words.'],
                             ],
                         ]],
@@ -138,6 +147,9 @@ final class OpenApi
                     ],
                 ],
                 'responses' => [
+                    'InvalidJson' => self::errorResponse('The body isn’t a JSON object.'),
+                    'PlanRequired' => self::errorResponse('The workspace has no plan, so its API is off.'),
+                    'ServerError' => self::errorResponse('Something went wrong on the panel. It’s been logged; try again.'),
                     'Conflict' => self::errorResponse('The Idempotency-Key was already used for a different request, or that request is still running.'),
                     'Unauthenticated' => self::errorResponse('No API key, or one that’s invalid or revoked.'),
                     'Forbidden' => self::errorResponse('The key’s access or its owner’s role doesn’t allow this.'),

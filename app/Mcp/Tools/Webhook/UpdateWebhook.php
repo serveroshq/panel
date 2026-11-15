@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Webhook;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -44,6 +45,11 @@ final class UpdateWebhook extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object(['webhook' => ResponseSchemas::ref('Webhook')], ['webhook']);
     }
 
     public function handle(McpContext $context, array $arguments): array

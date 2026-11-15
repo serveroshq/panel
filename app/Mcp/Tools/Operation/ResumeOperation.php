@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Operation;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -35,6 +36,11 @@ final class ResumeOperation extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object(['operation' => ResponseSchemas::ref('Operation')], ['operation']);
     }
 
     public function handle(McpContext $context, array $arguments): array

@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Operation;
 
+use App\Api\ResponseSchemas;
 use App\Http\Controllers\MaintenanceController;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -96,6 +97,18 @@ final class CreateOperation extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'operation' => ResponseSchemas::ref('Operation'),
+            'dryRun' => ['type' => 'boolean', 'description' => 'With dry_run: nothing was started.'],
+            'count' => ['type' => 'integer'],
+            'machinesPerBatch' => ['type' => 'integer'],
+            'batches' => ['type' => 'array', 'items' => ['type' => 'array', 'items' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => ['type' => 'string']], ['id', 'name'])]],
+            'machines' => ['type' => 'array', 'items' => ResponseSchemas::ref('Machine')],
+        ], description: 'The operation it started, or with dry_run the machines and batches it would use.');
     }
 
     public function handle(McpContext $context, array $arguments): array

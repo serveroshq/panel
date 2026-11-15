@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Webhook;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -37,6 +38,11 @@ final class DeleteWebhook extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object(['deleted' => ['type' => 'boolean'], 'webhook' => ResponseSchemas::object(['id' => ['type' => 'integer']], ['id'])], ['deleted', 'webhook']);
     }
 
     public function handle(McpContext $context, array $arguments): array

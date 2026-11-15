@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Operation;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -27,6 +28,11 @@ final class GetOperation extends Tool
     public function inputSchema(): array
     {
         return Schema::object(['operation' => OperationRefs::schema()], ['operation']);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object(['operation' => ResponseSchemas::ref('Operation')], ['operation']);
     }
 
     public function handle(McpContext $context, array $arguments): array
