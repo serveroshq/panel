@@ -10,6 +10,9 @@ use Symfony\Component\HttpFoundation\Response;
 
 class RequireWorkspaceTwoFactor
 {
+    /** The toast's id: the confirm page closes it once you've confirmed, so it doesn't follow you back. */
+    public const string TOAST = 'workspace-two-factor';
+
     public function handle(Request $request, Closure $next): Response
     {
         $workspace = $request->route('workspace');
@@ -31,7 +34,7 @@ class RequireWorkspaceTwoFactor
             return response()->json(['message' => $message], 403);
         }
 
-        Inertia::flash('toast', ['type' => 'error', 'message' => $message]);
+        Inertia::flash('toast', ['type' => 'error', 'message' => $message, 'id' => self::TOAST]);
 
         // A passkey shown now counts (PasskeySignIn), and confirming brings
         // them back to the page they asked for.

@@ -307,6 +307,9 @@ const opening = ref<string | null>(null);
 const refreshing = ref(false);
 const seen = new Map<string, Entry[]>();
 let wanted: string | null = null;
+// Bumped by every folder or file someone opens, so an answer that arrives
+// after they've clicked something else is dropped instead of shown.
+let choice = 0;
 
 function showFolder(
     path: string,
@@ -320,6 +323,11 @@ function showFolder(
 }
 
 async function list(path: string): Promise<void> {
+    // Refreshing the folder you're in (after an upload, say) isn't a new
+    // choice: a file opening from it still opens.
+    if (path !== dir.value) {
+        choice++;
+    }
     wanted = path;
     const cached = seen.get(path);
 
@@ -395,12 +403,17 @@ function choose(entry: Entry): void {
 }
 
 async function openLink(path: string, entry: Entry): Promise<void> {
+    const ticket = ++choice;
+    let folder = true;
     try {
         await job('list', path);
-        void list(path);
     } catch {
-        void openFile(path, entry.size);
+        folder = false;
     }
+    if (ticket !== choice) {
+        return;
+    }
+    void (folder ? list(path) : openFile(path, entry.size));
 }
 
 onMounted(() => {
@@ -440,22 +453,37 @@ async function openFile(path: string, size: number): Promise<void> {
         return;
     }
 
+    const ticket = ++choice;
+    // Another folder still loading was left behind: don't let it open later.
+    // (A refresh of this one carries on.)
+    if (wanted !== dir.value) {
+        wanted = null;
+        opening.value = null;
+    }
     reading.value = path;
     fileError.value = null;
 
     try {
         const result = await job('read', path);
+        if (ticket !== choice) {
+            return;
+        }
         const data = fromBase64((result.content_b64 as string) ?? '');
         const original = asText(data);
         file.value = { path, bytes: data, original };
         text.value = original ?? '';
     } catch (error) {
+        if (ticket !== choice) {
+            return;
+        }
         const message = handle(error, () => openFile(path, size));
         if (message) {
             toast.error(message);
         }
     } finally {
-        reading.value = null;
+        if (ticket === choice || reading.value === path) {
+            reading.value = null;
+        }
     }
 }
 

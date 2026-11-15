@@ -197,8 +197,8 @@ export function createWorkflowEditor(
         future.value = [];
     }
 
-    function markSaved(): void {
-        savedJson.value = JSON.stringify(serialise(snapshot()));
+    function markSaved(graph: Graph = snapshot()): void {
+        savedJson.value = JSON.stringify(serialise(graph));
     }
 
     const dirty = computed(

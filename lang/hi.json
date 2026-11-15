@@ -612,6 +612,7 @@
     "Copy URL": "URL कॉपी करें",
     "Copy answer": "जवाब कॉपी करें",
     "Copy command": "कमांड कॉपी करें",
+    "Copy setup key": "सेटअप की कॉपी करें",
     "Copy the :name": ":name कॉपी करें",
     "Copy the IP address": "IP पता कॉपी करें",
     "Copy the SSH tunnel command": "SSH टनल कमांड कॉपी करें",
@@ -1732,6 +1733,7 @@
     "Settings": "सेटिंग्स",
     "Setup": "सेटअप",
     "Setup guide": "सेटअप गाइड",
+    "Setup key": "सेटअप की",
     "Setup: :label": "सेटअप: :label",
     "Ship an app, database or worker to one of your machines.": "अपनी किसी मशीन पर ऐप, डेटाबेस या वर्कर भेजें।",
     "Shop": "दुकान",
@@ -3539,5 +3541,7 @@
     "Port it publishes on this machine": "इस मशीन पर यह जो पोर्ट खोलता है",
     "Compose file": "Compose फ़ाइल",
     "Its path in the repository. Every service in it runs as one stack.": "रिपॉज़िटरी में इसका पाथ। इसकी हर सर्विस एक स्टैक के रूप में चलती है।",
-    "They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.": "ये Compose फ़ाइल में ${NAME} भरते हैं। इन्हें किसी सर्विस के environment में दें, जैसे DATABASE_URL: ${DATABASE_URL}।"
+    "They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.": "ये Compose फ़ाइल में ${NAME} भरते हैं। इन्हें किसी सर्विस के environment में दें, जैसे DATABASE_URL: ${DATABASE_URL}।",
+    "You need permission to manage machines to deploy here.": "यहाँ डिप्लॉय करने के लिए आपको मशीनें मैनेज करने की अनुमति चाहिए।",
+    "Deploys aren’t set up on this panel yet.": "इस पैनल पर अभी डिप्लॉय सेट अप नहीं है।"
 }

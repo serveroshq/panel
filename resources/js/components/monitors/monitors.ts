@@ -71,7 +71,9 @@ export function percent(value: number | null | undefined): string {
 export function ms(value: number | null | undefined): string {
     if (value === null || value === undefined) return '—';
 
-    return value >= 1000 ? `${(value / 1000).toFixed(1)} s` : `${value} ms`;
+    return value >= 1000
+        ? `${(value / 1000).toFixed(1).replace(/\.0$/, '')} s`
+        : `${value} ms`;
 }
 
 export function dayTone(value: number | null): string {
