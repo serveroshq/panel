@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\RequireWorkspaceTwoFactor;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Auth\GoogleTeamAccess;
@@ -85,4 +86,16 @@ test('remember me alone, or a passkey cookie for another remember cookie, doesnâ
     $stale = (string) json_encode(['user' => $sam->id, 'recaller' => hash('sha256', 'an|older|cookie')]);
     $this->withCookie($recaller, recallerFor($sam))->withCookie(PasskeySignIn::COOKIE, $stale)->get($machines)
         ->assertRedirect('https://'.$workspace->host().'/user/confirm-password');
+});
+
+test('the toast saying why names itself, so the confirm page can close it once youâ€™ve confirmed', function () {
+    [$workspace, $sam, , $machines] = passkeyOnlyMember();
+
+    $this->actingAs($sam)->withSession([GoogleTeamAccess::VIA => 'password'])->get($machines)
+        ->assertRedirect('https://'.$workspace->host().'/user/confirm-password')
+        ->assertInertiaFlash('toast.id', RequireWorkspaceTwoFactor::TOAST)
+        ->assertInertiaFlash('toast.type', 'error');
+
+    expect(file_get_contents(resource_path('js/pages/auth/ConfirmPassword.vue')))
+        ->toContain("toast.dismiss('".RequireWorkspaceTwoFactor::TOAST."')");
 });

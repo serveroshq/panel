@@ -656,6 +656,7 @@
     "Copy URL": "Copiar URL",
     "Copy answer": "Copiar respuesta",
     "Copy command": "Copiar comando",
+    "Copy setup key": "Copiar la clave de configuración",
     "Copy the :name": "Copiar el :name",
     "Copy the IP address": "Copiar la dirección IP",
     "Copy the SSH tunnel command": "Copiar el comando del túnel SSH",
@@ -1837,6 +1838,7 @@
     "Settings": "Ajustes",
     "Setup": "Configuración",
     "Setup guide": "Guía de configuración",
+    "Setup key": "Clave de configuración",
     "Setup: :label": "Configuración: :label",
     "Ship an app, database or worker to one of your machines.": "Lleva una app, una base de datos o un worker a una de tus máquinas.",
     "Shop": "Tienda",
@@ -3185,6 +3187,7 @@
     "Edit details of :selectedCount selected": "Editar detalles de :selectedCount seleccionadas",
     "Provider, region, tier and labels": "Proveedor, región, nivel y etiquetas",
     "Details of :count machines": "Detalles de :count máquinas",
+    "Details of 1 machine": "Detalles de 1 máquina",
     "What you fill in is set on every one of them. What you leave empty stays as each has it.": "Lo que rellenes se pone en todas. Lo que dejes vacío se queda como lo tiene cada una.",
     "OVH": "OVH",
     "Add labels": "Añadir etiquetas",
@@ -3570,5 +3573,7 @@
     "Port it publishes on this machine": "Puerto que publica en esta máquina",
     "Compose file": "Archivo Compose",
     "Its path in the repository. Every service in it runs as one stack.": "Su ruta en el repositorio. Todos sus servicios se ejecutan como un solo stack.",
-    "They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.": "Rellenan ${NAME} en el archivo Compose. Pásalas a un servicio en su environment, como DATABASE_URL: ${DATABASE_URL}."
+    "They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.": "Rellenan ${NAME} en el archivo Compose. Pásalas a un servicio en su environment, como DATABASE_URL: ${DATABASE_URL}.",
+    "You need permission to manage machines to deploy here.": "Para desplegar aquí necesitas permiso para gestionar máquinas.",
+    "Deploys aren’t set up on this panel yet.": "Los despliegues aún no están configurados en este panel."
 }

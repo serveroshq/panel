@@ -30,7 +30,7 @@
         "laravel/pulse": "^1.8",
         "laravel/socialite": "^5.31",
         "laravel/tinker": "^3.0",
-        "laravel/wayfinder": "^0.1.14",
+        "laravel/wayfinder": "^0.1.22",
         "onelogin/php-saml": "^4.3",
         "phpseclib/phpseclib": "^4.0",
         "resend/resend-php": "^1.16",

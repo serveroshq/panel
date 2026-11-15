@@ -12,6 +12,8 @@ import {
     store as confirmStore,
 } from '@/actions/Laravel/Passkeys/Http/Controllers/PasskeyConfirmationController';
 import PasskeyVerify from '@/components/PasskeyVerify.vue';
+import { onBeforeUnmount } from 'vue';
+import { toast } from '@/lib/toast';
 
 defineOptions({
     layout: {
@@ -21,6 +23,10 @@ defineOptions({
         ),
     },
 });
+
+// A workspace that requires two-factor sends people here with a toast saying
+// why. Once they've confirmed and moved on, it no longer applies.
+onBeforeUnmount(() => toast.dismiss('workspace-two-factor'));
 </script>
 
 <template>

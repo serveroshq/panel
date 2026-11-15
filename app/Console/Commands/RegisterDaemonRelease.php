@@ -13,7 +13,7 @@ class RegisterDaemonRelease extends Command
 
     public function handle(): int
     {
-        foreach ($this->argument('manifests') as $file) {
+        foreach ((array) $this->argument('manifests') as $file) {
             $manifest = is_readable($file) ? json_decode((string) file_get_contents($file), true) : null;
             if (! is_array($manifest) || ! isset($manifest['version'], $manifest['sha256'], $manifest['signature'])) {
                 $this->error("{$file} isn't a release manifest.");

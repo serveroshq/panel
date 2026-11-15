@@ -98,6 +98,9 @@ const gridlines = computed(() =>
     [1, 2 / 3, 1 / 3].map((fraction) => ({
         top: String((1 - fraction) * 100) + '%',
         label: props.format(top.value * fraction),
+        // Labels sit just above their line, except the top one: above it
+        // would land in the header, under the current value and peak.
+        below: fraction === 1,
     })),
 );
 
@@ -358,7 +361,8 @@ onBeforeUnmount(() => {
             <span
                 v-for="line in gridlines"
                 :key="line.top"
-                class="pointer-events-none absolute right-0 -translate-y-full pb-0.5 text-[10px]/3 text-(--ds-text-faint) tabular-nums"
+                class="pointer-events-none absolute right-0 text-[10px]/3 text-(--ds-text-faint) tabular-nums"
+                :class="line.below ? 'pt-0.5' : '-translate-y-full pb-0.5'"
                 :style="{ top: line.top }"
                 >{{ line.label }}</span
             >
