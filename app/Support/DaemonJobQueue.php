@@ -18,6 +18,8 @@ use RuntimeException;
 
 class DaemonJobQueue
 {
+    public const DEPLOY_TIMEOUT_SECS = 1800;
+
     public const array NEEDS_PLAN = ['deploy', 'release', 'rollback', 'service_exec', 'service_clone'];
 
     private const array READS = ['service_logs', 'service_inspect', 'discover', 'file_list', 'file_read', 'package_updates', 'disk_usage'];
@@ -63,7 +65,7 @@ class DaemonJobQueue
         $database = $job['snapshot_before'] ? AppDatabase::for($machine, (string) $job['service'], (array) ($job['env'] ?? [])) : null;
         $job['snapshot_also'] = $database === null ? [] : [$database['key']];
 
-        $record = $this->queue($machine, $user, 'deploy', $job, $job['service'], 1800);
+        $record = $this->queue($machine, $user, 'deploy', $job, $job['service'], self::DEPLOY_TIMEOUT_SECS);
         event(new DeployQueued($machine, $record, (array) ($job['domains'] ?? [])));
 
         return $record;
