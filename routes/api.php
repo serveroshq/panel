@@ -10,6 +10,7 @@ use App\Http\Controllers\GitHubWebhookController;
 use App\Http\Controllers\WorkflowController;
 use App\Http\Controllers\WorkspaceDomainController;
 use App\Http\Middleware\AuthenticateApiKey;
+use App\Http\Middleware\IdempotentApiRequests;
 use App\Support\Extensions\Extensions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -33,7 +34,7 @@ Route::match(['get', 'post'], 'deploy-sources/{token}.git/{path}', GitSourceCont
 Route::prefix('v1')->group(function () {
     Route::get('openapi.json', [ApiController::class, 'openapi'])->name('api.v1.openapi');
 
-    Route::middleware(AuthenticateApiKey::class)->group(function () {
+    Route::middleware([AuthenticateApiKey::class, IdempotentApiRequests::class])->group(function () {
         Route::get('/', [ApiController::class, 'index'])->name('api.v1.index');
         Route::get('tools', [ApiController::class, 'tools'])->name('api.v1.tools');
         Route::post('tools/{name}', [ApiController::class, 'tool'])->where('name', '[a-z_]{1,64}')->name('api.v1.tool');
