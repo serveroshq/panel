@@ -52,6 +52,7 @@ test('the queue itself refuses deploys, rollbacks and commands without a plan', 
             ->toThrow(RuntimeException::class, 'need');
     }
     expect($queue->unavailable($machine, 'service_exec'))->toContain('The console needs a plan')
+        ->and($queue->unavailable($machine, 'database_query'))->toContain('The Database tab needs a plan')
         ->and($queue->unavailable($machine, 'service_action'))->toBeNull()
         ->and($queue->unavailable($machine))->toBeNull()
         ->and(DaemonJob::query()->count())->toBe(0);

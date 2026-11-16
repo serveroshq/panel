@@ -412,13 +412,15 @@ const th = 'px-3 py-2.5 text-left text-[12px]/4 font-medium';
             :padded="false"
         >
             <div v-if="requests.length" class="overflow-x-auto">
-                <table class="w-full min-w-[640px] text-[13px]/5">
+                <table class="w-full text-[13px]/5 sm:min-w-[640px]">
                     <thead>
                         <tr class="text-(--ds-text-muted)">
                             <th :class="[th, 'pl-5']">{{ $t('Status') }}</th>
                             <th :class="th">{{ $t('Tool') }}</th>
-                            <th :class="th">{{ $t('Key') }}</th>
-                            <th :class="[th, 'text-right']">
+                            <th :class="[th, 'max-sm:hidden']">
+                                {{ $t('Key') }}
+                            </th>
+                            <th :class="[th, 'text-right max-sm:hidden']">
                                 {{ $t('Took') }}
                             </th>
                             <th :class="[th, 'pr-5 text-right']">
@@ -449,16 +451,18 @@ const th = 'px-3 py-2.5 text-left text-[12px]/4 font-medium';
                                     >{{ request.error }}</span
                                 >
                             </td>
-                            <td class="px-3 py-2.5 text-(--ds-text-secondary)">
+                            <td
+                                class="px-3 py-2.5 text-(--ds-text-secondary) max-sm:hidden"
+                            >
                                 {{ request.key ?? '–' }}
                             </td>
                             <td
-                                class="px-3 py-2.5 text-right text-(--ds-text-muted) tabular-nums"
+                                class="px-3 py-2.5 text-right text-(--ds-text-muted) tabular-nums max-sm:hidden"
                             >
                                 {{ request.durationMs }} ms
                             </td>
                             <td
-                                class="px-3 py-2.5 pr-5 text-right text-(--ds-text-muted)"
+                                class="px-3 py-2.5 pr-5 text-right whitespace-nowrap text-(--ds-text-muted)"
                             >
                                 {{ timeAgo(request.at) }}
                             </td>

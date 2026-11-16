@@ -25,7 +25,7 @@ final class UpdateAlertSettings extends Tool
 
     public function description(): string
     {
-        return 'Changes where the workspace’s alerts go (monitors down and back, machines that stop reporting, full disks, expiring certificates). email turns alert emails to owners and admins on or off. webhook sets the https address alerts are posted to (a Slack or Discord incoming webhook works as is); an empty string removes it. off lists the kinds of alert not to send at all (machines, resources, services, deploys, backups, monitors, workflows); an empty list sends every kind. Give only what changes: what’s set stays when it’s left out. '
+        return 'Changes where the workspace’s alerts go (monitors down and back, machines that stop reporting, full disks, expiring certificates). email turns alert emails to owners and admins on or off. webhook sets the https address alerts are posted to (a Slack or Discord incoming webhook works as is); an empty string removes it. off lists the kinds of alert not to send at all (machines, resources, services, deploys, backups, monitors, workflows, updates, security); an empty list sends every kind. Give only what changes: what’s set stays when it’s left out. '
             .'The webhook must be reachable from the internet. Try it first with send_test_alert. Returns the settings (the webhook’s address isn’t echoed back).';
     }
 
@@ -34,7 +34,7 @@ final class UpdateAlertSettings extends Tool
         return Schema::object([
             'email' => Schema::boolean('Email alerts to the workspace’s owners and admins.'),
             'webhook' => Schema::string('The https address to post alerts to, like a Slack incoming webhook. An empty string removes it.', maxLength: 2000),
-            'off' => Schema::array(Schema::string('A kind of alert.', AlertKinds::keys()), 'The kinds of alert not to send, by email or webhook: machines (stopped reporting), resources (disk or memory low), services (stopped or crash-looping), deploys, backups, monitors (down, certificates expiring), workflows (failed runs), updates (a daemon update waiting for approval, and installed, on machines whose policy asks first). The whole list: an empty list turns every kind on.', count(AlertKinds::keys())),
+            'off' => Schema::array(Schema::string('A kind of alert.', AlertKinds::keys()), 'The kinds of alert not to send, by email or webhook: machines (stopped reporting), resources (disk or memory low), services (stopped or crash-looping), deploys, backups, monitors (down, certificates expiring), workflows (failed runs), updates (a daemon update waiting for approval, and installed, on machines whose policy asks first), security (known vulnerabilities, CVEs, that a waiting OS update fixes). The whole list: an empty list turns every kind on.', count(AlertKinds::keys())),
         ]);
     }
 

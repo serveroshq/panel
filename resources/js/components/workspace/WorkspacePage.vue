@@ -34,7 +34,7 @@ defineProps<Props>();
                 </div>
                 <div
                     v-if="$slots.actions && !$slots.tabs"
-                    class="flex flex-wrap items-center gap-2"
+                    class="ds-page-actions flex flex-wrap items-center gap-2 max-sm:w-full"
                 >
                     <slot name="actions" />
                 </div>
@@ -44,12 +44,14 @@ defineProps<Props>();
                 v-if="$slots.tabs"
                 class="flex flex-wrap items-center gap-2 @min-[1190px]:flex-nowrap"
             >
-                <div class="max-w-full min-w-0 @min-[1190px]:shrink-0">
+                <div
+                    class="max-w-full min-w-0 max-sm:w-full @min-[1190px]:shrink-0"
+                >
                     <slot name="tabs" />
                 </div>
                 <div
                     v-if="$slots.actions"
-                    class="ml-auto flex grow flex-wrap items-center justify-end gap-2 @min-[1190px]:min-w-0 @min-[1190px]:flex-nowrap @min-[1190px]:[&>*:not(label)]:shrink-0 [&>label]:grow @min-[1190px]:[&>label]:grow-0"
+                    class="ds-page-actions ml-auto flex grow flex-wrap items-center justify-end gap-2 @min-[1190px]:min-w-0 @min-[1190px]:flex-nowrap @min-[1190px]:[&>*:not(label)]:shrink-0 [&>label]:grow @min-[1190px]:[&>label]:grow-0"
                 >
                     <slot name="actions" />
                 </div>

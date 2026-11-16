@@ -40,6 +40,7 @@ final class DeployRequest
             'health_path' => ['required', 'string', 'max:200', 'regex:/^\/[\x21-\x7e]*$/'],
             'domain' => ['nullable', 'string', 'max:253', 'regex:'.self::DOMAIN_PATTERN],
             'wildcard' => ['sometimes', 'boolean'],
+            'proxy' => ['nullable', 'string', Rule::in(array_keys(Machine::PROXIES))],
         ];
     }
 
@@ -54,6 +55,7 @@ final class DeployRequest
             'health_path' => ['nullable', 'string', 'max:200', 'regex:/^\/[\x21-\x7e]*$/'],
             'domain' => ['nullable', 'string', 'max:253', 'regex:'.self::DOMAIN_PATTERN],
             'wildcard' => ['sometimes', 'boolean'],
+            'proxy' => ['nullable', 'string', Rule::in(array_keys(Machine::PROXIES))],
             'env' => ['nullable', 'array'],
             'env.*' => ['nullable', 'string', 'max:2000'],
             'extra_env' => ['nullable', 'string', 'max:10000'],
@@ -108,6 +110,31 @@ final class DeployRequest
         if (! DaemonJobQueue::canWildcard($machine)) {
             throw ValidationException::withMessages([$field => 'This machine’s daemon is too old for wildcard subdomains. It updates itself, or run “sudo serverosd update” on the server.']);
         }
+    }
+
+    /**
+     * The proxy a deploy asks for, when it has a domain for one to serve
+     * and isn't the one the machine already uses. Null keeps it as it is.
+     */
+    public static function proxy(Machine $machine, ?string $domain, ?string $proxy): ?string
+    {
+        if (blank($domain) || blank($proxy) || $proxy === ($machine->proxy ?? 'caddy')) {
+            return null;
+        }
+        if (! DaemonJobQueue::canChooseProxy($machine)) {
+            throw ValidationException::withMessages(['proxy' => $machine->name.'’s daemon is too old to switch reverse proxy. It updates itself, or run “sudo serverosd update” on the server.']);
+        }
+
+        return $proxy;
+    }
+
+    /**
+     * @param  array<string, mixed>  $job
+     * @return array<string, mixed>
+     */
+    public static function withProxy(array $job, ?string $proxy): array
+    {
+        return $proxy === null ? $job : [...$job, 'proxy' => $proxy];
     }
 
     public static function assertPublicRepo(string $repo): void

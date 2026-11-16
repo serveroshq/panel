@@ -98,18 +98,30 @@ class MonitorAlerts
             }
         }
 
-        if (is_string($workspace->alert_webhook_url) && $workspace->alert_webhook_url !== '') {
-            $text = $subject.': '.implode(' ', $lines).' '.$url;
-            $error = $this->post($workspace->alert_webhook_url, [
-                'event' => $event,
-                'text' => $text,
-                'content' => $text,
-                'url' => $url,
-                ...$extra,
-            ]);
-            if ($error !== null) {
-                Log::warning('Alert webhook failed', ['workspace' => $workspace->id, 'event' => $event, 'error' => $error]);
-            }
+        $this->webhook($workspace, $event, $subject.': '.implode(' ', $lines).' '.$url, $url, $extra);
+    }
+
+    /**
+     * Post to the workspace's webhook, if it has one (Slack reads `text`,
+     * Discord `content`). Failures are logged, never thrown.
+     *
+     * @param  array<string, mixed>  $extra  more fields for the body
+     */
+    public function webhook(Workspace $workspace, string $event, string $text, string $url, array $extra = []): void
+    {
+        if (! is_string($workspace->alert_webhook_url) || $workspace->alert_webhook_url === '') {
+            return;
+        }
+
+        $error = $this->post($workspace->alert_webhook_url, [
+            'event' => $event,
+            'text' => $text,
+            'content' => $text,
+            'url' => $url,
+            ...$extra,
+        ]);
+        if ($error !== null) {
+            Log::warning('Alert webhook failed', ['workspace' => $workspace->id, 'event' => $event, 'error' => $error]);
         }
     }
 

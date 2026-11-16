@@ -47,7 +47,12 @@ final class ActivityLine
             'service.logs_unmute' => $set('started keeping logs from'),
             'service.rename' => $set('renamed a service to', isset($meta['from']) ? $t('(was :name)', ['name' => $meta['from']]) : null),
             'service.remove' => $set('removed', ($meta['deleted_data'] ?? false) ? 'and deleted its data' : null, 'bad'),
-            'console.command' => $set('ran a command in'),
+            'console.command' => match ($meta['write'] ?? null) {
+                true => $set('ran a query that can change data in', null, 'warn'),
+                // Read-only mode guards against mistakes; the query box can still lift it.
+                false => $set('ran a query in', '(read-only mode)'),
+                default => $set('ran a command in'),
+            },
             'file.write' => $set('saved'),
             'file.delete' => $set('deleted', null, 'warn'),
             'machine.connect' => $set('connected'),

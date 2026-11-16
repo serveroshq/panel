@@ -170,15 +170,17 @@ export const columnLabels: Record<
     lastBackup: trans('Last backup'),
 };
 
+// On a phone the table keeps the name, CPU and the row's menu; the rest is
+// on the machine's page.
 export const tableColumns: MachineColumns = {
-    machine: 'min-w-62.5 flex-1',
-    environment: 'w-40 shrink-0',
-    provider: 'w-35 shrink-0',
-    services: 'w-22.5 shrink-0',
-    memory: 'w-25 shrink-0',
-    cpu: 'w-47.5 shrink-0',
-    lastBackup: 'w-37.5 shrink-0',
-    actions: 'w-15.5 shrink-0',
+    machine: 'min-w-0 flex-1 pr-3 sm:min-w-62.5 sm:pr-0',
+    environment: 'w-40 shrink-0 max-sm:hidden',
+    provider: 'w-35 shrink-0 max-sm:hidden',
+    services: 'w-22.5 shrink-0 max-sm:hidden',
+    memory: 'w-25 shrink-0 max-sm:hidden',
+    cpu: 'w-24 shrink-0 sm:w-47.5',
+    lastBackup: 'w-37.5 shrink-0 max-sm:hidden',
+    actions: 'w-10 shrink-0 sm:w-15.5',
 };
 
 export type PlannedMaintenance = {

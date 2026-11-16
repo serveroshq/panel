@@ -43,6 +43,8 @@ final class FixEvidence
             'jobs' => array_values(DaemonJob::query()
                 ->where('machine_id', $machine->id)
                 ->whereIn('state', ['failed', 'timed_out', 'refused'])
+                // A query someone ran isn't a fault in the machine, and its log is their data.
+                ->where('kind', '!=', 'database_query')
                 ->where('created_at', '>=', now()->subDays(2))
                 ->latest()
                 ->limit(self::FAILED_JOBS)

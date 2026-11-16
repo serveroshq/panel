@@ -131,6 +131,16 @@ final class DeployFailure
             ];
         }
 
+        if ($phase === 'proxy' && $has('/\b(nginx|apache2|traefik) is not running and would not start/i')) {
+            $unit = $has('/\bnginx is not running/i') ? 'nginx' : ($has('/\bapache2 is not running/i') ? 'apache2' : 'traefik');
+            $name = ['nginx' => 'nginx', 'apache2' => 'Apache', 'traefik' => 'Traefik'][$unit];
+
+            return [
+                'cause' => "The app is running, but {$name} (the web server that gives it HTTPS) isn’t, so its domain couldn’t be switched on.",
+                'fix' => "Start {$name} on the machine and retry. If it won’t start, something else is probably using port 80 or 443 (“ss -ltnp” shows what), or “journalctl -u {$unit}” says why.",
+                'command' => "systemctl enable --now {$unit}",
+            ];
+        }
         if ($phase === 'proxy' && $has('/localhost:2019.*connection refused|is not running and would not start/i')) {
             return [
                 'cause' => 'The app is running, but Caddy (the web server that gives it HTTPS) isn’t, so its domain couldn’t be switched on.',

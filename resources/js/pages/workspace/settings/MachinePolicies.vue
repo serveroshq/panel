@@ -219,12 +219,14 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
             </template>
 
             <div class="overflow-x-auto">
-                <table class="w-full min-w-[640px] text-[13px]/5">
+                <table class="w-full text-[13px]/5 sm:min-w-[640px]">
                     <thead>
                         <tr class="text-(--ds-text-muted)">
                             <th :class="[th, 'pl-5']">{{ $t('Name') }}</th>
                             <th :class="th">{{ $t('What it does') }}</th>
-                            <th :class="th">{{ $t('Followed by') }}</th>
+                            <th :class="[th, 'max-sm:hidden']">
+                                {{ $t('Followed by') }}
+                            </th>
                             <th :class="[th, 'pr-5']" />
                         </tr>
                     </thead>
@@ -261,7 +263,9 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                     </span>
                                 </span>
                             </td>
-                            <td class="px-3 py-3 text-(--ds-text-secondary)">
+                            <td
+                                class="px-3 py-3 text-(--ds-text-secondary) max-sm:hidden"
+                            >
                                 <span class="flex flex-col">
                                     <span>{{ followers(policy) }}</span>
                                     <span

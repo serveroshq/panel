@@ -37,7 +37,7 @@
         "lucide-react": "^1.52.0",
         "marked": "^18.1.0",
         "motion": "^14.0.0",
-        "posthog-js": "^1.438.7",
+        "posthog-js": "^1.450.0",
         "react": "^19.3.0",
         "react-dom": "^19.3.0",
         "reka-ui": "^2.9.8",

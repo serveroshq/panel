@@ -2961,3 +2961,31 @@ html.dark
     color: var(--ds-text-faint);
     font-size: 12px;
 }
+
+/* A page's toolbar on a phone: buttons with a label grow to fill each row,
+   so rows end flush instead of wrapping ragged to the right. Icon-only
+   buttons (an aria-label, or just icons and screen-reader text) stay
+   square. */
+@media (width < 40rem) {
+    .ds-page-actions {
+        justify-content: flex-start;
+    }
+
+    .ds-page-actions > * {
+        flex-grow: 1;
+    }
+
+    .ds-page-actions > :is(button, a) {
+        justify-content: center;
+    }
+
+    .ds-page-actions > :not(button, a, label) > :is(button, a):only-child {
+        flex-grow: 1;
+        justify-content: center;
+    }
+
+    .ds-page-actions
+        > :is([aria-label], :has(> .sr-only):not(:has(> :not(svg, span)))) {
+        flex-grow: 0;
+    }
+}
