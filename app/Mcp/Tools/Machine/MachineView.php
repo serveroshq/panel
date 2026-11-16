@@ -331,7 +331,7 @@ final class MachineView
     {
         return array_values(DaemonJob::query()
             ->where('machine_id', $machine->id)
-            ->where('kind', '!=', 'discover')
+            ->whereNotIn('kind', ['discover', 'database_query'])
             ->latest()
             ->limit(10)
             ->get()

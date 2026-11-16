@@ -391,7 +391,7 @@ const focusRing =
                 </nav>
             </div>
 
-            <div class="flex min-w-0 flex-1 flex-col gap-5 xl:max-w-5xl">
+            <div class="flex min-w-0 flex-1 flex-col gap-5">
                 <slot />
             </div>
         </div>

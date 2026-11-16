@@ -285,3 +285,116 @@ test('the slug works even when the whole public link was pasted', function () {
 
     expect(app(GitHubApp::class)->installUrl('s'))->toBe('https://github.com/apps/serveroshq/installations/new?state=s');
 });
+
+/** @return list<array<string, mixed>> */
+function githubRepositories(string $owner, int ...$ids): array
+{
+    return array_map(fn (int $id) => [
+        'id' => $id, 'full_name' => "{$owner}/repo-{$id}", 'private' => $id === 1, 'default_branch' => 'main', 'pushed_at' => "2026-01-0{$id}T00:00:00Z",
+    ], $ids);
+}
+
+test('the deploy dialog lists only this workspace’s repositories, within a limited connection', function () {
+    [$workspace, $installation] = connectedWorkspace();
+    $installation->update(['repository_ids' => [1, 2]]);
+    $other = Workspace::factory()->create();
+    $other->githubInstallations()->create(['installation_id' => 888, 'account_login' => 'theirs']);
+    Http::fake([
+        'api.github.com/app/installations/777/access_tokens' => Http::response(['token' => 'ghs_acme'], 201),
+        'api.github.com/app/installations/888/access_tokens' => Http::response(['token' => 'ghs_theirs'], 201),
+        'api.github.com/installation/repositories*' => fn (HttpRequest $r) => Http::response(['repositories' => $r->hasHeader('Authorization', 'Bearer ghs_acme')
+            ? githubRepositories('acme', 1, 2, 3)
+            : githubRepositories('theirs', 4)]),
+    ]);
+
+    $this->actingAs($workspace->owner)->getJson(workspaceUrl($workspace, '/github/repositories'))
+        ->assertOk()
+        ->assertJson(['enabled' => true, 'connected' => true])
+        ->assertJsonPath('repositories.*.name', ['acme/repo-2', 'acme/repo-1'])
+        ->assertJsonPath('repositories.1.private', true);
+
+    $this->actingAs($other->owner)->getJson(workspaceUrl($other, '/github/repositories'))
+        ->assertOk()
+        ->assertJsonPath('repositories.*.name', ['theirs/repo-4']);
+
+    $this->actingAs($other->owner)->getJson(workspaceUrl($workspace, '/github/repositories'))->assertForbidden();
+    $viewer = User::factory()->create();
+    $workspace->members()->attach($viewer, ['role' => 'viewer']);
+    $this->actingAs($viewer)->getJson(workspaceUrl($workspace, '/github/repositories'))->assertForbidden();
+    $this->actingAs($viewer)->getJson(workspaceUrl($workspace, '/github/repositories/acme/repo-1/branches'))->assertForbidden();
+});
+
+test('the repository list says when GitHub isn’t set up or nothing is connected', function () {
+    $workspace = Workspace::factory()->create();
+    Http::fake();
+
+    $this->actingAs($workspace->owner)->getJson(workspaceUrl($workspace, '/github/repositories'))
+        ->assertOk()->assertExactJson(['enabled' => true, 'connected' => false, 'repositories' => []]);
+
+    $workspace->githubInstallations()->create(['installation_id' => 777, 'account_login' => 'acme']);
+    config()->set('services.github_app', []);
+    $this->actingAs($workspace->owner)->getJson(workspaceUrl($workspace, '/github/repositories'))
+        ->assertOk()->assertExactJson(['enabled' => false, 'connected' => false, 'repositories' => []]);
+    Http::assertNothingSent();
+});
+
+test('a connection removed on GitHub drops out of the repository list', function () {
+    [$workspace] = connectedWorkspace();
+    Http::fake(['api.github.com/app/installations/777/access_tokens' => Http::response([], 404)]);
+
+    $this->actingAs($workspace->owner)->getJson(workspaceUrl($workspace, '/github/repositories'))
+        ->assertOk()->assertJsonPath('repositories', []);
+    expect(GitHubInstallation::count())->toBe(0);
+});
+
+test('a failed repository list isn’t kept, and changing a connection forgets the list', function () {
+    [$workspace, $installation] = connectedWorkspace();
+    $up = false;
+    Http::fake([
+        'api.github.com/app/installations/777/access_tokens' => function () use (&$up) {
+            return $up ? Http::response(['token' => 'ghs_acme'], 201) : Http::response([], 500);
+        },
+        'api.github.com/installation/repositories*' => Http::response(['repositories' => githubRepositories('acme', 1, 2)]),
+    ]);
+    $list = fn () => $this->actingAs($workspace->owner)->getJson(workspaceUrl($workspace, '/github/repositories'))->json('repositories.*.name');
+
+    expect($list())->toBe([]);
+    $up = true;
+    expect($list())->toBe(['acme/repo-2', 'acme/repo-1']);
+    $sent = count(Http::recorded());
+    expect($list())->toBe(['acme/repo-2', 'acme/repo-1'])
+        ->and(Http::recorded())->toHaveCount($sent);
+
+    $installation->update(['repository_ids' => [1]]);
+    expect($list())->toBe(['acme/repo-1']);
+    $installation->delete();
+    expect($list())->toBe([]);
+});
+
+test('branches come with the workspace’s token, or the operator’s for a public repository only', function () {
+    [$workspace] = connectedWorkspace();
+    config()->set('services.github.token', 'ghp_operator');
+    Http::fake([
+        'api.github.com/app/installations/777/access_tokens' => fn (HttpRequest $r) => $r['repositories'] === ['secret-app']
+            ? Http::response(['token' => 'ghs_read'], 201) : Http::response([], 422),
+        'api.github.com/repos/acme/secret-app/branches*' => fn (HttpRequest $r) => ! $r->hasHeader('Authorization', 'Bearer ghs_read')
+            ? Http::response([], 404)
+            : Http::response((int) $r['page'] === 1 ? array_map(fn ($i) => ['name' => "b{$i}"], range(1, 100)) : [['name' => 'zzz']]),
+        'api.github.com/repos/someone/public-app' => Http::response(['private' => false, 'visibility' => 'public']),
+        'api.github.com/repos/someone/public-app/branches*' => Http::response([['name' => 'main'], ['name' => 'dev']]),
+        'api.github.com/repos/operator/private-app' => Http::response(['private' => true, 'visibility' => 'private']),
+        'api.github.com/repos/operator/private-app/branches*' => Http::response([['name' => 'leak']]),
+        'api.github.com/repos/operator/odd-app' => Http::response(''),
+        'api.github.com/repos/operator/odd-app/branches*' => Http::response([['name' => 'leak']]),
+    ]);
+    $branches = fn (string $repo) => $this->actingAs($workspace->owner)->getJson(workspaceUrl($workspace, "/github/repositories/{$repo}/branches"))->assertOk()->json('branches');
+
+    expect($branches('acme/secret-app'))->toHaveCount(101)->toContain('b1', 'zzz')
+        ->and($branches('someone/public-app'))->toBe(['main', 'dev'])
+        ->and($branches('operator/private-app'))->toBe([])
+        ->and($branches('operator/odd-app'))->toBe([]);
+
+    Http::assertSent(fn (HttpRequest $r) => str_contains($r->url(), 'someone/public-app/branches') && $r->hasHeader('Authorization', 'Bearer ghp_operator'));
+    Http::assertNotSent(fn (HttpRequest $r) => str_contains($r->url(), 'private-app/branches') || str_contains($r->url(), 'odd-app/branches'));
+    $this->actingAs($workspace->owner)->getJson(workspaceUrl($workspace, '/github/repositories/acme/../branches'))->assertNotFound();
+});

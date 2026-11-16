@@ -78,7 +78,10 @@ const tabs = computed(() =>
 );
 
 const section = computed(
-    () => tabs.value.find((tab) => tab.active)?.label ?? null,
+    () =>
+        tabs.value.find((tab) => tab.active)?.label ??
+        items.value.find((item) => item.active)?.label ??
+        null,
 );
 
 const inSidebar = computed(() => (sidebar ? 'lg:hidden' : ''));
@@ -147,6 +150,7 @@ const crumbs = computed<Crumb[]>(() => {
 });
 
 const strip = useTemplateRef<HTMLElement>('strip');
+const stripScroller = useTemplateRef<HTMLElement>('stripScroller');
 const tabEls = new Map<string, HTMLElement>();
 const pending = ref<string | null>(null);
 const line = ref<{ left: number; width: number } | null>(null);
@@ -171,13 +175,33 @@ function measure(): void {
     line.value = el ? { left: el.offsetLeft, width: el.offsetWidth } : null;
 }
 
+// On a phone the strip scrolls in its own row: bring the current tab into
+// view by scrolling only the strip. scrollIntoView would also scroll the
+// page's clipped containers and leave the page shifted sideways.
+function revealCurrent(behavior: ScrollBehavior): void {
+    const scroller = stripScroller.value;
+    const el = currentTab.value ? tabEls.get(currentTab.value) : undefined;
+    if (!scroller || !el || scroller.scrollWidth <= scroller.clientWidth) {
+        return;
+    }
+
+    const start = el.offsetLeft;
+    const end = start + el.offsetWidth;
+    const view = scroller.scrollLeft;
+    if (start >= view + 12 && end <= view + scroller.clientWidth - 12) {
+        return;
+    }
+
+    scroller.scrollTo({
+        left: start - (scroller.clientWidth - el.offsetWidth) / 2,
+        behavior,
+    });
+}
+
 watch(currentTab, async () => {
     await nextTick();
     measure();
-    tabEls.get(currentTab.value ?? '')?.scrollIntoView({
-        block: 'nearest',
-        inline: 'nearest',
-    });
+    revealCurrent('smooth');
 });
 
 let observer: ResizeObserver | undefined;
@@ -186,6 +210,7 @@ let stopFinish: (() => void) | undefined;
 onMounted(async () => {
     await nextTick();
     measure();
+    revealCurrent('instant');
     requestAnimationFrame(() => (lineReady.value = true));
 
     if (strip.value && 'ResizeObserver' in window) {
@@ -364,6 +389,7 @@ const focusRing =
         </div>
 
         <nav
+            ref="stripScroller"
             class="[scrollbar-width:none] overflow-x-auto [&::-webkit-scrollbar]:hidden"
             :class="inSidebar"
             :aria-label="$t('Workspace')"

@@ -6,6 +6,7 @@ use App\Models\GitHubAppSetting;
 use App\Models\GitHubInstallation;
 use App\Models\Workspace;
 use App\Support\Edition;
+use App\Support\ServiceTemplates\RepositoryDetector;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Cache;
@@ -258,6 +259,127 @@ final class GitHubApp
         }
 
         return hash_equals('sha256='.hash_hmac('sha256', $body, $secret), $signature);
+    }
+
+    /**
+     * The repositories the workspace's GitHub connections share with ServerOS,
+     * most recently pushed first, for picking one to deploy. Kept for a minute
+     * when every connection answered; a connection changing forgets it.
+     *
+     * @return list<array{name: string, url: string, private: bool, branch: string, pushed: string}>
+     */
+    public function repositoriesFor(Workspace $workspace): array
+    {
+        if (! self::enabled()) {
+            return [];
+        }
+
+        $list = Cache::remember(self::repositoriesKey($workspace->id), 60, fn () => $this->listRepositories($workspace));
+        if (! $list['complete']) {
+            Cache::forget(self::repositoriesKey($workspace->id));
+        }
+
+        return $list['repositories'];
+    }
+
+    /** @return array{complete: bool, repositories: list<array{name: string, url: string, private: bool, branch: string, pushed: string}>} */
+    private function listRepositories(Workspace $workspace): array
+    {
+        $found = [];
+        $complete = true;
+        foreach ($workspace->githubInstallations()->get() as $installation) {
+            try {
+                $response = $this->asApp()->post(self::API."/app/installations/{$installation->installation_id}/access_tokens", [
+                    'permissions' => ['metadata' => 'read'],
+                ]);
+                if ($response->status() === 404) {
+                    $installation->delete();
+
+                    continue;
+                }
+                $token = $response->json('token');
+                $repositories = is_string($token) ? $this->repositories($this->client()->withToken($token), self::API.'/installation/repositories') : null;
+            } catch (ConnectionException) {
+                $repositories = null;
+            }
+
+            if ($repositories === null) {
+                $complete = false;
+
+                continue;
+            }
+
+            foreach ($repositories as $repository) {
+                $name = $repository['full_name'] ?? null;
+                if (is_string($name) && $installation->allows((int) ($repository['id'] ?? 0))) {
+                    $found[$name] = [
+                        'name' => $name,
+                        'url' => "https://github.com/{$name}",
+                        'private' => ($repository['private'] ?? false) === true,
+                        'branch' => (string) ($repository['default_branch'] ?? ''),
+                        'pushed' => (string) ($repository['pushed_at'] ?? ''),
+                    ];
+                }
+            }
+        }
+
+        usort($found, fn (array $a, array $b) => strcmp($b['pushed'], $a['pushed']));
+
+        return ['complete' => $complete, 'repositories' => $found];
+    }
+
+    public static function repositoriesKey(int $workspaceId): string
+    {
+        return "github:repositories:{$workspaceId}";
+    }
+
+    /**
+     * A repository's branches, with the workspace's token when it's connected.
+     * Otherwise the operator's token is used, but only for a public repository,
+     * so it never lists the operator's own private ones.
+     *
+     * @return list<string>|null
+     */
+    public function branchesFor(Workspace $workspace, string $owner, string $repo): ?array
+    {
+        $path = self::API.'/repos/'.rawurlencode($owner).'/'.rawurlencode($repo);
+        $token = $this->tokenFor($workspace, $owner, $repo);
+        $shared = $token === null && filled(config('services.github.token'));
+        $client = $this->client()->when(
+            $token !== null || $shared,
+            fn (PendingRequest $http) => $http->withToken((string) ($token ?? config('services.github.token'))),
+        );
+
+        try {
+            if ($shared) {
+                $found = $client->get($path)->json();
+                if (! is_array($found) || ($found['private'] ?? null) !== false || ! RepositoryDetector::isPublic($found)) {
+                    return null;
+                }
+            }
+
+            $names = [];
+            // ponytail: up to 500 branches; the dialog adds the current one if it's past that.
+            for ($page = 1; $page <= 5; $page++) {
+                $response = $client->get("{$path}/branches", ['per_page' => 100, 'page' => $page]);
+                $branches = $response->json();
+                if (! $response->successful() || ! is_array($branches)) {
+                    return $names === [] ? null : $names;
+                }
+                foreach ($branches as $branch) {
+                    if (is_array($branch) && is_string($branch['name'] ?? null)) {
+                        $names[] = $branch['name'];
+                    }
+                }
+                if (count($branches) < 100) {
+                    break;
+                }
+            }
+        } catch (ConnectionException) {
+            return null;
+        }
+
+        return $names;
     }
 
     public static function connected(Workspace $workspace, string $owner): bool

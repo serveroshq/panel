@@ -141,7 +141,7 @@ function toggle(name: string): void {
         role="table"
         :aria-label="$t('Machines')"
     >
-        <div class="flex w-full min-w-max flex-col">
+        <div class="flex w-full flex-col sm:min-w-max">
             <div
                 class="flex h-9.5 items-center border-b px-4 font-ui text-xs/4 font-medium"
                 :class="

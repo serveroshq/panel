@@ -15,6 +15,7 @@ final class AlertKinds
         'monitors' => ['monitor.down', 'monitor.up', 'certificate.expiring'],
         'workflows' => ['workflow.failed'],
         'updates' => ['daemon.update_waiting', 'daemon.updated'],
+        'security' => ['security.vulnerability'],
     ];
 
     /** @return list<string> */
