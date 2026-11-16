@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Workflow;
 
+use App\Api\Schemas\Workflows as WorkflowSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -33,6 +34,11 @@ final class GetWorkflowRun extends Tool
             'workflow' => Schema::string('Optional: the workflow it should belong to (id or name), as a check.', maxLength: 120),
             'logs' => Schema::integer('How many log lines to return, newest last (0–'.WorkflowEngine::LOG_LIMIT.', default 100).', 0, WorkflowEngine::LOG_LIMIT),
         ], ['run']);
+    }
+
+    public function responseSchema(): array
+    {
+        return WorkflowSchemas::run(['workflow' => WorkflowSchemas::named()], true, ['workflow']);
     }
 
     public function handle(McpContext $context, array $arguments): array

@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Enums\WorkspacePermission;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -52,6 +54,30 @@ final class DetectRepository extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        $maybeString = ['type' => ['string', 'null']];
+
+        return ResponseSchemas::object([
+            'detected' => ['type' => 'boolean', 'description' => 'A template matched.'],
+            'template' => ['type' => ['string', 'null'], 'description' => 'The matching template’s key.'],
+            'framework' => ['type' => ['string', 'null'], 'description' => 'Like Laravel or Express.'],
+            'type' => ['type' => ['string', 'null'], 'description' => 'What it is, like a web app or a static site.'],
+            'repo' => ['type' => 'string', 'description' => 'The repository’s HTTPS address, to pass as repo.'],
+            'branch' => ['type' => 'string'],
+            'commit' => ['type' => 'string', 'description' => 'The commit that was read, to pass as ref.'],
+            'reasons' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Why it matched.'],
+            'php' => ['type' => ['string', 'null'], 'description' => 'The PHP version it needs, to pass as php.'],
+            'healthPath' => $maybeString,
+            'composeFile' => ['type' => ['string', 'null'], 'description' => 'Its own Compose file, to pass as compose_file.'],
+            'composePort' => ['type' => ['integer', 'null'], 'description' => 'The port its Compose file publishes.'],
+            'suggestedName' => ['type' => 'string', 'description' => 'A name to deploy it as.'],
+            'templateInfo' => [...DeploySchemas::template(['healthPath' => $maybeString], ['healthPath']), 'type' => ['object', 'null']],
+            'appTemplates' => ['type' => ['array', 'null'], 'items' => ['type' => 'string'], 'description' => 'The app templates to choose from, when none matched.'],
+            'next' => ['type' => 'string', 'description' => 'How to deploy it.'],
+        ], ['detected', 'template', 'framework', 'type', 'repo', 'branch', 'commit', 'reasons', 'php', 'healthPath', 'composeFile', 'composePort', 'suggestedName', 'templateInfo', 'appTemplates', 'next']);
     }
 
     public function handle(McpContext $context, array $arguments): array

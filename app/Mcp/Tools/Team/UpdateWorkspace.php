@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Team;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -61,6 +62,23 @@ final class UpdateWorkspace extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'workspace' => ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'name' => ['type' => 'string'],
+                'slug' => ['type' => 'string'],
+                'host' => ['type' => 'string', 'description' => 'The dashboard’s host name.'],
+                'logoUrl' => ['type' => ['string', 'null']],
+                'url' => ['type' => 'string'],
+            ], ['id', 'name', 'slug', 'host', 'logoUrl', 'url']),
+            'changed' => ['type' => 'array', 'description' => 'What changed; empty when nothing needed to.', 'items' => ['type' => 'string', 'enum' => ['name', 'logo']]],
+            'note' => ['type' => 'string'],
+            'settingsUrl' => ['type' => 'string', 'description' => 'Settings › General in the dashboard.'],
+        ], ['workspace', 'changed', 'note', 'settingsUrl']);
     }
 
     public function handle(McpContext $context, array $arguments): array

@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Services;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -28,6 +30,21 @@ final class ListServiceGroups extends Tool
     public function inputSchema(): array
     {
         return Schema::object(['machine' => Schema::machine()], ['machine']);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => Services::machine(),
+            'groups' => ['type' => 'array', 'items' => ResponseSchemas::ref('ServiceGroup')],
+            'stacks' => ['type' => 'array', 'description' => 'Compose projects with several containers that no group has claimed.', 'items' => ResponseSchemas::object([
+                'name' => ['type' => 'string'],
+                'composeProject' => ['type' => 'string'],
+                'services' => ['type' => 'array', 'items' => ResponseSchemas::ref('ServiceSummary')],
+            ], ['name', 'composeProject', 'services'])],
+            'ungrouped' => ['type' => 'integer', 'description' => 'How many services are in neither a group nor a stack.'],
+            'url' => ['type' => 'string'],
+        ], ['machine', 'groups', 'stacks', 'ungrouped', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

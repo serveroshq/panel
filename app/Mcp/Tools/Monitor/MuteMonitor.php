@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Monitor;
 
+use App\Api\ResponseSchemas;
 use App\Http\Controllers\MaintenanceController;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -37,6 +38,15 @@ final class MuteMonitor extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'monitor' => ResponseSchemas::ref('Monitor'),
+            'mutedUntil' => ['type' => 'string', 'format' => 'date-time'],
+            'note' => ['type' => 'string'],
+        ], ['monitor', 'mutedUntil', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

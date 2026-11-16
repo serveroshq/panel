@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Paging;
 use App\Mcp\Schema;
@@ -44,6 +46,34 @@ final class ListTemplates extends Tool
             'limit' => Schema::integer('How many to return (1–150, default 50).', 1, 150),
             ...Paging::schema(),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        $string = ['type' => 'string'];
+        $maybeString = ['type' => ['string', 'null']];
+        $boolean = ['type' => 'boolean'];
+
+        return ['anyOf' => [
+            ResponseSchemas::page('templates', ResponseSchemas::ref('Template'), [
+                'categories' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ServiceTemplate::CATEGORIES]],
+            ]),
+            ResponseSchemas::object(['template' => DeploySchemas::template([
+                'healthPath' => $maybeString,
+                'notes' => $maybeString,
+                'settings' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                    'key' => ['type' => 'string', 'description' => 'Pass it in env.'],
+                    'label' => $string,
+                    'hint' => $maybeString,
+                    'secret' => $boolean,
+                    'required' => $boolean,
+                    'accept' => ['type' => 'boolean', 'description' => 'Terms the person must accept by setting it to true.'],
+                    'default' => $maybeString,
+                    'whenEmpty' => ['type' => ['string', 'null'], 'description' => 'What it gets when left out.'],
+                ], ['key', 'label', 'hint', 'secret', 'required', 'accept', 'default', 'whenEmpty'])],
+                'howToDeploy' => $string,
+            ], ['healthPath', 'notes', 'settings', 'howToDeploy'])], ['template'], 'One template in full, with template.'),
+        ]];
     }
 
     public function handle(McpContext $context, array $arguments): array

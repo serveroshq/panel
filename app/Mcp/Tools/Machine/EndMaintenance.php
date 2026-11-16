@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -44,6 +45,16 @@ final class EndMaintenance extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => ResponseSchemas::ref('MachineRef'),
+            'ended' => ['type' => 'boolean', 'description' => 'Without planned: maintenance was on and is now over.'],
+            'calledOff' => ['type' => 'boolean', 'description' => 'With planned: it was still to come or under way.'],
+            'note' => ['type' => ['string', 'null']],
+        ], ['machine', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

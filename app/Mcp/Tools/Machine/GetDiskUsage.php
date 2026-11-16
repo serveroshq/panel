@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Machines;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -48,6 +50,27 @@ final class GetDiskUsage extends Tool
     public function idempotent(): bool
     {
         return false;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => ResponseSchemas::ref('MachineRef'),
+            'jobId' => ['type' => 'string'],
+            'state' => ['type' => 'string', 'enum' => Machines::JOB_STATES],
+            'finished' => ['type' => 'boolean'],
+            'error' => ['type' => ['object', 'null'], 'properties' => ['code' => ['type' => 'string'], 'message' => ['type' => 'string']]],
+            'scannedAt' => ['type' => ['string', 'null'], 'format' => 'date-time'],
+            'path' => ['type' => ['string', 'null']],
+            'total' => ['type' => ['integer', 'null'], 'description' => 'Bytes.'],
+            'used' => ['type' => ['integer', 'null'], 'description' => 'Bytes.'],
+            'available' => ['type' => ['integer', 'null'], 'description' => 'Bytes.'],
+            'partial' => ['type' => 'boolean', 'description' => 'The scan stopped before it read everything.'],
+            'dirs' => ['type' => 'array', 'items' => ResponseSchemas::object(['path' => ['type' => 'string'], 'bytes' => ['type' => 'integer']], ['path', 'bytes'])],
+            'journal' => ['type' => ['integer', 'null'], 'description' => 'Bytes the system journal takes.'],
+            'docker' => ['type' => 'array', 'description' => 'Docker’s own disk use, as docker system df reports it.', 'items' => ['type' => 'object']],
+            'suggestions' => ['type' => 'array', 'items' => ResponseSchemas::object(['title' => ['type' => 'string'], 'detail' => ['type' => 'string'], 'command' => ['type' => ['string', 'null']]], ['title', 'detail', 'command'])],
+        ], ['machine', 'jobId', 'state', 'finished', 'error', 'scannedAt', 'path', 'total', 'used', 'available', 'partial', 'dirs', 'journal', 'docker', 'suggestions']);
     }
 
     #[NotAudited('A read-only scan of the disk')]

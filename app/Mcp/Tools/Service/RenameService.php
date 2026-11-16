@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Services;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -42,6 +44,17 @@ final class RenameService extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'service' => ResponseSchemas::object(['key' => ['type' => 'string'], 'machine' => Services::machine()], ['key', 'machine']),
+            'name' => ['type' => 'string', 'description' => 'Its name now.'],
+            'label' => ['type' => ['string', 'null'], 'description' => 'The name given in ServerOS, null when it uses the name found.'],
+            'previousName' => ['type' => 'string'],
+            'changed' => ['type' => 'boolean'],
+        ], ['service', 'name', 'label', 'previousName', 'changed']);
     }
 
     public function handle(McpContext $context, array $arguments): array

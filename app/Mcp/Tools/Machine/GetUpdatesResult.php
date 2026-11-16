@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -32,6 +33,11 @@ final class GetUpdatesResult extends Tool
             'job' => Schema::string('The job id (jobId from check_updates or install_updates, or the job id from reboot_machine). Leave out for the latest check or install.', maxLength: 64),
             'log_lines' => Schema::integer('How many of the last log lines to include (0–300, default 60).', 0, 300),
         ], ['machine']);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::ref('MachineUpdatesJob');
     }
 
     public function handle(McpContext $context, array $arguments): array

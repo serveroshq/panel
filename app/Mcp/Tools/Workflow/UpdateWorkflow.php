@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Workflow;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -72,6 +73,15 @@ final class UpdateWorkflow extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'changed' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['name', 'description', 'enabled', 'graph']], 'description' => 'What the save changed.'],
+            'workflow' => ResponseSchemas::ref('Workflow'),
+            'note' => ['type' => 'string'],
+        ], ['changed', 'workflow', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

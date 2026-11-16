@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -48,6 +49,19 @@ final class RebootMachine extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'job' => ResponseSchemas::ref('Job'),
+            'maintenance' => ResponseSchemas::object([
+                'until' => ['type' => 'string', 'format' => 'date-time'],
+                'reason' => ['type' => ['string', 'null']],
+                'startedNow' => ['type' => 'boolean', 'description' => 'Maintenance was started to hold alerts; false when it was already on.'],
+            ], ['until', 'reason', 'startedNow']),
+            'note' => ['type' => 'string'],
+        ], ['job', 'maintenance', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

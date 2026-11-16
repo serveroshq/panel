@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -61,6 +62,21 @@ final class DeployFromGit extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return DeploySchemas::started([
+            'name' => ['type' => 'string'],
+            'repo' => ['type' => 'string'],
+            'ref' => ['type' => ['string', 'null'], 'description' => 'The branch or tag it was resolved from.'],
+            'commit' => ['type' => 'string'],
+            'port' => ['type' => 'integer'],
+            'healthPath' => ['type' => 'string'],
+            'domain' => ['type' => ['string', 'null']],
+            'wildcard' => ['type' => 'boolean'],
+            'url' => ['type' => ['string', 'null'], 'description' => 'Where it will answer.'],
+        ], ['name', 'repo', 'ref', 'commit', 'port', 'healthPath', 'domain', 'wildcard', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

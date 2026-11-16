@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Backup;
 
+use App\Api\ResponseSchemas;
 use App\Http\Controllers\BackupController;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -55,6 +56,15 @@ final class UpdateBackupSettings extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => ResponseSchemas::ref('BackupMachine'),
+            'changed' => ['type' => 'boolean'],
+            'note' => ['type' => ['string', 'null']],
+        ], ['machine', 'changed', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

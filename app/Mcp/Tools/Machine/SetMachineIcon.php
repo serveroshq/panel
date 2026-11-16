@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -47,6 +48,14 @@ final class SetMachineIcon extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => ResponseSchemas::ref('MachineRef'),
+            'icon' => ['type' => ['string', 'null']],
+        ], ['machine', 'icon']);
     }
 
     #[NotAudited('Cosmetic')]

@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Enums\WorkspacePermission;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -54,6 +56,18 @@ final class GetConnection extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => DeploySchemas::machine(),
+            'service' => ['type' => 'string'],
+            'template' => ['type' => 'string', 'enum' => array_keys(Connections::TEMPLATES)],
+            'host' => ['type' => 'string', 'description' => 'The address apps on the machine reach it at.'],
+            'env' => ['type' => 'object', 'additionalProperties' => ['type' => 'string'], 'description' => 'The settings an app needs to connect, by name.'],
+            'note' => ['type' => 'string'],
+        ], ['machine', 'service', 'template', 'host', 'env', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

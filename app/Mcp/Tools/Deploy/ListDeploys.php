@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -39,6 +40,15 @@ final class ListDeploys extends Tool
             'limit' => Schema::integer('How many (1–100, default 20).', 1, 100),
             'before' => Schema::string('A deploy id: list the ones older than it, to page.', maxLength: 64),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'deploys' => ['type' => 'array', 'items' => ResponseSchemas::ref('Deploy')],
+            'more' => ['type' => 'boolean'],
+            'nextBefore' => ['type' => ['string', 'null'], 'description' => 'Pass as before for the next page; null on the last.'],
+        ], ['deploys', 'more', 'nextBefore']);
     }
 
     public function handle(McpContext $context, array $arguments): array

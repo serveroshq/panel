@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -39,6 +40,18 @@ final class RetryJob extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'job' => [...ResponseSchemas::ref('Job'), 'description' => 'The new job.'],
+            'retriedFrom' => ResponseSchemas::object([
+                'id' => ['type' => 'string'],
+                'state' => ['type' => 'string', 'enum' => ['queued', 'running', 'succeeded', 'failed', 'cancelled', 'timed_out', 'refused']],
+                'cancelledFirst' => ['type' => 'boolean', 'description' => 'It was stale, so it was marked cancelled first.'],
+            ], ['id', 'state', 'cancelledFirst']),
+        ], ['job', 'retriedFrom']);
     }
 
     public function handle(McpContext $context, array $arguments): array

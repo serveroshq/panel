@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Monitor;
 
+use App\Api\ResponseSchemas;
 use App\Http\Controllers\MonitorController;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -41,6 +42,63 @@ final class GetMonitor extends Tool
             'incidents' => Schema::integer('How many of the latest incidents to include (default 20).', 0, 50),
             'days' => Schema::integer('Daily uptime for this many days, oldest first (default 30).', 1, Monitor::DAYS),
         ], ['monitor']);
+    }
+
+    public function responseSchema(): array
+    {
+        $time = ['type' => ['string', 'null'], 'format' => 'date-time'];
+        $percent = ['type' => ['number', 'null'], 'description' => 'Percent; null before any check.'];
+        $incident = [
+            'id' => ['type' => 'integer'],
+            'startedAt' => ['type' => 'string', 'format' => 'date-time'],
+            'resolvedAt' => $time,
+            'cause' => ['type' => 'string'],
+            'seconds' => ['type' => 'integer', 'description' => 'How long it was down, or has been so far.'],
+        ];
+
+        return ResponseSchemas::object([
+            'monitor' => ResponseSchemas::ref('MonitorDetail'),
+            'uptime' => ResponseSchemas::object(
+                ['last24Hours' => $percent, 'last7Days' => $percent, 'last30Days' => $percent, 'last90Days' => $percent],
+                ['last24Hours', 'last7Days', 'last30Days', 'last90Days'],
+            ),
+            'days' => ['type' => 'array', 'description' => 'Daily uptime, oldest first.', 'items' => ResponseSchemas::object([
+                'day' => ['type' => 'string', 'format' => 'date'],
+                'percent' => ['type' => ['number', 'null']],
+            ], ['day', 'percent'])],
+            'responseTime' => ResponseSchemas::object([
+                'range' => ['type' => 'string', 'enum' => array_keys(MonitorController::RANGES)],
+                'checks' => ['type' => 'integer'],
+                'failed' => ['type' => 'integer'],
+                'averageMs' => ['type' => ['integer', 'null']],
+                'fastestMs' => ['type' => ['integer', 'null']],
+                'slowestMs' => ['type' => ['integer', 'null']],
+                'series' => ['type' => 'array', 'description' => self::POINTS.' points across the range.', 'items' => ResponseSchemas::object([
+                    'from' => ['type' => 'string', 'format' => 'date-time'],
+                    'averageMs' => ['type' => ['integer', 'null']],
+                    'failed' => ['type' => 'integer'],
+                ], ['from', 'averageMs', 'failed'])],
+            ], ['range', 'checks', 'failed', 'averageMs', 'fastestMs', 'slowestMs', 'series'], 'Of passing checks; failed counts the others.'),
+            'openIncident' => [...ResponseSchemas::object($incident, array_keys($incident)), 'type' => ['object', 'null']],
+            'incidents' => ['type' => 'array', 'items' => ResponseSchemas::object(
+                [...$incident, 'ongoing' => ['type' => 'boolean']],
+                [...array_keys($incident), 'ongoing'],
+            )],
+            'checks' => ['type' => 'array', 'description' => 'The latest first.', 'items' => ResponseSchemas::ref('MonitorCheck')],
+            'certificate' => [...ResponseSchemas::object([
+                'expiresAt' => $time,
+                'daysLeft' => ['type' => ['integer', 'null']],
+                'checkedAt' => $time,
+            ], ['expiresAt', 'daysLeft', 'checkedAt']), 'type' => ['object', 'null'], 'description' => 'The HTTPS certificate; null when it isn’t an https URL.'],
+            'alertState' => ResponseSchemas::object([
+                'enabled' => ['type' => 'boolean'],
+                'muted' => ['type' => 'boolean'],
+                'mutedUntil' => $time,
+                'machineMaintenanceUntil' => $time,
+                'channels' => ResponseSchemas::object(['email' => ['type' => 'boolean'], 'webhook' => ['type' => 'boolean']], ['email', 'webhook']),
+                'wouldAlert' => ['type' => 'boolean', 'description' => 'An alert would go out now if it went down.'],
+            ], ['enabled', 'muted', 'mutedUntil', 'machineMaintenanceUntil', 'channels', 'wouldAlert']),
+        ], ['monitor', 'uptime', 'days', 'responseTime', 'openIncident', 'incidents', 'checks', 'certificate', 'alertState']);
     }
 
     public function handle(McpContext $context, array $arguments): array

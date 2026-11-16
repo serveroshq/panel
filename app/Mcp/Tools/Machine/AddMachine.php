@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools\Machine;
 
 use App\Actions\Machines\CreateJoinCommand;
+use App\Api\ResponseSchemas;
 use App\Exceptions\MachineLimitReached;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -54,6 +55,25 @@ final class AddMachine extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'command' => ['type' => 'string', 'description' => 'The install command to run on the new machine as root.'],
+            'token' => ['type' => 'string'],
+            'expiresAt' => ['type' => 'string', 'format' => 'date-time'],
+            'enrolmentId' => ['type' => 'integer', 'description' => 'Pass to get_machine_connection_status.'],
+            'policy' => ResponseSchemas::ref('MachinePolicy'),
+            'group' => ['type' => ['object', 'null'], 'required' => ['id', 'name'], 'properties' => ['id' => ['type' => 'integer'], 'name' => ['type' => 'string']]],
+            'details' => ['type' => ['object', 'null'], 'description' => 'The details it will get.', 'properties' => [
+                'provider' => ['type' => 'string'],
+                'region' => ['type' => 'string'],
+                'tier' => ['type' => 'string'],
+                'labels' => ['type' => 'object', 'additionalProperties' => ['type' => 'string']],
+            ]],
+            'next' => ['type' => 'string'],
+        ], ['command', 'token', 'expiresAt', 'enrolmentId', 'policy', 'group', 'details', 'next']);
     }
 
     #[NotAudited('Only makes a join command; the machine joining is recorded when it enrols, credited to whoever made the command')]

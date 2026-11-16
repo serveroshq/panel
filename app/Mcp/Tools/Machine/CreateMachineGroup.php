@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -40,6 +41,14 @@ final class CreateMachineGroup extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'group' => ResponseSchemas::ref('MachineGroup'),
+            'moved' => ['type' => 'array', 'items' => ResponseSchemas::ref('MachineGroupMove')],
+        ], ['group', 'moved']);
     }
 
     public function handle(McpContext $context, array $arguments): array

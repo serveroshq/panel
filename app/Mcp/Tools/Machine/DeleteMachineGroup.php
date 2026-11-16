@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -41,6 +42,14 @@ final class DeleteMachineGroup extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'deleted' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => ['type' => 'string']], ['id', 'name']),
+            'machinesUngrouped' => ['type' => 'integer'],
+        ], ['deleted', 'machinesUngrouped']);
     }
 
     public function handle(McpContext $context, array $arguments): array

@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\StatusPage;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -65,6 +66,19 @@ final class UpdateStatusPage extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => ['type' => 'string']], ['id', 'name']),
+            'created' => ['type' => 'boolean'],
+            'changed' => ['type' => 'array', 'items' => ['type' => 'string']],
+            'page' => ResponseSchemas::ref('StatusPageSettings'),
+            'preview' => ResponseSchemas::ref('StatusPagePreview'),
+            'settingsUrl' => ['type' => 'string'],
+            'notes' => ['type' => 'array', 'items' => ['type' => 'string']],
+        ], ['machine', 'created', 'changed', 'page', 'preview', 'settingsUrl', 'notes']);
     }
 
     public function handle(McpContext $context, array $arguments): array

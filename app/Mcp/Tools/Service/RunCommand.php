@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -48,6 +49,26 @@ final class RunCommand extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'service' => ResponseSchemas::ref('ServiceRef'),
+            'command' => ['type' => 'string'],
+            'jobId' => ['type' => 'string'],
+            'state' => ['type' => 'string', 'enum' => ['queued', 'running', 'succeeded', 'failed', 'cancelled', 'timed_out', 'refused']],
+            'finished' => ['type' => 'boolean'],
+            'exitCode' => ['type' => ['integer', 'null']],
+            'output' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Up to the last 500 lines.'],
+            'error' => [...ResponseSchemas::object([
+                'phase' => ['type' => 'string'],
+                'message' => ['type' => 'string'],
+                'output_tail' => ['type' => 'array', 'items' => ['type' => 'string']],
+                'next_step' => ['type' => ['string', 'null']],
+            ]), 'type' => ['object', 'null']],
+            'note' => ['type' => ['string', 'null']],
+        ], ['service', 'command', 'jobId', 'state', 'finished', 'exitCode', 'output', 'error', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

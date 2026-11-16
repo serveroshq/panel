@@ -2,9 +2,11 @@
 
 namespace App\Mcp\Tools\StatusPage;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
+use App\Models\Monitor;
 use App\Support\StatusPages\StatusReport;
 
 final class GetStatusPage extends Tool
@@ -32,6 +34,47 @@ final class GetStatusPage extends Tool
         return Schema::object([
             'machine' => Schema::machine(),
         ], ['machine']);
+    }
+
+    public function responseSchema(): array
+    {
+        $string = ['type' => 'string'];
+        $maybeString = ['type' => ['string', 'null']];
+
+        return ResponseSchemas::object([
+            'machine' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => $string, 'online' => ['type' => 'boolean']], ['id', 'name', 'online']),
+            'planAllows' => ['type' => 'boolean', 'description' => 'The plan includes status pages.'],
+            'page' => ResponseSchemas::ref('StatusPageSettings'),
+            'services' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                'key' => $string,
+                'name' => $string,
+                'panelName' => ['type' => 'string', 'description' => 'The name the panel uses.'],
+                'app' => $maybeString,
+                'retired' => ['type' => 'boolean', 'description' => 'An old app version kept for rollback.'],
+                'kind' => $string,
+                'image' => $maybeString,
+                'status' => $string,
+                'shown' => ['type' => 'boolean'],
+                'label' => ['type' => ['string', 'null'], 'description' => 'Its name on the page; null for the suggested name.'],
+                'suggested' => $string,
+                'section' => $maybeString,
+            ], ['key', 'name', 'panelName', 'app', 'retired', 'kind', 'image', 'status', 'shown', 'label', 'suggested', 'section'])],
+            'monitors' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                'key' => ['type' => 'string', 'description' => 'monitor:<id>'],
+                'id' => ['type' => 'integer'],
+                'name' => $string,
+                'type' => ['type' => 'string', 'enum' => Monitor::TYPES],
+                'target' => $string,
+                'status' => ['type' => 'string', 'enum' => ['up', 'down', 'pending']],
+                'shown' => ['type' => 'boolean'],
+                'label' => $maybeString,
+                'section' => $maybeString,
+            ], ['key', 'id', 'name', 'type', 'target', 'status', 'shown', 'label', 'section'])],
+            'sections' => ['type' => 'array', 'items' => ResponseSchemas::ref('StatusPageSection')],
+            'preview' => ResponseSchemas::ref('StatusPagePreview'),
+            'settingsUrl' => $string,
+            'note' => $maybeString,
+        ], ['machine', 'planAllows', 'page', 'services', 'monitors', 'sections', 'preview', 'settingsUrl', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

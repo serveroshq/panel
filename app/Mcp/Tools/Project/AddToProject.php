@@ -2,11 +2,13 @@
 
 namespace App\Mcp\Tools\Project;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
+use App\Models\ProjectNode;
 use App\Support\Projects\ProjectActions;
 
 final class AddToProject extends Tool
@@ -59,6 +61,18 @@ final class AddToProject extends Tool
         }
 
         return $given;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'added' => ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'name' => ['type' => 'string'],
+                'kind' => ['type' => 'string', 'enum' => ProjectNode::KINDS],
+            ], ['id', 'name', 'kind']),
+            'project' => ResponseSchemas::ref('Project'),
+        ], ['added', 'project']);
     }
 
     public function handle(McpContext $context, array $arguments): array

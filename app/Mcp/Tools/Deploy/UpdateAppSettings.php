@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -47,6 +48,20 @@ final class UpdateAppSettings extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        $strings = ['type' => 'array', 'items' => ['type' => 'string']];
+
+        return DeploySchemas::started([
+            'app' => ['type' => 'string'],
+            'commit' => ['type' => ['string', 'null']],
+            'added' => $strings,
+            'replaced' => $strings,
+            'removed' => $strings,
+            'settings' => [...$strings, 'description' => 'The names of all its settings now.'],
+        ], ['app', 'commit', 'added', 'replaced', 'removed', 'settings']);
     }
 
     public function handle(McpContext $context, array $arguments): array

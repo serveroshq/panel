@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Log;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -35,6 +36,43 @@ final class GetLogStats extends Tool
             ...LogQuery::schema(' Default: a day before until (or now).'),
             'top' => Schema::integer('How many services to list (1–100, default '.self::DEFAULT_TOP.').', 1, 100),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        $integer = ['type' => 'integer'];
+        $time = ['type' => ['string', 'null'], 'format' => 'date-time'];
+        $levels = array_fill_keys(LogQuery::LEVELS, $integer);
+        $machine = ['id' => $integer, 'name' => ['type' => ['string', 'null']]];
+
+        return ResponseSchemas::object([
+            'window' => ResponseSchemas::object(['since' => ['type' => 'string', 'format' => 'date-time'], 'until' => ['type' => 'string', 'format' => 'date-time']], ['since', 'until']),
+            'filters' => ResponseSchemas::ref('LogFilters'),
+            'total' => $integer,
+            'byLevel' => ResponseSchemas::object($levels, LogQuery::LEVELS),
+            'machines' => ['type' => 'array', 'items' => ResponseSchemas::object([...$machine, 'lines' => $integer, 'error' => $integer, 'warn' => $integer], ['id', 'name', 'lines', 'error', 'warn'])],
+            'services' => ['type' => 'array', 'description' => 'The noisiest services, most errors first, up to top.', 'items' => ResponseSchemas::object([
+                'machine' => ResponseSchemas::object($machine, ['id', 'name']),
+                'service' => ['type' => 'string'],
+                'label' => ['type' => 'string'],
+                'lines' => $integer,
+                ...$levels,
+                'lastAt' => $time,
+                'lastErrorAt' => $time,
+            ], ['machine', 'service', 'label', 'lines', ...LogQuery::LEVELS, 'lastAt', 'lastErrorAt'])],
+            'servicesTotal' => ['type' => 'integer', 'description' => 'How many services wrote lines.'],
+            'timeline' => ResponseSchemas::object([
+                'bucketMinutes' => $integer,
+                'buckets' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                    'from' => ['type' => 'string', 'format' => 'date-time'],
+                    'lines' => $integer,
+                    'warn' => $integer,
+                    'error' => $integer,
+                ], ['from', 'lines', 'warn', 'error'])],
+            ], ['bucketMinutes', 'buckets']),
+            'retentionDays' => $integer,
+            'url' => ['type' => 'string'],
+        ], ['window', 'filters', 'total', 'byLevel', 'machines', 'services', 'servicesTotal', 'timeline', 'retentionDays', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

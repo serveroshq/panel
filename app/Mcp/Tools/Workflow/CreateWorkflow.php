@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Workflow;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -40,6 +41,14 @@ final class CreateWorkflow extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'workflow' => ResponseSchemas::ref('Workflow'),
+            'note' => ['type' => 'string'],
+        ], ['workflow', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Http\Controllers\DaemonConnectController;
 use App\Mcp\McpContext;
@@ -46,6 +47,20 @@ final class GetMachineConnectionStatus extends Tool
     public function permission(): WorkspacePermission
     {
         return WorkspacePermission::ManageMachines;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'enrolmentId' => ['type' => 'integer'],
+            'state' => ['type' => 'string', 'enum' => array_keys(self::NEXT)],
+            'expiresAt' => ['type' => 'string', 'format' => 'date-time'],
+            'machine' => ['type' => ['object', 'null'], 'description' => 'Once it has enrolled.', 'required' => ['id', 'name', 'url'], 'properties' => ['id' => ['type' => 'integer'], 'name' => ['type' => 'string'], 'url' => ['type' => 'string']]],
+            'services' => ['type' => 'integer'],
+            'listeners' => ['type' => 'integer', 'description' => 'Listening ports found.'],
+            'discovery' => ['type' => 'boolean'],
+            'next' => ['type' => 'string'],
+        ], ['enrolmentId', 'state', 'expiresAt', 'machine', 'services', 'listeners', 'discovery', 'next']);
     }
 
     public function handle(McpContext $context, array $arguments): array

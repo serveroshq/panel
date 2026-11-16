@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Workflow;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Workflows as WorkflowSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -35,6 +37,16 @@ final class ListWorkflowRuns extends Tool
             'before' => Schema::integer('Only runs older than this run id (for the next page).', 1),
             'limit' => Schema::integer('How many (1–50, default 20).', 1, 50),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'workflow' => [...WorkflowSchemas::named(), 'type' => ['object', 'null'], 'description' => 'The workflow asked about, if one was.'],
+            'runs' => ['type' => 'array', 'items' => WorkflowSchemas::run(['workflow' => ['type' => ['string', 'null'], 'description' => 'The workflow’s name.']], required: ['workflow'])],
+            'more' => ['type' => 'boolean'],
+            'nextBefore' => ['type' => ['integer', 'null'], 'description' => 'Pass as before for the next page; null on the last.'],
+        ], ['workflow', 'runs', 'more', 'nextBefore']);
     }
 
     public function handle(McpContext $context, array $arguments): array

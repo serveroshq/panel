@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Team;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -37,6 +38,21 @@ final class ListMembers extends Tool
             'search' => Schema::string('Only people whose name or email contains this (any case).', maxLength: 255),
             'limit' => Schema::integer('Most members to return (default '.self::DEFAULT_LIMIT.').', 1, self::MAX_LIMIT),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'workspace' => ['type' => 'string', 'description' => 'The workspace’s name.'],
+            'members' => ['type' => 'array', 'items' => ResponseSchemas::ref('Member')],
+            'total' => ['type' => 'integer', 'description' => 'How many members match, including any past the limit.'],
+            'truncated' => ['type' => 'boolean', 'description' => 'Whether some members were left out by the limit.'],
+            'invitations' => ['type' => 'array', 'items' => ResponseSchemas::ref('Invitation')],
+            'requireTwoFactor' => ['type' => 'boolean', 'description' => 'Whether the workspace requires two-factor sign-in.'],
+            'withoutTwoFactor' => ['type' => 'integer', 'description' => 'How many members have no two-factor sign-in set up.'],
+            'canManageMembers' => ['type' => 'boolean'],
+            'url' => ['type' => 'string', 'description' => 'The Members page in the dashboard.'],
+        ], ['workspace', 'members', 'total', 'truncated', 'invitations', 'requireTwoFactor', 'withoutTwoFactor', 'canManageMembers', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

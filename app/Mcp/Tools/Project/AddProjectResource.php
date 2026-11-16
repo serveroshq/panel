@@ -2,10 +2,12 @@
 
 namespace App\Mcp\Tools\Project;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
 use App\Mcp\Tool;
+use App\Models\ProjectNode;
 use App\Support\Projects\Connections;
 use App\Support\Projects\ProjectActions;
 
@@ -41,6 +43,20 @@ final class AddProjectResource extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'added' => ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'name' => ['type' => 'string'],
+                'kind' => ['type' => 'string', 'enum' => ProjectNode::KINDS],
+                'template' => ['type' => ['string', 'null']],
+            ], ['id', 'name', 'kind', 'template']),
+            'next' => ['type' => 'string'],
+            'project' => ResponseSchemas::ref('Project'),
+        ], ['added', 'next', 'project']);
     }
 
     public function handle(McpContext $context, array $arguments): array

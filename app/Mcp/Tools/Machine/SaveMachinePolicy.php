@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -67,6 +68,15 @@ abstract class SaveMachinePolicy extends Tool
     public function idempotent(): bool
     {
         return ! $this->creating;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'policy' => ResponseSchemas::ref('MachinePolicy'),
+            'url' => ['type' => 'string', 'description' => 'When creating.'],
+            'note' => ['type' => ['string', 'null']],
+        ], ['policy']);
     }
 
     public function handle(McpContext $context, array $arguments): array

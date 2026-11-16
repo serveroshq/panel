@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Tool;
 use App\Models\MachinePolicy;
@@ -22,6 +23,14 @@ final class ListMachinePolicies extends Tool
     public function description(): string
     {
         return 'Lists the workspace’s machine policies: named sets of what a machine’s daemon does. Each has discovery (finds running services on its own), logs (sends service logs), logIpMasking (off, partial or hash), securityWatch (reads SSH settings and failed sign-ins), errorReports (the daemon sends its crash and error reports, scrubbed), statusPageNewServices (a new status page shows services as they’re found) and updates (automatic, or approve to wait for someone to install each one), plus how many machines follow it. A machine follows its own policy, else its group’s, else the default (one is marked default). Health (CPU, memory, disk, network) is always sent. Use a policy’s id or name with add_machine, update_machine or the machine group tools.';
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'policies' => ['type' => 'array', 'items' => ResponseSchemas::ref('MachinePolicy')],
+            'url' => ['type' => 'string'],
+        ], ['policies', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

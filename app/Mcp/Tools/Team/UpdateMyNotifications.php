@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Team;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -50,6 +51,11 @@ final class UpdateMyNotifications extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::ref('NotificationPreferences');
     }
 
     #[NotAudited('Personal: what you’re emailed; changes nothing for the team')]

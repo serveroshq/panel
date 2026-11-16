@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Monitor;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -41,6 +42,15 @@ final class CheckMonitorNow extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'check' => ['anyOf' => [ResponseSchemas::ref('MonitorCheck'), ['type' => 'null']], 'description' => 'What the check found; null when no result came back.'],
+            'monitor' => ResponseSchemas::ref('Monitor'),
+            'note' => ['type' => 'string'],
+        ], ['check', 'monitor', 'note']);
     }
 
     #[NotAudited('Runs the check now; what it finds is recorded as usual')]

@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Workspace;
 
+use App\Api\ResponseSchemas;
+use App\Enums\MachineEnvironment;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -43,6 +45,56 @@ final class Search extends Tool
             'limit' => Schema::integer('How many of each kind to return (default 5).', 1, self::MAX_LIMIT),
             'kinds' => Schema::array(Schema::string('A kind of thing.', self::KINDS), 'Only look for these kinds (default: all of them).', count(self::KINDS)),
         ], ['query']);
+    }
+
+    public function responseSchema(): array
+    {
+        $url = ['type' => 'string', 'description' => 'Its page in the dashboard.'];
+        $list = fn (array $item) => ['type' => 'array', 'description' => 'Only when this kind was searched.', 'items' => $item];
+
+        return ResponseSchemas::object([
+            'query' => ['type' => 'string', 'description' => 'What was looked for, in lower case.'],
+            'machines' => $list(ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'name' => ['type' => 'string'],
+                'ip' => ['type' => ['string', 'null']],
+                'environment' => ['type' => 'string', 'enum' => array_map(fn (MachineEnvironment $e) => $e->value, MachineEnvironment::cases())],
+                'status' => ['type' => 'string', 'enum' => ['online', 'offline', 'connecting', 'demo']],
+                'url' => $url,
+            ], ['id', 'name', 'ip', 'environment', 'status', 'url'])),
+            'services' => $list(ResponseSchemas::object([
+                'key' => ['type' => 'string'],
+                'machine' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => ['type' => 'string']], ['id', 'name']),
+                'name' => ['type' => 'string'],
+                'foundAs' => ['type' => ['string', 'null'], 'description' => 'Its container or unit name.'],
+                'label' => ['type' => ['string', 'null'], 'description' => 'A label someone gave it.'],
+                'app' => ['type' => ['string', 'null']],
+                'kind' => ['type' => ['string', 'null']],
+                'status' => ['type' => 'string'],
+                'shownAs' => ['type' => 'string', 'description' => 'The name search shows for it.'],
+                'url' => $url,
+            ], ['key', 'machine', 'name', 'foundAs', 'label', 'app', 'kind', 'status', 'shownAs', 'url'])),
+            'monitors' => $list(ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'name' => ['type' => 'string'],
+                'type' => ['type' => 'string', 'enum' => Monitor::TYPES],
+                'target' => ['type' => 'string', 'description' => 'Its URL, or host:port.'],
+                'status' => ['type' => 'string', 'description' => 'up, down, pending or paused.'],
+                'muted' => ['type' => 'boolean'],
+                'machineId' => ['type' => ['integer', 'null']],
+                'url' => $url,
+            ], ['id', 'name', 'type', 'target', 'status', 'muted', 'machineId', 'url'])),
+            'workflows' => $list(ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'name' => ['type' => 'string'],
+                'enabled' => ['type' => 'boolean'],
+                'trigger' => ['type' => 'string'],
+                'lastRunAt' => ['type' => ['string', 'null'], 'format' => 'date-time'],
+                'url' => $url,
+            ], ['id', 'name', 'enabled', 'trigger', 'lastRunAt', 'url'])),
+            'more' => ['type' => 'array', 'description' => 'The kinds that had more matches than shown.', 'items' => ['type' => 'string', 'enum' => self::KINDS]],
+            'total' => ['type' => 'integer', 'description' => 'How many are shown in all.'],
+        ], ['query', 'more', 'total']);
     }
 
     public function handle(McpContext $context, array $arguments): array

@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Monitor;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -39,6 +40,11 @@ final class PauseMonitor extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object(['monitor' => ResponseSchemas::ref('Monitor'), 'note' => ['type' => 'string']], ['monitor', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

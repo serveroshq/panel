@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Team;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Enums\WorkspaceRole;
 use App\Mcp\McpContext;
@@ -51,6 +52,15 @@ final class RemoveMember extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'removed' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => ['type' => 'string'], 'email' => ['type' => 'string']], ['id', 'name', 'email']),
+            'left' => ['type' => 'boolean', 'description' => 'True when you removed yourself.'],
+            'note' => ['type' => 'string'],
+        ], ['removed', 'left', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

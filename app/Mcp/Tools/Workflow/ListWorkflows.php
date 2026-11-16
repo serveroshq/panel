@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Workflow;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Workflows as WorkflowSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -31,6 +33,36 @@ final class ListWorkflows extends Tool
             'enabled' => Schema::boolean('Only workflows that are on (true) or off (false). Leave out for all.'),
             'trigger' => Schema::string('Only workflows started by this event (like “schedule”, “webhook”, “monitor.down”).', maxLength: 40),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'workflows' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'name' => ['type' => 'string'],
+                'description' => ['type' => ['string', 'null']],
+                'enabled' => ['type' => 'boolean'],
+                'trigger' => ['type' => 'string', 'description' => 'What starts it, like manual, schedule or service.down.'],
+                'triggerWords' => ['type' => 'string', 'description' => 'The trigger in words.'],
+                'steps' => ['type' => 'integer', 'description' => 'How many steps follow the trigger.'],
+                'lastRun' => [...ResponseSchemas::object([
+                    'id' => ['type' => 'integer'],
+                    'state' => ['type' => 'string', 'enum' => WorkflowSchemas::RUN_STATES],
+                    'at' => ['type' => 'string', 'format' => 'date-time'],
+                ], ['id', 'state', 'at']), 'type' => ['object', 'null'], 'description' => 'Its latest run in the last 7 days.'],
+                'lastRunAt' => ['type' => ['string', 'null'], 'format' => 'date-time'],
+                'runs7d' => ['type' => 'integer', 'description' => 'Runs in the last 7 days.'],
+                'failed7d' => ['type' => 'integer', 'description' => 'Failed runs in the last 7 days.'],
+                'nextRunAt' => ['type' => ['string', 'null'], 'format' => 'date-time', 'description' => 'When a schedule runs it next, while it is on.'],
+                'url' => ['type' => 'string'],
+            ], ['id', 'name', 'description', 'enabled', 'trigger', 'triggerWords', 'steps', 'lastRun', 'lastRunAt', 'runs7d', 'failed7d', 'nextRunAt', 'url'])],
+            'count' => ['type' => 'integer', 'description' => 'How many are listed.'],
+            'total' => ['type' => 'integer', 'description' => 'How many the workspace has.'],
+            'limit' => ['type' => 'integer', 'description' => 'How many a workspace can have.'],
+            'planAllows' => ['type' => 'boolean', 'description' => 'The workspace’s plan includes workflows.'],
+            'url' => ['type' => 'string', 'description' => 'The workflows page in the dashboard.'],
+        ], ['workflows', 'count', 'total', 'limit', 'planAllows', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

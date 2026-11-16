@@ -2,11 +2,13 @@
 
 namespace App\Mcp\Tools\StatusPage;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
 use App\Models\Machine;
+use App\Models\StatusPage;
 use App\Support\Edition;
 use App\Support\StatusPages\StatusReport;
 
@@ -35,6 +37,61 @@ final class ListStatusPages extends Tool
             'only_existing' => Schema::boolean('Leave out machines that have no status page.'),
             'limit' => Schema::integer('At most this many machines (default 100).', 1, 500),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        $string = ['type' => 'string'];
+        $bool = ['type' => 'boolean'];
+        $addresses = ['url' => $string, 'badgeUrl' => $string, 'jsonUrl' => $string, 'feedUrl' => $string];
+
+        return ResponseSchemas::object([
+            'planAllows' => ResponseSchemas::object(['statusPages' => $bool, 'fleetStatusPage' => $bool], ['statusPages', 'fleetStatusPage']),
+            'machines' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                'machine' => ResponseSchemas::object([
+                    'id' => ['type' => 'integer'],
+                    'name' => $string,
+                    'status' => ['type' => 'string', 'enum' => ['online', 'offline', 'connecting', 'demo']],
+                ], ['id', 'name', 'status']),
+                'exists' => ['type' => 'boolean', 'description' => 'It has a page. The keys below settingsUrl come only with one.'],
+                'enabled' => $bool,
+                'live' => ['type' => 'boolean', 'description' => 'Switched on, on a plan that serves it.'],
+                'settingsUrl' => $string,
+                'public' => $bool,
+                'slug' => $string,
+                'title' => $string,
+                ...$addresses,
+                'shows' => ResponseSchemas::object(
+                    ['services' => ['type' => 'integer'], 'monitors' => ['type' => 'integer'], 'sections' => ['type' => 'integer']],
+                    ['services', 'monitors', 'sections'],
+                ),
+                'overall' => ResponseSchemas::object([
+                    'status' => ['type' => 'string', 'enum' => [StatusReport::OPERATIONAL, StatusReport::DEGRADED, StatusReport::DOWN, StatusReport::UNKNOWN]],
+                    'label' => $string,
+                ], ['status', 'label'], 'The headline right now.'),
+                'notice' => [...ResponseSchemas::object([
+                    'text' => $string,
+                    'kind' => ['type' => 'string', 'enum' => StatusPage::NOTICE_KINDS],
+                ], ['text', 'kind']), 'type' => ['object', 'null']],
+                'updatedAt' => ['type' => ['string', 'null'], 'format' => 'date-time'],
+            ], ['machine', 'exists', 'enabled', 'live', 'settingsUrl'])],
+            'total' => ['type' => 'integer'],
+            'truncated' => ['type' => 'boolean', 'description' => 'More machines than limit.'],
+            'fleet' => ResponseSchemas::object([
+                'exists' => $bool,
+                'available' => ['type' => 'boolean', 'description' => 'The plan includes the fleet page.'],
+                'note' => ['type' => 'string', 'description' => 'When there’s no fleet page.'],
+                'settingsUrl' => $string,
+                'enabled' => $bool,
+                'live' => $bool,
+                'public' => $bool,
+                'slug' => $string,
+                'title' => $string,
+                ...$addresses,
+                'everyMachine' => $bool,
+                'machines' => ['type' => ['array', 'null'], 'items' => ['type' => 'integer'], 'description' => 'The machine ids it covers; null with everyMachine.'],
+            ], ['exists', 'available', 'settingsUrl'], 'The workspace’s fleet page. The keys after settingsUrl come only when it exists.'),
+        ], ['planAllows', 'machines', 'total', 'truncated', 'fleet']);
     }
 
     public function handle(McpContext $context, array $arguments): array

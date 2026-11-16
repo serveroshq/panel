@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Team;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -45,6 +46,14 @@ final class CancelInvitation extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'cancelled' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'email' => ['type' => 'string']], ['id', 'email']),
+            'note' => ['type' => 'string'],
+        ], ['cancelled', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\StatusPage;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -83,6 +84,21 @@ final class ArrangeStatusPage extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => ['type' => 'string']], ['id', 'name']),
+            'created' => ['type' => 'boolean'],
+            'changed' => ['type' => 'array', 'items' => ['type' => 'string']],
+            'removedGroups' => ['type' => 'array', 'items' => ['type' => 'string']],
+            'sections' => ['type' => 'array', 'items' => ResponseSchemas::ref('StatusPageSection')],
+            'page' => ResponseSchemas::ref('StatusPageSettings'),
+            'preview' => ResponseSchemas::ref('StatusPagePreview'),
+            'settingsUrl' => ['type' => 'string'],
+            'notes' => ['type' => 'array', 'items' => ['type' => 'string']],
+        ], ['machine', 'created', 'changed', 'removedGroups', 'sections', 'page', 'preview', 'settingsUrl', 'notes']);
     }
 
     public function handle(McpContext $context, array $arguments): array

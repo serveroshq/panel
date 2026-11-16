@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Http\Controllers\AppVersionController;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
@@ -36,6 +38,85 @@ final class GetApp extends Tool
             'machine' => Schema::machine(),
             'app' => Schema::string('The app: the name it was deployed as (like shop), app:<name>, or one of its services’ keys or names.', maxLength: 300),
         ], ['machine', 'app']);
+    }
+
+    public function responseSchema(): array
+    {
+        $string = ['type' => 'string'];
+        $strings = ['type' => 'array', 'items' => $string];
+        $maybeString = ['type' => ['string', 'null']];
+        $time = ['type' => ['string', 'null'], 'format' => 'date-time'];
+        $boolean = ['type' => 'boolean'];
+
+        return ResponseSchemas::object([
+            'app' => $string,
+            'machine' => DeploySchemas::machine(),
+            'kind' => ['type' => 'string', 'enum' => ['app', 'stack'], 'description' => 'app: built from code; stack: a ready-made template.'],
+            'live' => [...ResponseSchemas::object([
+                'deployId' => $string,
+                'commit' => $maybeString,
+                'deployedAt' => $time,
+                'by' => $maybeString,
+            ], ['deployId', 'commit', 'deployedAt', 'by']), 'type' => ['object', 'null'], 'description' => 'The deploy running now; null until one succeeds.'],
+            'source' => [...ResponseSchemas::object([
+                'type' => ['type' => 'string', 'enum' => ['git', 'upload']],
+                'repo' => ['type' => 'string', 'description' => 'With git.'],
+                'filename' => ['type' => ['string', 'null'], 'description' => 'With upload.'],
+                'stillOnHand' => ['type' => 'boolean', 'description' => 'With upload: the uploaded code is still kept.'],
+            ], ['type']), 'type' => ['object', 'null'], 'description' => 'Where an app’s code comes from; null for a stack.'],
+            'domains' => $strings,
+            'url' => $maybeString,
+            'port' => ['type' => ['integer', 'null']],
+            'healthPath' => $maybeString,
+            'settings' => [...$strings, 'description' => 'The names of its settings.'],
+            'settingsMentioningDomain' => $strings,
+            'canDeployNewVersion' => $boolean,
+            'canChangeDomain' => $boolean,
+            'services' => ['type' => 'array', 'description' => 'Its services on the machine.', 'items' => ResponseSchemas::object([
+                'key' => $string,
+                'machine' => DeploySchemas::machine(),
+                'name' => $string,
+                'foundAs' => $maybeString,
+                'label' => $maybeString,
+                'app' => $maybeString,
+                'kind' => $maybeString,
+                'manager' => $maybeString,
+                'status' => $string,
+                'managed' => $boolean,
+                'container' => $boolean,
+                'image' => $maybeString,
+                'ports' => ['type' => 'array'],
+                'icon' => $maybeString,
+                'stats' => ['type' => ['object', 'null'], 'description' => 'The latest usage, when there is any.'],
+                'url' => $string,
+            ], ['key', 'machine', 'name', 'foundAs', 'label', 'app', 'kind', 'manager', 'status', 'managed', 'container', 'image', 'ports', 'icon', 'stats', 'url'])],
+            'versions' => ['type' => 'array', 'description' => 'Its latest successful deploys from code.', 'items' => ResponseSchemas::object([
+                'deployId' => $string,
+                'commit' => $string,
+                'live' => $boolean,
+                'deployedAt' => $time,
+                'by' => $maybeString,
+                'source' => ['type' => 'string', 'enum' => ['git', 'upload']],
+                'repo' => $maybeString,
+                'domains' => $strings,
+                'container' => ['type' => ['string', 'null'], 'description' => 'Its container’s status, when it is still on the machine.'],
+            ], ['deployId', 'commit', 'live', 'deployedAt', 'by', 'source', 'repo', 'domains', 'container'])],
+            'snapshotBeforeDeploy' => ['type' => 'boolean', 'description' => 'Its data is snapshotted before each deploy.'],
+            'database' => [...ResponseSchemas::object([
+                'setting' => ['type' => 'string', 'description' => 'auto, none, or the database chosen.'],
+                'current' => [...ResponseSchemas::object(['name' => $string, 'display' => $string], ['name', 'display']), 'type' => ['object', 'null']],
+                'options' => ['type' => 'array', 'items' => ResponseSchemas::object(['value' => $string, 'label' => $string], ['value', 'label'])],
+            ], ['setting', 'current', 'options']), 'type' => ['object', 'null'], 'description' => 'The database it uses.'],
+            'rollback' => ['type' => 'array', 'description' => 'The versions rollback_app can go back to.', 'items' => ResponseSchemas::object([
+                'commit' => $string,
+                'live' => $boolean,
+                'withData' => ['type' => 'boolean', 'description' => 'Its data can be put back too.'],
+                'dataFrom' => $time,
+            ], ['commit', 'live', 'withData', 'dataFrom'])],
+            'recentDeploys' => ['type' => 'array', 'items' => ResponseSchemas::ref('Deploy')],
+            'pageUrl' => $string,
+            'note' => $maybeString,
+        ], ['app', 'machine', 'kind', 'live', 'source', 'domains', 'url', 'port', 'healthPath', 'settings', 'settingsMentioningDomain', 'canDeployNewVersion', 'canChangeDomain', 'services', 'versions', 'snapshotBeforeDeploy', 'database', 'rollback', 'recentDeploys', 'pageUrl', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

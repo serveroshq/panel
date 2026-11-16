@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -52,6 +53,18 @@ final class RemoveService extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'service' => ResponseSchemas::ref('ServiceRef'),
+            'adopted' => ['type' => 'boolean', 'description' => 'False when ServerOS created it.'],
+            'deleteData' => ['type' => 'boolean'],
+            'composeProject' => ['type' => ['string', 'null'], 'description' => 'The Compose project that goes with it, for a service ServerOS created.'],
+            'job' => ResponseSchemas::ref('Job'),
+            'note' => ['type' => 'string'],
+        ], ['service', 'adopted', 'deleteData', 'composeProject', 'job', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

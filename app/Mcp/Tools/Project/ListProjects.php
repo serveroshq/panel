@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Project;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Tool;
 use App\Models\Project;
@@ -21,6 +22,21 @@ final class ListProjects extends Tool
     public function description(): string
     {
         return 'Lists the workspace’s projects. A project groups an app with the databases, caches, storage and websockets it uses, possibly across machines (joined by a private network of their own), and wires their connection settings into the app; it can have environments like Staging copied from Production. Returns each project’s id, name, how many apps and resources it has, and its address.';
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'projects' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                'id' => ['type' => 'string', 'description' => 'The end of its address, like bdvrhz14sn.'],
+                'name' => ['type' => 'string'],
+                'apps' => ['type' => 'integer'],
+                'resources' => ['type' => 'integer'],
+                'environments' => ['type' => 'integer'],
+                'url' => ['type' => 'string'],
+            ], ['id', 'name', 'apps', 'resources', 'environments', 'url'])],
+            'url' => ['type' => 'string', 'description' => 'The projects page in the dashboard.'],
+        ], ['projects', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

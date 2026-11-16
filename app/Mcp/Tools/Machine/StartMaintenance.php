@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Http\Controllers\MaintenanceController;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -49,6 +50,16 @@ final class StartMaintenance extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => ResponseSchemas::ref('MachineRef'),
+            'maintenance' => ResponseSchemas::object(['until' => ['type' => 'string', 'format' => 'date-time'], 'reason' => ['type' => ['string', 'null']], 'public' => ['type' => 'boolean']], ['until', 'reason', 'public'], 'Without starts_at: maintenance started now.'),
+            'planned' => ResponseSchemas::ref('PlannedMaintenance'),
+            'note' => ['type' => ['string', 'null']],
+        ], ['machine'], 'maintenance when it started now, or planned with starts_at.');
     }
 
     public function handle(McpContext $context, array $arguments): array

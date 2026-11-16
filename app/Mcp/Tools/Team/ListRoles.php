@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Team;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Enums\WorkspaceRole;
 use App\Mcp\McpContext;
@@ -25,6 +26,47 @@ final class ListRoles extends Tool
     {
         return 'Lists the roles in the workspace and what each may do. Built-in: Owner (everything, including billing; one per workspace, can’t be given), Admin, Member and Viewer, each with its description, permissions, whether the plan offers it (`available`: Member and Viewer are on Pro and Business, so on Essential people join as Admins) and how many people have it. '
             .'Then the workspace’s own roles (`customRoles`, a Business feature) with their permissions and how many people have each; off Business they’re kept but not in use, and the people given them have Viewer access. Everyone in a workspace can view it; permissions are what a role may change. Pass a role’s `value` as the role to invite_member or change_member_role.';
+    }
+
+    public function responseSchema(): array
+    {
+        $permission = ResponseSchemas::object([
+            'value' => ['type' => 'string', 'enum' => array_map(fn (WorkspacePermission $p) => $p->value, WorkspacePermission::cases())],
+            'label' => ['type' => 'string'],
+        ], ['value', 'label']);
+        $permissions = ['type' => 'array', 'items' => $permission];
+        $roles = array_map(fn (WorkspaceRole $r) => $r->value, WorkspaceRole::cases());
+
+        return ResponseSchemas::object([
+            'roles' => ['type' => 'array', 'description' => 'The built-in roles.', 'items' => ResponseSchemas::object([
+                'value' => ['type' => 'string', 'enum' => $roles],
+                'label' => ['type' => 'string'],
+                'description' => ['type' => 'string'],
+                'permissions' => $permissions,
+                'assignable' => ['type' => 'boolean', 'description' => 'False for Owner, which can’t be given.'],
+                'available' => ['type' => 'boolean', 'description' => 'Whether the plan offers it.'],
+                'members' => ['type' => 'integer', 'description' => 'How many people have it.'],
+            ], ['value', 'label', 'description', 'permissions', 'assignable', 'available', 'members'])],
+            'customRoles' => ['type' => 'array', 'description' => 'The workspace’s own roles.', 'items' => ResponseSchemas::object([
+                'value' => ['type' => 'string', 'description' => 'custom:<id>, to pass as a role.'],
+                'id' => ['type' => 'integer'],
+                'name' => ['type' => 'string'],
+                'description' => ['type' => ['string', 'null']],
+                'permissions' => $permissions,
+                'inUse' => ['type' => 'boolean', 'description' => 'False off Business: people given it have Viewer access.'],
+                'members' => ['type' => 'integer', 'description' => 'How many people have it.'],
+            ], ['value', 'id', 'name', 'description', 'permissions', 'inUse', 'members'])],
+            'hasStaffRoles' => ['type' => 'boolean', 'description' => 'Whether the plan offers Member and Viewer.'],
+            'hasCustomRoles' => ['type' => 'boolean', 'description' => 'Whether the plan offers the workspace’s own roles.'],
+            'permissions' => ['type' => 'array', 'description' => 'Every permission a role can have.', 'items' => $permission],
+            'you' => ResponseSchemas::object([
+                'role' => ['type' => 'string', 'enum' => $roles],
+                'roleLabel' => ['type' => 'string'],
+                'canManageMembers' => ['type' => 'boolean'],
+            ], ['role', 'roleLabel', 'canManageMembers']),
+            'notes' => ['type' => 'array', 'items' => ['type' => 'string']],
+            'url' => ['type' => 'string', 'description' => 'The Members page in the dashboard.'],
+        ], ['roles', 'customRoles', 'hasStaffRoles', 'hasCustomRoles', 'permissions', 'you', 'notes', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

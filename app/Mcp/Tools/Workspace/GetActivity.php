@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Workspace;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Http\Controllers\ActivityController;
 use App\Mcp\McpContext;
@@ -51,6 +52,44 @@ final class GetActivity extends Tool
             'limit' => Schema::integer('How many entries to return (default '.ActivityController::PAGE.').', 1, self::MAX_LIMIT),
             'before' => Schema::integer('For older entries: the nextCursor from the previous answer.', 1),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        $maybeString = ['type' => ['string', 'null']];
+
+        return ResponseSchemas::object([
+            'entries' => ['type' => 'array', 'description' => 'Newest first.', 'items' => ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'at' => ['type' => 'string', 'format' => 'date-time'],
+                'what' => ['type' => 'string', 'description' => 'The sentence the dashboard shows.'],
+                'action' => ['type' => 'string', 'description' => 'Like service.restart or monitor.down.'],
+                'who' => [
+                    'type' => ['object', 'null'],
+                    'description' => 'Who did it; null when it happened on its own.',
+                    'required' => ['id', 'name', 'support'],
+                    'properties' => [
+                        'id' => ['type' => ['integer', 'null'], 'description' => 'Null for ServerOS Support and people who have left.'],
+                        'name' => ['type' => 'string'],
+                        'support' => ['type' => 'boolean', 'description' => 'ServerOS Support did it for the workspace.'],
+                    ],
+                ],
+                'source' => ['type' => ['string', 'null'], 'enum' => ['web', 'mcp', 'workflow', 'machine', 'api', 'system', null]],
+                'verb' => ['type' => 'string'],
+                'subject' => $maybeString,
+                'after' => ['type' => ['string', 'null'], 'description' => 'What the sentence says after the subject.'],
+                'detail' => ['type' => ['string', 'null'], 'description' => 'More, like the error or the console command.'],
+                'tone' => ['type' => 'string', 'enum' => ['neutral', 'good', 'warn', 'bad']],
+                'machine' => ['type' => ['object', 'null'], 'required' => ['id', 'name'], 'properties' => ['id' => ['type' => 'integer'], 'name' => ['type' => 'string']]],
+                'viaMcp' => ['type' => 'boolean'],
+                'viaApi' => ['type' => 'boolean'],
+                'client' => ['type' => ['string', 'null'], 'description' => 'The AI app or API key it came from.'],
+            ], ['id', 'at', 'what', 'action', 'who', 'source', 'verb', 'subject', 'after', 'detail', 'tone', 'machine', 'viaMcp', 'viaApi', 'client'])],
+            'hasMore' => ['type' => 'boolean'],
+            'nextCursor' => ['type' => ['integer', 'null'], 'description' => 'Pass as before for older entries; null on the last page.'],
+            'keepDays' => ['type' => 'integer', 'description' => 'How many days entries are kept.'],
+            'url' => ['type' => 'string', 'description' => 'The Activity page in the dashboard.'],
+        ], ['entries', 'hasMore', 'nextCursor', 'keepDays', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

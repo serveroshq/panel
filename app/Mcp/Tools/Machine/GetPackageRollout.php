@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -31,6 +32,15 @@ final class GetPackageRollout extends Tool
         return Schema::object([
             'rollout' => Schema::integer('The rollout id. Leave out to list the latest.', 1),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'rollouts' => ['type' => 'array', 'description' => 'Without rollout: the latest 20.', 'items' => ResponseSchemas::ref('PackageRolloutSummary')],
+            'rollout' => ResponseSchemas::ref('PackageRollout'),
+            'url' => ['type' => 'string'],
+        ], ['url'], 'rollouts, or with rollout that one in full.');
     }
 
     public function handle(McpContext $context, array $arguments): array

@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\StatusPage;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -29,6 +30,14 @@ final class ListStatusIncidents extends Tool
         return Schema::object([
             'open' => Schema::boolean('true: only open incidents.'),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'incidents' => ['type' => 'array', 'description' => 'Open ones first, then ones resolved in the last 14 days.', 'items' => ResponseSchemas::ref('StatusIncident')],
+            'settingsUrl' => ['type' => 'string'],
+        ], ['incidents', 'settingsUrl']);
     }
 
     public function handle(McpContext $context, array $arguments): array

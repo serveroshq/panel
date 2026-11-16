@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Enums\MachineEnvironment;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -52,6 +53,24 @@ final class UpdateMachine extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'changed' => ['type' => ['object', 'null'], 'description' => 'What changed; null when nothing did.', 'properties' => [
+                'name' => ResponseSchemas::object(['from' => ['type' => 'string'], 'to' => ['type' => 'string']], ['from', 'to']),
+                'environment' => ResponseSchemas::object(['from' => ['type' => ['string', 'null']], 'to' => ['type' => 'string']], ['from', 'to']),
+                'details' => ['type' => 'array', 'description' => 'The details that changed, like region or label:env.', 'items' => ['type' => 'string']],
+                'policy' => ResponseSchemas::object([
+                    'from' => ['type' => 'string'],
+                    'to' => ['type' => 'string'],
+                    'sentToMachine' => ['type' => 'boolean', 'description' => 'The new policy reached the daemon.'],
+                ], ['from', 'to']),
+            ]],
+            'note' => ['type' => ['string', 'null']],
+            'machine' => ResponseSchemas::ref('Machine'),
+        ], ['changed', 'note', 'machine']);
     }
 
     public function handle(McpContext $context, array $arguments): array

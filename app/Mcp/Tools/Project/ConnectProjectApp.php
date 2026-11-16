@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Project;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -40,6 +41,20 @@ final class ConnectProjectApp extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'connection' => ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'state' => ['type' => 'string', 'enum' => ['pending', 'applied', 'failed']],
+                'error' => ['type' => ['string', 'null']],
+                'settings' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'The names of the settings it gave the app.'],
+            ], ['id', 'state', 'error', 'settings']),
+            'next' => ['type' => 'string'],
+            'project' => ResponseSchemas::ref('Project'),
+        ], ['connection', 'next', 'project']);
     }
 
     public function handle(McpContext $context, array $arguments): array

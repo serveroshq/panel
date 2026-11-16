@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Workflow;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -32,6 +33,11 @@ final class GetWorkflow extends Tool
         return Schema::object([
             'workflow' => Workflows::workflowSchema(),
         ], ['workflow']);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::ref('Workflow');
     }
 
     public function handle(McpContext $context, array $arguments): array

@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -55,6 +56,18 @@ final class DeployNewVersion extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return DeploySchemas::started([
+            'app' => ['type' => 'string'],
+            'repo' => ['type' => 'string'],
+            'ref' => ['type' => ['string', 'null'], 'description' => 'The branch or tag it was resolved from.'],
+            'commit' => ['type' => 'string'],
+            'previousCommit' => ['type' => 'string'],
+            'domains' => ['type' => 'array', 'items' => ['type' => 'string']],
+        ], ['app', 'repo', 'ref', 'commit', 'previousCommit', 'domains']);
     }
 
     public function handle(McpContext $context, array $arguments): array

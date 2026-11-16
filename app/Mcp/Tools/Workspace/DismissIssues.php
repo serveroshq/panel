@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Workspace;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -48,6 +49,17 @@ final class DismissIssues extends Tool
             'ids' => Schema::array(Schema::string('An item’s id, as list_issues returns it.', maxLength: 300), 'The items to mark as read.', 200),
             'all' => Schema::boolean('Mark everything in the list now as read, instead of naming ids.'),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'marked' => ['type' => 'integer', 'description' => 'How many were marked as read.'],
+            'notListed' => ['type' => 'array', 'description' => 'Ids asked for that weren’t in the list.', 'items' => ['type' => 'string']],
+            'left' => ['type' => 'integer', 'description' => 'How many items are still listed.'],
+            'needsAttention' => ['type' => 'integer', 'description' => 'How many of those are critical or warning.'],
+            'url' => ['type' => 'string', 'description' => 'The workspace Home in the dashboard.'],
+        ], ['marked', 'notListed', 'left', 'needsAttention', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

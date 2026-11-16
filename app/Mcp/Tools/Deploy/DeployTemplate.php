@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -73,6 +75,32 @@ final class DeployTemplate extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        $string = ['type' => 'string'];
+        $maybeString = ['type' => ['string', 'null']];
+
+        return DeploySchemas::started([
+            'name' => $string,
+            'template' => ['type' => 'string', 'description' => 'The template’s name.'],
+            'generated' => ['type' => 'array', 'description' => 'Settings generated for this deploy, shown only now.', 'items' => ResponseSchemas::object(['key' => $string, 'label' => $string, 'value' => $string], ['key', 'label', 'value'])],
+            'kept' => ['type' => 'array', 'items' => $string, 'description' => 'Settings kept from the last deploy of it.'],
+            'url' => ['type' => ['string', 'null'], 'description' => 'Where it will answer.'],
+            'localUrl' => ['type' => ['string', 'null'], 'description' => 'Its address on the machine itself.'],
+            'tunnel' => ['type' => ['string', 'null'], 'description' => 'An ssh command to reach it from your computer.'],
+            'port' => ['type' => 'integer'],
+            'notes' => $maybeString,
+            'templateKey' => $string,
+            'repo' => $maybeString,
+            'ref' => $maybeString,
+            'commit' => $maybeString,
+            'domain' => $maybeString,
+            'wildcard' => ['type' => 'boolean'],
+            'generatedNote' => $maybeString,
+            'keptNote' => $maybeString,
+        ], ['name', 'template', 'generated', 'kept', 'url', 'localUrl', 'tunnel', 'port', 'notes', 'templateKey', 'repo', 'ref', 'commit', 'domain', 'wildcard', 'generatedNote', 'keptNote']);
     }
 
     public function handle(McpContext $context, array $arguments): array

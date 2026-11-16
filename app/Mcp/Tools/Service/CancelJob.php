@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -36,6 +37,15 @@ final class CancelJob extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'job' => ResponseSchemas::ref('Job'),
+            'wasStale' => ['type' => 'boolean'],
+            'note' => ['type' => 'string'],
+        ], ['job', 'wasStale', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

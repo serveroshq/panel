@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Monitor;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -40,6 +41,14 @@ final class DeleteMonitor extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'removed' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => ['type' => 'string'], 'target' => ['type' => 'string']], ['id', 'name', 'target']),
+            'note' => ['type' => 'string'],
+        ], ['removed', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

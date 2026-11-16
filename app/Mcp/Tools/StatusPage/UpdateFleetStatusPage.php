@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\StatusPage;
 
+use App\Api\ResponseSchemas;
 use App\Http\Controllers\WorkspaceStatusPageController;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -83,6 +84,18 @@ final class UpdateFleetStatusPage extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'created' => ['type' => 'boolean'],
+            'changed' => ['type' => 'array', 'items' => ['type' => 'string']],
+            'page' => ResponseSchemas::ref('FleetStatusPageSettings'),
+            'preview' => ResponseSchemas::ref('StatusPagePreview'),
+            'settingsUrl' => ['type' => 'string'],
+            'notes' => ['type' => 'array', 'items' => ['type' => 'string']],
+        ], ['created', 'changed', 'page', 'preview', 'settingsUrl', 'notes']);
     }
 
     public function handle(McpContext $context, array $arguments): array

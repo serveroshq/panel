@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Log;
 
+use App\Api\ResponseSchemas;
 use App\Http\Controllers\LogController;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -46,6 +47,39 @@ final class SearchLogs extends Tool
             'around' => Schema::integer('A line’s id: return it with the lines either side from the same service and machine, ignoring the filters.', 1),
             'maxChars' => Schema::integer('Longest message to return in full; longer ones are cut (200–'.LogIngest::MAX_MESSAGE.', default '.self::DEFAULT_CHARS.').', 200, LogIngest::MAX_MESSAGE),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        $string = ['type' => 'string'];
+        $cursor = ['type' => ['integer', 'null']];
+
+        return ResponseSchemas::object([
+            'anchor' => ['type' => 'integer', 'description' => 'The line asked for, with around.'],
+            'entries' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'time' => ['type' => 'string', 'format' => 'date-time'],
+                'machine' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => ['type' => ['string', 'null']]], ['id', 'name']),
+                'service' => ['type' => 'string', 'description' => 'Its container or unit name.'],
+                'serviceLabel' => $string,
+                'serviceKey' => $string,
+                'level' => ['type' => 'string', 'description' => 'Like error, warn, info or debug.'],
+                'stream' => ['type' => 'string', 'description' => 'Like stdout or stderr.'],
+                'message' => $string,
+                'structured' => ['type' => 'boolean', 'description' => 'The line was JSON; message is what it said.'],
+                'logger' => ['type' => ['string', 'null']],
+                'fields' => ['type' => ['object', 'null'], 'description' => 'A JSON line’s other fields.'],
+                'truncated' => ['type' => 'boolean', 'description' => 'message was cut at maxChars.'],
+            ], ['id', 'time', 'machine', 'service', 'serviceLabel', 'serviceKey', 'level', 'stream', 'message'], 'A log line.')],
+            'count' => ['type' => 'integer'],
+            'more' => ['type' => 'boolean'],
+            'olderCursor' => [...$cursor, 'description' => 'Pass as before for older lines.'],
+            'newerCursor' => [...$cursor, 'description' => 'Pass as after for newer lines.'],
+            'filters' => ResponseSchemas::ref('LogFilters'),
+            'retentionDays' => ['type' => 'integer', 'description' => 'How many days lines are kept.'],
+            'note' => ['type' => ['string', 'null']],
+            'url' => $string,
+        ], ['entries', 'count', 'more', 'olderCursor', 'newerCursor', 'filters', 'retentionDays', 'note', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

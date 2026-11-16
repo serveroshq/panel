@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Http\Controllers\UpdatesController;
 use App\Mcp\McpContext;
 use App\Mcp\Paging;
@@ -36,6 +37,46 @@ final class ListPackageUpdates extends Tool
             'query' => Schema::string('Only packages whose name contains this.', maxLength: 120),
             'limit' => Schema::integer('How many packages to return (1–500, default 100).', 1, 500),
             ...Paging::schema(),
+        ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::page('packages', ResponseSchemas::object([
+            'name' => ['type' => 'string'],
+            'security' => ['type' => 'boolean'],
+            'machines' => ['type' => 'array', 'items' => ResponseSchemas::ref('MachineRef')],
+            'versions' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                'version' => ['type' => 'string'],
+                'osRelease' => ['type' => 'string'],
+                'os' => ['type' => ['string', 'null']],
+                'machines' => ['type' => 'array', 'items' => ResponseSchemas::ref('MachineRef')],
+            ], ['version', 'osRelease', 'os', 'machines'])],
+            'installed' => ['type' => 'array', 'description' => 'The versions installed now.', 'items' => ['type' => 'string']],
+            'heldOn' => ['type' => 'array', 'items' => ResponseSchemas::ref('MachineRef')],
+        ], ['name', 'security', 'machines', 'versions', 'installed', 'heldOn']), [
+            'summary' => ResponseSchemas::object([
+                'updates' => ['type' => 'integer'],
+                'packages' => ['type' => 'integer'],
+                'security' => ['type' => 'integer'],
+                'machinesWithUpdates' => ['type' => 'integer'],
+                'machines' => ['type' => 'integer'],
+                'neverChecked' => ['type' => 'integer'],
+                'rebootRequired' => ['type' => 'integer'],
+                'oldestCheck' => ['type' => ['string', 'null'], 'format' => 'date-time'],
+            ], ['updates', 'packages', 'security', 'machinesWithUpdates', 'machines', 'neverChecked', 'rebootRequired', 'oldestCheck']),
+            'count' => ['type' => 'integer', 'description' => 'How many are on this page.'],
+            'machines' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'name' => ['type' => 'string'],
+                'checkedAt' => ['type' => ['string', 'null'], 'format' => 'date-time'],
+                'waiting' => ['type' => ['integer', 'null'], 'description' => 'Null until it has been checked.'],
+                'security' => ['type' => ['integer', 'null']],
+                'rebootRequired' => ['type' => ['boolean', 'null']],
+                'held' => ['type' => 'array', 'items' => ['type' => 'string']],
+                'complete' => ['type' => ['boolean', 'null']],
+            ], ['id', 'name', 'checkedAt', 'waiting', 'security', 'rebootRequired', 'held', 'complete'])],
+            'url' => ['type' => 'string'],
         ]);
     }
 

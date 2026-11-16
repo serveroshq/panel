@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -48,6 +49,18 @@ final class InstallPackages extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => ResponseSchemas::ref('MachineRef'),
+            'packages' => ['type' => 'array', 'items' => ['type' => 'string']],
+            'jobId' => ['type' => 'string'],
+            'state' => ['type' => 'string', 'enum' => ['queued', 'running', ...McpContext::FINISHED]],
+            'job' => ResponseSchemas::ref('Job'),
+            'url' => ['type' => 'string'],
+        ], ['machine', 'packages', 'jobId', 'state', 'job', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

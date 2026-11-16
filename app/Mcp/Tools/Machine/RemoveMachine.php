@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -43,6 +44,16 @@ final class RemoveMachine extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'removed' => ResponseSchemas::ref('MachineRef'),
+            'backupDestinationsRemoved' => ['type' => 'array', 'items' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => ['type' => 'string']], ['id', 'name'])],
+            'machinesWithoutBackupDestination' => ['type' => 'array', 'items' => ResponseSchemas::ref('MachineRef')],
+            'note' => ['type' => 'string'],
+        ], ['removed', 'backupDestinationsRemoved', 'machinesWithoutBackupDestination', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

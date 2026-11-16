@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\StatusPage;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -47,6 +48,11 @@ final class PostStatusIncident extends Tool
     public function idempotent(): bool
     {
         return false;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object(['incident' => ResponseSchemas::ref('StatusIncident')], ['incident']);
     }
 
     public function handle(McpContext $context, array $arguments): array

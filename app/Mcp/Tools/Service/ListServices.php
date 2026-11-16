@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Services;
 use App\Mcp\McpContext;
 use App\Mcp\Paging;
 use App\Mcp\Present;
@@ -50,6 +52,25 @@ final class ListServices extends Tool
             'sort' => Schema::string('cpu (default), memory, uptime or name.', self::SORTS),
             'limit' => Schema::integer('How many to return (1–200, default 50).', 1, 200),
             ...Paging::schema(),
+        ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::page('services', ResponseSchemas::ref('Service'), [
+            'limit' => ['type' => 'integer', 'description' => 'The most it answers with.'],
+            'counts' => ResponseSchemas::object([
+                'running' => ['type' => 'integer'],
+                'stopped' => ['type' => 'integer'],
+                'problems' => ['type' => 'integer'],
+            ], ['running', 'stopped', 'problems'], 'By status, over everything matching except the status filter.'),
+            'hidden' => ['type' => 'integer', 'description' => 'How many matched but are hidden from the panel’s lists.'],
+            'stale' => ['type' => 'array', 'description' => 'Machines offline or not scanned yet: their services are as last seen.', 'items' => ResponseSchemas::object([
+                'machine' => Services::machine(),
+                'status' => ['type' => 'string', 'enum' => ['online', 'offline', 'connecting', 'demo']],
+                'lastScannedAt' => ['type' => ['string', 'null'], 'format' => 'date-time'],
+            ], ['machine', 'status', 'lastScannedAt'])],
+            'url' => ['type' => 'string'],
         ]);
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Backup;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -52,6 +53,18 @@ final class ListBackups extends Tool
             'limit' => Schema::integer('How many backups to return (1–'.self::MAX_LIMIT.', default '.self::DEFAULT_LIMIT.').', 1, self::MAX_LIMIT),
             'before' => Schema::integer('For older backups: the nextCursor from the previous answer.', 1),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machines' => ['type' => 'array', 'items' => ResponseSchemas::ref('BackupMachine'), 'description' => 'Each machine’s backup settings, on the first page.'],
+            'backups' => ['type' => 'array', 'items' => ResponseSchemas::ref('Backup')],
+            'count' => ['type' => 'integer'],
+            'hasMore' => ['type' => 'boolean'],
+            'nextCursor' => ['type' => ['integer', 'null'], 'description' => 'Pass as before for the next page; null on the last.'],
+            'url' => ['type' => 'string'],
+        ], ['backups', 'count', 'hasMore', 'nextCursor', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

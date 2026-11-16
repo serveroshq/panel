@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -28,6 +29,11 @@ final class GetMachine extends Tool
     public function inputSchema(): array
     {
         return Schema::object(['machine' => Schema::machine()], ['machine']);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::ref('MachineDetail');
     }
 
     public function handle(McpContext $context, array $arguments): array

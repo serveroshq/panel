@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Scopes;
 use App\Mcp\Tool;
@@ -36,6 +37,11 @@ final class HideService extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::ref('ServiceVisibility');
     }
 
     public function handle(McpContext $context, array $arguments): array

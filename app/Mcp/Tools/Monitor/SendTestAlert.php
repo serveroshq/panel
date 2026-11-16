@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Monitor;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -47,6 +48,17 @@ final class SendTestAlert extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'ok' => ['type' => 'boolean'],
+            'error' => ['type' => ['string', 'null'], 'description' => 'What went wrong, when it didn’t arrive.'],
+            'webhook' => ['type' => 'string', 'enum' => ['given', 'saved'], 'description' => 'Which webhook was tried.'],
+            'host' => ['type' => ['string', 'null']],
+            'note' => ['type' => 'string'],
+        ], ['ok', 'error', 'webhook', 'host', 'note']);
     }
 
     #[NotAudited('Sends a test alert; nothing changes')]

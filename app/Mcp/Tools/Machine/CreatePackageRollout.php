@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -62,6 +63,15 @@ final class CreatePackageRollout extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'rollout' => ResponseSchemas::ref('PackageRollout'),
+            'hint' => ['type' => 'string'],
+            'url' => ['type' => 'string'],
+        ], ['rollout', 'hint', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

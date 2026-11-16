@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Workflow;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Workflows as WorkflowSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -40,6 +42,14 @@ final class DeleteWorkflow extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'deleted' => WorkflowSchemas::named(),
+            'note' => ['type' => 'string'],
+        ], ['deleted', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

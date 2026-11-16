@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Project;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -26,6 +27,11 @@ final class GetProject extends Tool
     public function inputSchema(): array
     {
         return Schema::object(['project' => Projects::schema()], ['project']);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::ref('Project');
     }
 
     public function handle(McpContext $context, array $arguments): array

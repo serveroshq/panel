@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -45,6 +46,16 @@ final class RedeployApp extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        return DeploySchemas::started([
+            'app' => ['type' => 'string'],
+            'sentAgain' => ['type' => 'string', 'description' => 'The id of the deploy sent again.'],
+            'commit' => ['type' => ['string', 'null']],
+            'domains' => ['type' => 'array', 'items' => ['type' => 'string']],
+        ], ['app', 'sentAgain', 'commit', 'domains']);
     }
 
     public function handle(McpContext $context, array $arguments): array

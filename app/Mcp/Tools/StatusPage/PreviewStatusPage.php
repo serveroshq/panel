@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\StatusPage;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -39,6 +40,31 @@ final class PreviewStatusPage extends Tool
             'fleet' => Schema::boolean('Preview the workspace’s fleet page instead of a machine’s.'),
             'include_days' => Schema::boolean('Add the day-by-day uptime (90 days) for each component.'),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        $string = ['type' => 'string'];
+        $bool = ['type' => 'boolean'];
+
+        return ResponseSchemas::object([
+            'page' => ResponseSchemas::object([
+                'kind' => ['type' => 'string', 'enum' => ['machine', 'fleet']],
+                'machine' => [...ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => $string], ['id', 'name']), 'type' => ['object', 'null']],
+                'exists' => $bool,
+                'enabled' => $bool,
+                'live' => $bool,
+                'public' => $bool,
+                'slug' => $string,
+                'url' => $string,
+                'badgeUrl' => $string,
+                'jsonUrl' => $string,
+                'feedUrl' => $string,
+            ], ['kind', 'machine', 'exists', 'enabled', 'live', 'public', 'slug', 'url', 'badgeUrl', 'jsonUrl', 'feedUrl']),
+            'visitors' => ['type' => 'string', 'description' => 'Who can see it, in words.'],
+            'badge' => ['type' => ['string', 'null'], 'enum' => ['operational', 'degraded', 'major outage', 'partial outage', 'unknown', null], 'description' => 'What the README badge says; null unless the page is live and public.'],
+            'report' => ResponseSchemas::ref('StatusPagePreview'),
+        ], ['page', 'visitors', 'badge', 'report']);
     }
 
     public function handle(McpContext $context, array $arguments): array

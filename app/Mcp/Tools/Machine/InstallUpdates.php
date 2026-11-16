@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Http\Controllers\MachineUpdatesController;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -51,6 +52,11 @@ final class InstallUpdates extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::ref('MachineUpdatesJob');
     }
 
     public function handle(McpContext $context, array $arguments): array

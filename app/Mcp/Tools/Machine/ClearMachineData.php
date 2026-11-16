@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -49,6 +50,17 @@ final class ClearMachineData extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => ResponseSchemas::ref('MachineRef'),
+            'queued' => ['type' => 'boolean', 'description' => 'It is clearing in the background.'],
+            'cleared' => ResponseSchemas::object(['logs' => ['type' => 'integer'], 'metrics' => ['type' => 'integer'], 'services' => ['type' => 'integer']], description: 'How many of each kind.'),
+            'clearing' => ResponseSchemas::object(['logs' => ['type' => 'integer'], 'metrics' => ['type' => 'integer'], 'services' => ['type' => 'integer']], description: 'How many of each kind.'),
+            'note' => ['type' => 'string'],
+        ], ['machine', 'queued', 'note'], 'cleared when it is done, or clearing (estimates) when queued.');
     }
 
     public function handle(McpContext $context, array $arguments): array

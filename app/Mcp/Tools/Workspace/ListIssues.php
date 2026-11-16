@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Workspace;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Tool;
@@ -39,6 +40,45 @@ final class ListIssues extends Tool
             'machine' => Schema::machine('Only items about this machine (its id or name), including its monitors.'),
             'limit' => Schema::integer('Most items to return (default 50).', 1, self::MAX_LIMIT),
         ]);
+    }
+
+    public function responseSchema(): array
+    {
+        $named = ['id' => ['type' => 'integer'], 'name' => ['type' => 'string']];
+
+        return ResponseSchemas::object([
+            'needsAttention' => ['type' => 'integer', 'description' => 'Critical and warning items in the whole workspace, whatever the filters.'],
+            'counts' => ResponseSchemas::object(
+                array_fill_keys(Issues::SEVERITIES, ['type' => 'integer']),
+                Issues::SEVERITIES,
+                'Items of each severity in the whole workspace, whatever the filters.',
+            ),
+            'matching' => ['type' => 'integer', 'description' => 'How many the filters let through.'],
+            'issues' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                'id' => ['type' => 'string', 'description' => 'For dismiss_issues.'],
+                'severity' => ['type' => 'string', 'enum' => Issues::SEVERITIES],
+                'kind' => ['type' => 'string', 'enum' => [
+                    'machine.offline', 'machine.never_connected', 'machine.disk', 'machine.memory', 'machine.maintenance',
+                    'service.down', 'service.crash_loop', 'service.needs_repair', 'monitor.down', 'monitor.certificate',
+                    'backup.failed', 'backup.overdue', 'backup.off', 'other',
+                ]],
+                'title' => ['type' => 'string'],
+                'detail' => ['type' => 'string'],
+                'fix' => ['type' => ['string', 'null'], 'description' => 'The next step to fix it.'],
+                'since' => ['type' => ['string', 'null'], 'format' => 'date-time', 'description' => 'When it started, when known.'],
+                'machine' => ['type' => ['object', 'null'], 'required' => ['id', 'name'], 'properties' => $named],
+                'service' => ['type' => ['object', 'null'], 'required' => ['key', 'name', 'url'], 'properties' => [
+                    'key' => ['type' => 'string'],
+                    'name' => ['type' => 'string'],
+                    'url' => ['type' => 'string'],
+                ]],
+                'monitor' => ['type' => ['object', 'null'], 'required' => ['id', 'name', 'target'], 'properties' => [...$named, 'target' => ['type' => 'string']]],
+                'action' => ['type' => 'string', 'description' => 'The dashboard button’s label.'],
+                'url' => ['type' => 'string', 'description' => 'Where to fix it in the dashboard.'],
+            ], ['id', 'severity', 'kind', 'title', 'detail', 'fix', 'since', 'machine', 'service', 'monitor', 'action', 'url'])],
+            'truncated' => ['type' => 'boolean', 'description' => 'Whether some matching items were left out by the limit.'],
+            'url' => ['type' => 'string', 'description' => 'The workspace Home in the dashboard.'],
+        ], ['needsAttention', 'counts', 'matching', 'issues', 'truncated', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

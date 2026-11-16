@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Monitor;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Paging;
 use App\Mcp\Schema;
@@ -39,6 +40,19 @@ final class ListMonitors extends Tool
             'muted' => Schema::boolean('true: only monitors whose alerts are held (muted, or their machine is in maintenance). false: only those that would alert.'),
             'limit' => Schema::integer('How many to return (default 50).', 1, self::MAX),
             ...Paging::schema(),
+        ]);
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::page('monitors', ResponseSchemas::ref('Monitor'), [
+            'count' => ['type' => 'integer', 'description' => 'How many are on this page.'],
+            'plan' => ResponseSchemas::object([
+                'monitors' => ['type' => 'integer', 'description' => 'How many the workspace has.'],
+                'monitorLimit' => ['type' => 'integer'],
+                'minIntervalSeconds' => ['type' => 'integer'],
+            ], ['monitors', 'monitorLimit', 'minIntervalSeconds']),
+            'url' => ['type' => 'string', 'description' => 'The monitors page in the dashboard.'],
         ]);
     }
 

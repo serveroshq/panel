@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Monitor;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -48,6 +49,15 @@ final class UpdateMonitor extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'monitor' => ResponseSchemas::ref('MonitorDetail'),
+            'changed' => ['type' => 'array', 'description' => 'The settings that changed.', 'items' => ['type' => 'string', 'enum' => ['type', 'url', 'host', 'port', 'intervalSeconds', 'timeoutSeconds', 'expectedStatus', 'keyword', 'machineId', 'alerts', 'name']]],
+            'note' => ['type' => 'string'],
+        ], ['monitor', 'changed', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

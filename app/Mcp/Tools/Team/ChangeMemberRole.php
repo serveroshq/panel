@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Team;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Enums\WorkspaceRole;
 use App\Mcp\McpContext;
@@ -51,6 +52,16 @@ final class ChangeMemberRole extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'member' => ResponseSchemas::ref('Member'),
+            'previousRole' => ['type' => 'string', 'description' => 'The role label they had before.'],
+            'changed' => ['type' => 'boolean', 'description' => 'False when they already had the role.'],
+            'note' => ['type' => 'string'],
+        ], ['member', 'previousRole', 'changed', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

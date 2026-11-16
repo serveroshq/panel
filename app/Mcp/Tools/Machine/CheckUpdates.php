@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -43,6 +44,11 @@ final class CheckUpdates extends Tool
     public function idempotent(): bool
     {
         return false;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::ref('MachineUpdatesJob');
     }
 
     #[NotAudited('A check for updates; installing them is recorded')]

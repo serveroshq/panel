@@ -2,7 +2,10 @@
 
 namespace App\Mcp\Tools\Workspace;
 
+use App\Api\ResponseSchemas;
+use App\Enums\Plan;
 use App\Enums\WorkspacePermission;
+use App\Enums\WorkspaceRole;
 use App\Mcp\McpContext;
 use App\Mcp\Scopes;
 use App\Mcp\Tool;
@@ -29,6 +32,51 @@ final class GetWorkspace extends Tool
     }
 
     public function __construct(private readonly WorkspaceHealth $health) {}
+
+    public function responseSchema(): array
+    {
+        $count = ['type' => 'integer'];
+
+        return ResponseSchemas::object([
+            'workspace' => ResponseSchemas::object([
+                'id' => ['type' => 'integer'],
+                'name' => ['type' => 'string'],
+                'slug' => ['type' => 'string'],
+                'url' => ['type' => 'string'],
+                'plan' => ['type' => ['string', 'null'], 'enum' => [...array_map(fn (Plan $p) => $p->label(), Plan::cases()), null]],
+                'onTrial' => ['type' => 'boolean'],
+                'trialEndsAt' => ['type' => ['string', 'null'], 'format' => 'date-time'],
+                'machineLimit' => ['type' => ['integer', 'null'], 'description' => 'Null for unlimited.'],
+                'aiToolCalls' => ResponseSchemas::object([
+                    'used' => ['type' => 'integer', 'description' => 'Tool calls used this month.'],
+                    'limit' => ['type' => ['integer', 'null'], 'description' => 'Null for unlimited.'],
+                    'resetsAt' => ['type' => 'string', 'format' => 'date-time'],
+                ], ['used', 'limit', 'resetsAt']),
+            ], ['id', 'name', 'slug', 'url', 'plan', 'onTrial', 'trialEndsAt', 'machineLimit', 'aiToolCalls']),
+            'you' => ResponseSchemas::object([
+                'name' => ['type' => 'string'],
+                'email' => ['type' => 'string'],
+                'role' => ['type' => ['string', 'null'], 'enum' => [...array_map(fn (WorkspaceRole $r) => $r->label(), WorkspaceRole::cases()), null]],
+                'can' => ['type' => 'array', 'description' => 'The permissions you have.', 'items' => ['type' => 'string', 'enum' => array_map(fn (WorkspacePermission $p) => $p->value, WorkspacePermission::cases())]],
+            ], ['name', 'email', 'role', 'can'], 'Who this connection acts as.'),
+            'connection' => ResponseSchemas::object([
+                'name' => ['type' => 'string', 'description' => 'The AI app or API key.'],
+                'scopes' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => Scopes::ALL]],
+                'canMakeChanges' => ['type' => 'boolean'],
+                'canRunCommands' => ['type' => 'boolean'],
+                'experimental' => ['type' => 'string'],
+            ], ['name', 'scopes', 'canMakeChanges', 'canRunCommands', 'experimental']),
+            'counts' => ResponseSchemas::object([
+                'machines' => $count,
+                'machinesOnline' => $count,
+                'services' => $count,
+                'monitors' => $count,
+                'workflows' => $count,
+                'statusPages' => $count,
+                'needsAttention' => ['type' => 'integer', 'description' => 'Critical and warning items, as list_issues lists them.'],
+            ], ['machines', 'machinesOnline', 'services', 'monitors', 'workflows', 'statusPages', 'needsAttention']),
+        ], ['workspace', 'you', 'connection', 'counts']);
+    }
 
     public function handle(McpContext $context, array $arguments): array
     {

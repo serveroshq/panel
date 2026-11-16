@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -42,6 +43,14 @@ final class RemoveServiceGroupIcon extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'group' => ResponseSchemas::ref('ServiceGroupRef'),
+            'removed' => ['type' => 'boolean', 'description' => 'False when it had no icon.'],
+        ], ['group', 'removed']);
     }
 
     #[NotAudited('Cosmetic')]

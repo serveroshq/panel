@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Enums\WorkspacePermission;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -46,6 +48,29 @@ final class CheckDomain extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        $check = [
+            'domain' => ['type' => 'string'],
+            'status' => ['type' => 'string', 'enum' => ['ready', 'missing', 'proxied', 'elsewhere']],
+            'expected' => ['type' => ['string', 'null'], 'description' => 'Where it should point.'],
+            'found' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'The addresses it points to now.'],
+            'record' => [...ResponseSchemas::object([
+                'type' => ['type' => 'string', 'enum' => ['A', 'AAAA', 'CNAME']],
+                'name' => ['type' => 'string'],
+                'value' => ['type' => 'string'],
+            ], ['type', 'name', 'value']), 'type' => ['object', 'null'], 'description' => 'The DNS record it needs.'],
+            'advice' => ['type' => 'string'],
+        ];
+        $required = ['domain', 'status', 'expected', 'found', 'record', 'advice'];
+
+        return ResponseSchemas::object([
+            'machine' => DeploySchemas::machine(),
+            ...$check,
+            'wildcard' => ResponseSchemas::object($check, $required, 'The same for every subdomain, with wildcard.'),
+        ], ['machine', ...$required]);
     }
 
     public function handle(McpContext $context, array $arguments): array

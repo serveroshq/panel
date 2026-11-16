@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -46,6 +47,21 @@ final class GetServiceLogs extends Tool
     public function permission(): WorkspacePermission
     {
         return WorkspacePermission::ManageMachines;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'service' => ResponseSchemas::ref('ServiceRef'),
+            'jobId' => ['type' => 'string'],
+            'state' => ['type' => 'string', 'enum' => ['queued', 'running', 'succeeded', 'failed', 'cancelled', 'timed_out', 'refused']],
+            'lines' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Oldest first, once it succeeded.'],
+            'count' => ['type' => 'integer', 'description' => 'How many lines it answers with.'],
+            'fetched' => ['type' => 'integer', 'description' => 'How many lines the machine sent.'],
+            'truncated' => ['type' => 'boolean', 'description' => 'Too much to return at once: lines are the newest.'],
+            'job' => [...ResponseSchemas::ref('Job'), 'description' => 'The job, when it hasn’t succeeded.'],
+            'note' => ['type' => ['string', 'null']],
+        ], ['service', 'jobId', 'state', 'note'], 'The lines once the job succeeded, else the job.');
     }
 
     public function handle(McpContext $context, array $arguments): array

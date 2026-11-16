@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Tool;
 use App\Models\MachineGroup;
@@ -21,6 +22,15 @@ final class ListMachineGroups extends Tool
     public function description(): string
     {
         return 'Lists the workspace’s machine groups (named sets of machines, shown as one row on the machines page) with each group’s id, name and machines (id, name, environment, status), and how many machines are in no group. A machine is in one group at most.';
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'groups' => ['type' => 'array', 'items' => ResponseSchemas::ref('MachineGroup')],
+            'ungroupedMachines' => ['type' => 'integer'],
+            'url' => ['type' => 'string'],
+        ], ['groups', 'ungroupedMachines', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

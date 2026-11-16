@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -48,6 +49,18 @@ final class UpdateServiceGroup extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'group' => ResponseSchemas::ref('ServiceGroup'),
+            'before' => ResponseSchemas::object([
+                'name' => ['type' => 'string'],
+                'services' => ['type' => 'array', 'items' => ['type' => 'string']],
+            ], ['name', 'services']),
+            'movedFrom' => ['type' => 'array', 'items' => ResponseSchemas::ref('ServiceGroupMove')],
+        ], ['group', 'before', 'movedFrom']);
     }
 
     public function handle(McpContext $context, array $arguments): array

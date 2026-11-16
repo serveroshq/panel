@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -52,6 +53,17 @@ final class RollbackApp extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'app' => ['type' => 'string'],
+            'to' => ['type' => 'string', 'description' => 'The short commit it goes back to.'],
+            'withData' => ['type' => 'boolean'],
+            'job' => ResponseSchemas::ref('Job'),
+            'pageUrl' => ['type' => 'string'],
+        ], ['app', 'to', 'withData', 'job', 'pageUrl']);
     }
 
     public function handle(McpContext $context, array $arguments): array

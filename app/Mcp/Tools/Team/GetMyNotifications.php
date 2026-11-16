@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Team;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Tool;
 
@@ -21,6 +22,11 @@ final class GetMyNotifications extends Tool
     {
         return 'Returns what you (the person this connection acts as) are emailed from this workspace, as Settings › Profile shows it: `alertEmails` (all: every alert and the “it’s back” emails; problems: only when something breaks; none) and `weeklySummary` (the Monday summary, on or off). '
             .'`getsAlerts` says whether your role is sent alerts at all (only owners and admins are), and `workspaceSendsAlertEmails` whether alert emails are on for the workspace. These are only yours; everyone chooses their own. update_my_notifications changes them.';
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::ref('NotificationPreferences');
     }
 
     public function handle(McpContext $context, array $arguments): array

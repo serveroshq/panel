@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Services;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -44,6 +46,20 @@ abstract class ServiceAction extends Tool
     protected function rules(): array
     {
         return [...ServiceWork::serviceArguments(), 'wait' => ServiceWork::waitRules()];
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'service' => ResponseSchemas::object([
+                'key' => ['type' => 'string'],
+                'name' => ['type' => 'string'],
+                'machine' => Services::machine(),
+                'statusBefore' => ['type' => 'string'],
+            ], ['key', 'name', 'machine', 'statusBefore']),
+            'job' => ResponseSchemas::ref('Job'),
+            'note' => ['type' => 'string'],
+        ], ['service', 'job', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

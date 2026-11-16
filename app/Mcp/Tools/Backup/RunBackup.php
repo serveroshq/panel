@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Backup;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -51,6 +53,39 @@ final class RunBackup extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        $common = [
+            'started' => ['type' => 'integer', 'description' => 'How many backups were sent.'],
+            'backups' => ['type' => 'array', 'items' => ResponseSchemas::ref('Backup')],
+            'jobs' => ['type' => 'array', 'items' => ResponseSchemas::ref('Job')],
+            'finished' => ['type' => 'boolean', 'description' => 'Every backup has finished.'],
+            'url' => ['type' => 'string'],
+        ];
+        $required = ['started', 'backups', 'jobs', 'finished', 'url'];
+
+        return ['anyOf' => [
+            ResponseSchemas::object([
+                'machine' => DeploySchemas::machine(),
+                ...$common,
+                'note' => ['type' => ['string', 'null']],
+            ], ['machine', ...$required, 'note'], 'One machine.'),
+            ResponseSchemas::object([
+                'machines' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                    'id' => ['type' => 'integer'],
+                    'name' => ['type' => 'string'],
+                    'services' => ['type' => 'integer', 'description' => 'How many backups were sent.'],
+                ], ['id', 'name', 'services'])],
+                'skipped' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                    'id' => ['type' => 'integer'],
+                    'name' => ['type' => 'string'],
+                    'reason' => ['type' => 'string'],
+                ], ['id', 'name', 'reason'])],
+                ...$common,
+            ], ['machines', 'skipped', ...$required], 'Every machine.'),
+        ]];
     }
 
     public function handle(McpContext $context, array $arguments): array

@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
+use App\Api\Schemas\Machines;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -41,6 +43,20 @@ final class RescanMachine extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'machine' => ResponseSchemas::ref('MachineRef'),
+            'started' => ['type' => 'boolean'],
+            'reusedRunningScan' => ['type' => 'boolean'],
+            'job' => ['anyOf' => [ResponseSchemas::ref('Job'), ['type' => 'null']], 'description' => 'The scan, without its result. Null when it couldn’t start one.'],
+            'scanUpdated' => ['type' => 'boolean'],
+            'lastScannedAt' => ['type' => ['string', 'null'], 'format' => 'date-time'],
+            'services' => ResponseSchemas::object(['total' => ['type' => 'integer'], 'byStatus' => Machines::countsByStatus()], ['total', 'byStatus']),
+            'note' => ['type' => ['string', 'null']],
+        ], ['machine', 'started', 'reusedRunningScan', 'job', 'scanUpdated', 'lastScannedAt', 'services', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

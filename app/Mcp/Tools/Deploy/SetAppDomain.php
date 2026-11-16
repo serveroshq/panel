@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Deploy;
 
+use App\Api\Schemas\Deploys as DeploySchemas;
 use App\Http\Controllers\AppVersionController;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
@@ -52,6 +53,20 @@ final class SetAppDomain extends Tool
     public function scope(): string
     {
         return Scopes::WRITE;
+    }
+
+    public function responseSchema(): array
+    {
+        $strings = ['type' => 'array', 'items' => ['type' => 'string']];
+
+        return DeploySchemas::started([
+            'app' => ['type' => 'string'],
+            'domain' => ['type' => 'string'],
+            'wildcard' => ['type' => 'boolean'],
+            'previousDomains' => $strings,
+            'url' => ['type' => 'string'],
+            'movedSettings' => [...$strings, 'description' => 'Settings that named the old domain and now name the new one.'],
+        ], ['app', 'domain', 'wildcard', 'previousDomains', 'url', 'movedSettings']);
     }
 
     public function handle(McpContext $context, array $arguments): array

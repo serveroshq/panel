@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Backup;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Present;
 use App\Mcp\Schema;
@@ -50,6 +51,16 @@ final class RestoreBackup extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'backup' => ResponseSchemas::ref('Backup'),
+            'job' => ResponseSchemas::ref('Job'),
+            'note' => ['type' => 'string'],
+            'url' => ['type' => 'string'],
+        ], ['backup', 'job', 'note', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

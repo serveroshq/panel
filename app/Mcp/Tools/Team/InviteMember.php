@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Team;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -51,6 +52,16 @@ final class InviteMember extends Tool
     public function permission(): WorkspacePermission
     {
         return WorkspacePermission::ManageMembers;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'invitation' => ResponseSchemas::ref('Invitation'),
+            'resent' => ['type' => 'boolean', 'description' => 'True when the address already had a pending invite, now sent again.'],
+            'note' => ['type' => 'string'],
+            'url' => ['type' => 'string', 'description' => 'The Members page in the dashboard.'],
+        ], ['invitation', 'resent', 'note', 'url']);
     }
 
     public function handle(McpContext $context, array $arguments): array

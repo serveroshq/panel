@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Enums\WorkspacePermission;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
@@ -53,6 +54,33 @@ final class DetectServices extends Tool
     public function openWorld(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'detected' => ['type' => 'boolean'],
+            'template' => ['description' => 'The template that deploys it, or its slug when the catalog doesn’t have it.', 'anyOf' => [
+                ResponseSchemas::object([
+                    'slug' => ['type' => 'string'],
+                    'name' => ['type' => 'string'],
+                    'description' => ['type' => 'string'],
+                    'port' => ['type' => 'integer'],
+                    'web' => ['type' => 'boolean'],
+                ], ['slug', 'name', 'description', 'port', 'web']),
+                ['type' => ['string', 'null']],
+            ]],
+            'framework' => ['type' => ['string', 'null']],
+            'type' => ['type' => ['string', 'null'], 'enum' => [RepositoryDetector::TYPE_WEB, RepositoryDetector::TYPE_API, RepositoryDetector::TYPE_STATIC, RepositoryDetector::TYPE_APP, null]],
+            'repo' => ['type' => 'string'],
+            'branch' => ['type' => 'string'],
+            'commit' => ['type' => 'string'],
+            'reasons' => ['type' => 'array', 'items' => ['type' => 'string']],
+            'php' => ['type' => ['string', 'null'], 'description' => 'The PHP version it asks for.'],
+            'healthPath' => ['type' => ['string', 'null']],
+            'composeFile' => ['type' => ['string', 'null']],
+            'composePort' => ['type' => ['integer', 'null']],
+        ], ['detected', 'template', 'framework', 'type', 'repo', 'branch', 'commit', 'reasons', 'php', 'healthPath', 'composeFile', 'composePort']);
     }
 
     public function handle(McpContext $context, array $arguments): array

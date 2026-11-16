@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\StatusPage;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Tool;
 use App\Models\Machine;
@@ -26,6 +27,40 @@ final class GetFleetStatusPage extends Tool
         return 'Returns the workspace’s fleet status page, one page at /status/{slug} with a section for each machine it covers (a Business feature), like Settings → Status page: its settings (enabled, live, public, slug, title, description, notice, showUptime, and whether it covers every machine, including ones connected later, or a chosen list), the page, badge and JSON URLs, '
             .'the connected machines with whether each is on the page and whether it has its own status page settings (those pick which of its services show here, and under what names; a machine without them shows everything it runs), and `preview`, what the page shows right now. '
             .'On the fleet page each machine is one section; a machine’s own sections show as a suffix on the name, like “Shop (Web)”. If there’s no fleet page yet, `exists` is false and this is the draft. Change it with update_fleet_status_page; organise a machine’s part with arrange_status_page.';
+    }
+
+    public function responseSchema(): array
+    {
+        $int = ['type' => 'integer'];
+        $string = ['type' => 'string'];
+        $bool = ['type' => 'boolean'];
+
+        return ResponseSchemas::object([
+            'planAllows' => ['type' => 'boolean', 'description' => 'The plan includes the fleet page.'],
+            'page' => ResponseSchemas::ref('FleetStatusPageSettings'),
+            'machines' => ['type' => 'array', 'items' => ResponseSchemas::object([
+                'id' => $int,
+                'name' => $string,
+                'online' => $bool,
+                'onPage' => $bool,
+                'hasOwnSettings' => ['type' => 'boolean', 'description' => 'It has its own status page settings.'],
+            ], ['id', 'name', 'online', 'onPage', 'hasOwnSettings'])],
+            'monitors' => ['type' => 'array', 'description' => 'Monitors on no machine.', 'items' => ResponseSchemas::object([
+                'id' => $int,
+                'name' => $string,
+                'paused' => $bool,
+                'onPage' => $bool,
+            ], ['id', 'name', 'paused', 'onPage'])],
+            'components' => ['type' => 'array', 'description' => 'What the layout can place, from every machine it covers.', 'items' => ResponseSchemas::object([
+                'key' => $string,
+                'label' => $string,
+                'machine' => $string,
+                'machineId' => $int,
+            ], ['key', 'label', 'machine', 'machineId'])],
+            'preview' => ResponseSchemas::ref('StatusPagePreview'),
+            'settingsUrl' => $string,
+            'note' => ['type' => ['string', 'null']],
+        ], ['planAllows', 'page', 'machines', 'monitors', 'components', 'preview', 'settingsUrl', 'note']);
     }
 
     public function handle(McpContext $context, array $arguments): array

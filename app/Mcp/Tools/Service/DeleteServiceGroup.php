@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Service;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -42,6 +43,14 @@ final class DeleteServiceGroup extends Tool
     public function destructive(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'deleted' => ResponseSchemas::ref('ServiceGroupRef'),
+            'servicesUngrouped' => ['type' => 'integer'],
+        ], ['deleted', 'servicesUngrouped']);
     }
 
     public function handle(McpContext $context, array $arguments): array

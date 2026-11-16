@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Machine;
 
+use App\Api\ResponseSchemas;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
 use App\Mcp\Scopes;
@@ -51,6 +52,15 @@ final class UpdateMachineGroup extends Tool
     public function idempotent(): bool
     {
         return true;
+    }
+
+    public function responseSchema(): array
+    {
+        return ResponseSchemas::object([
+            'group' => ResponseSchemas::ref('MachineGroup'),
+            'moved' => ['type' => 'array', 'items' => ResponseSchemas::ref('MachineGroupMove')],
+            'removed' => ['type' => 'integer', 'description' => 'How many machines left the group.'],
+        ], ['group', 'moved', 'removed']);
     }
 
     public function handle(McpContext $context, array $arguments): array
