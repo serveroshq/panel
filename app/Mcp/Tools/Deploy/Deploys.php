@@ -160,12 +160,12 @@ final class Deploys
             'port' => is_array($spec) ? ($spec['port'] ?? null) : null,
             'live' => ($liveIds[$job->service] ?? null) === $job->id,
             'by' => $job->startedByName(),
-            'error' => $job->error === null ? null : array_filter([
+            'error' => $job->error === null ? null : (array_filter([
                 'phase' => $job->error['phase'] ?? null,
                 'message' => $job->error['message'] ?? null,
                 'nextStep' => $job->error['next_step'] ?? null,
                 'explanation' => DeployFailure::explain($job),
-            ]),
+            ]) ?: null),
             'retryable' => $job->isRetryable(),
             'stale' => $job->isStale(),
             'createdAt' => $job->created_at?->toIso8601String(),

@@ -108,7 +108,7 @@ final class RescanMachine extends Tool
             'lastScannedAt' => is_int($scanned) ? Carbon::createFromTimestamp($scanned)->toIso8601String() : null,
             'services' => [
                 'total' => $services->count(),
-                'byStatus' => $services->countBy(fn (array $s) => is_string($s['status'] ?? null) ? $s['status'] : 'unknown')->sortDesc()->all(),
+                'byStatus' => (object) $services->countBy(fn (array $s) => is_string($s['status'] ?? null) ? $s['status'] : 'unknown')->sortDesc()->all(),
             ],
             'note' => $note,
         ];

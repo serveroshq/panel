@@ -31,7 +31,7 @@ final class UpdateWorkspace extends Tool
 
     public function description(): string
     {
-        return 'Changes how the workspace appears to everyone in it, as Settings › General does: its `name` (up to 255 characters), and its logo, either from `logo_url` (a public https:// image: PNG, JPEG, WebP or GIF, up to 2 MB and 4000×4000 pixels, not SVG; ServerOS downloads it once and keeps its own copy, replacing the old logo) or removed with `remove_logo`. '
+        return 'Changes how the workspace appears to everyone in it, as Settings › General does: its `name` (up to 255 characters), and its logo, either from `logo_url` (a public https:// image: PNG, JPEG, WebP or GIF, up to 5 MB and 8000×8000 pixels, not SVG; ServerOS downloads it once and keeps its own copy, replacing the old logo) or removed with `remove_logo`. '
             .'Give at least one. The workspace’s address (its subdomain) can’t be changed. Everyone in the workspace sees the change, so check the new name or logo with the person first. Returns the workspace as it is now.';
     }
 

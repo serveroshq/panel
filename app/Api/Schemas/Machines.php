@@ -307,7 +307,7 @@ final class Machines
     /** @return array<string, mixed> service counts keyed by status; an empty list when there are none */
     public static function countsByStatus(): array
     {
-        return ['type' => ['object', 'array'], 'additionalProperties' => ['type' => 'integer'], 'description' => 'How many services have each status. An empty list when there are none.'];
+        return ['type' => 'object', 'additionalProperties' => ['type' => 'integer'], 'description' => 'How many services have each status.'];
     }
 
     /** @return array<string, array<string, mixed>> */

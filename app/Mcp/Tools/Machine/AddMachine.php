@@ -93,8 +93,8 @@ final class AddMachine extends Tool
             'region' => trim((string) ($data['region'] ?? '')) ?: null,
             'tier' => trim((string) ($data['tier'] ?? '')) ?: null,
         ]);
-        if (filled($data['labels'] ?? null)) {
-            $metadata['labels'] = MachineMetadata::labels($data['labels']);
+        if (filled($data['labels'] ?? null) && ($labels = MachineMetadata::labels($data['labels'])) !== []) {
+            $metadata['labels'] = $labels;
         }
         $minutes = (int) ($data['expiresInMinutes'] ?? self::EXPIRES_MINUTES);
         ServerWork::throttle($context, 'connect', 10);

@@ -233,7 +233,7 @@ final class MachineView
 
         return [
             'total' => $services->count(),
-            'byStatus' => $services->countBy(fn (array $s) => is_string($s['status'] ?? null) ? $s['status'] : 'unknown')->sortDesc()->all(),
+            'byStatus' => (object) $services->countBy(fn (array $s) => is_string($s['status'] ?? null) ? $s['status'] : 'unknown')->sortDesc()->all(),
             'containers' => $services->filter(fn (array $s) => str_starts_with((string) $s['key'], 'docker:'))->count(),
             'managed' => $services->filter(fn (array $s) => ($s['details']['managed'] ?? null) === 'true')->count(),
             'notRunning' => $notRunning->take(15)->map(fn (array $s) => [

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\Http;
@@ -22,4 +23,25 @@ test('open_port answers as it documents', function () {
     $opened = mcpCall($workspace, mcpKey($workspace), 'open_port', ['machine' => 'web-1', 'port' => 8443]);
 
     expect($opened['error'])->toBeFalse()->and($opened['data']['port'])->toBe('8443/tcp');
+});
+
+test('empty maps go out as objects, and empty labels or deploy errors as nothing', function () {
+    config()->set('daemon.gateway_internal_url', 'http://127.0.0.1:8090');
+    config()->set('daemon.gateway_secret', 'test-gateway-secret');
+    Http::fake(['127.0.0.1:8090/*' => Http::response(['queued' => true], 202)]);
+    $workspace = Workspace::factory()->create();
+    $machine = Machine::factory()->for($workspace)->create(['name' => 'bare']);
+    $machine->forceFill(['uid' => (string) Str::uuid(), 'last_seen_at' => now(), 'inventory' => ['scanned_at' => now()->getTimestamp(), 'services' => [], 'listeners' => []]])->save();
+    $key = mcpKey($workspace);
+
+    $raw = mcpRequest($workspace, $key, 'tools/call', ['name' => 'get_machine', 'arguments' => ['machine' => 'bare']])->getContent();
+    expect($raw)->toContain('"byStatus":{}');
+    expect(mcpCall($workspace, $key, 'rescan_machine', ['machine' => 'bare'])['error'])->toBeFalse();
+
+    config()->set('daemon.install_ready', true);
+    $added = mcpCall($workspace, $key, 'add_machine', ['labels' => ['team' => '  ']]);
+    expect($added['data']['details'])->toBeNull();
+
+    DaemonJob::query()->create(['id' => (string) Str::uuid(), 'machine_id' => $machine->id, 'user_id' => $workspace->owner_id, 'kind' => 'deploy', 'service' => 'shop', 'state' => 'failed', 'command' => ['job' => ['type' => 'deploy', 'service' => 'shop']], 'error' => ['code' => 'gone']]);
+    expect(mcpCall($workspace, $key, 'list_deploys', ['machine' => 'bare'])['data']['deploys'][0]['error'])->toBeNull();
 });
