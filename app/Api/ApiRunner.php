@@ -51,7 +51,7 @@ final class ApiRunner
             $data = $context->within(fn () => $tool->handle($context, $arguments));
             AuditCoverage::afterTool($tool);
 
-            return [200, ['data' => is_string($data) ? ['text' => $data] : ($data === [] ? new \stdClass : $data)]];
+            return [$tool->successStatus($data), ['data' => is_string($data) ? ['text' => $data] : ($data === [] ? new \stdClass : $data)]];
         } catch (ToolError $e) {
             $message = $e->getMessage();
 

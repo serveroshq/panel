@@ -103,10 +103,10 @@ function schemaProblems(mixed $value, array $schema, array $components, string $
     return $problems;
 }
 
-/** Checks an answer against the 200 schema its route documents, and returns the data. */
-function matchesDocumented(TestResponse $response, string $tool, array &$checked): mixed
+/** Checks an answer against the schema its route documents, and returns the data. */
+function matchesDocumented(TestResponse $response, string $tool, array &$checked, int $status = 200): mixed
 {
-    $response->assertOk();
+    $response->assertStatus($status);
     $document = OpenApi::document(app(ToolRegistry::class));
     $schema = app(ToolRegistry::class)->find($tool)->responseSchema();
     $data = json_decode($response->getContent())->data;
@@ -126,7 +126,7 @@ test('every tool that documents its answer answers just that', function () {
 
     $dry = matchesDocumented(schemaApi($key, 'POST', 'operations', ['kind' => 'service_action', 'selector' => ['tier' => 'web'], 'service_action' => ['service' => 'shop', 'action' => 'restart'], 'dry_run' => true]), 'create_operation', $checked);
     expect($dry->dryRun)->toBeTrue();
-    $operation = matchesDocumented(schemaApi($key, 'POST', 'operations', ['kind' => 'service_action', 'selector' => ['tier' => 'web'], 'service_action' => ['service' => 'shop', 'action' => 'restart'], 'strategy' => ['batch_size' => 1]]), 'create_operation', $checked)->operation;
+    $operation = matchesDocumented(schemaApi($key, 'POST', 'operations', ['kind' => 'service_action', 'selector' => ['tier' => 'web'], 'service_action' => ['service' => 'shop', 'action' => 'restart'], 'strategy' => ['batch_size' => 1]]), 'create_operation', $checked, 202)->operation;
     matchesDocumented(schemaApi($key, 'GET', "operations/{$operation->id}"), 'get_operation', $checked);
     matchesDocumented(schemaApi($key, 'GET', 'operations'), 'list_operations', $checked);
     matchesDocumented(schemaApi($key, 'POST', "operations/{$operation->id}/pause"), 'pause_operation', $checked);
@@ -169,7 +169,9 @@ test('the OpenAPI document is whole: shared shapes resolve, ids are unique, ever
 
     $offset = collect($document['paths']['/machines']['get']['parameters'])->firstWhere('name', 'offset');
     expect($offset['deprecated'])->toBeTrue()
-        ->and(collect($document['paths']['/machines']['get']['parameters'])->pluck('name'))->toContain('cursor');
+        ->and(collect($document['paths']['/machines']['get']['parameters'])->pluck('name'))->toContain('cursor')
+        ->and($document['paths']['/operations']['post']['responses'])->toHaveKey('202')
+        ->and($document['paths']['/machines']['get']['responses'])->not->toHaveKey('202');
 });
 
 test('lists page with a cursor; offset still works but says it is deprecated', function () {

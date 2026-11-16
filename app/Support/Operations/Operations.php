@@ -12,6 +12,7 @@ use App\Mcp\ToolRegistry;
 use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Models\McpToken;
+use App\Models\Monitor;
 use App\Models\Operation;
 use App\Models\OperationMachine;
 use App\Support\Deploys\AppReleases;
@@ -553,8 +554,12 @@ final class Operations
             return;
         }
         $status = self::healthStatus($operation, $machine, $context);
+        $monitor = $target->healthy_at === null ? null : Monitor::query()->where('machine_id', $machine->id)->where('paused', false)->where('status', 'down')
+            ->where('status_changed_at', '>=', $target->healthy_at->subSeconds($operation->wait_healthy_seconds))->value('name');
         if ($status !== 'running') {
             $this->settle($target, 'failed', "Done, but {$service} stopped running before {$operation->wait_healthy_seconds} seconds were up ".($status === null ? '(it’s gone).' : "(it’s {$status})."));
+        } elseif ($monitor !== null) {
+            $this->settle($target, 'failed', "Done, but the monitor {$monitor} on this machine went down before {$operation->wait_healthy_seconds} seconds were up.");
         } elseif ($target->healthy_at !== null && ! $target->healthy_at->isFuture()) {
             $this->settle($target, 'succeeded', "Done, and running for {$operation->wait_healthy_seconds} seconds.");
         }

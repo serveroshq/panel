@@ -9,6 +9,7 @@ use App\Models\McpToken;
 use App\Models\Operation;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Activity\ActivityLine;
 use App\Support\Operations\Operations;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -91,7 +92,7 @@ function targetStates(Operation $operation): array
 test('an operation restarts a service in batches, and the next batch waits for the one before', function () {
     [$workspace, $key] = operationsWorkspace();
 
-    $answer = restartProd($key, ['batch_size' => 2])->assertOk()
+    $answer = restartProd($key, ['batch_size' => 2])->assertAccepted()
         ->assertJsonPath('data.operation.kind', 'service_action')
         ->assertJsonPath('data.operation.state', 'running')
         ->assertJsonPath('data.operation.strategy.machinesPerBatch', 2)
@@ -125,7 +126,9 @@ test('an operation restarts a service in batches, and the next batch waits for t
     $lines = Activity::query()->where('workspace_id', $workspace->id)->get();
     expect($lines->where('action', 'operation.start')->sole()->meta)->toMatchArray(['operation' => $operation->id, 'kind' => 'service_action', 'action' => 'restart', 'machines' => 3, 'batch' => 2, 'via' => 'api'])
         ->and($lines->where('action', 'service.restart')->pluck('meta.operation')->unique()->values()->all())->toBe([$operation->id])
-        ->and($lines->where('action', 'service.restart')->count())->toBe(3);
+        ->and($lines->where('action', 'service.restart')->count())->toBe(3)
+        ->and(ActivityLine::describe($lines->where('action', 'service.restart')->first(), false))->toMatchArray(['detail' => "GET /api/v1/operations/{$operation->id}", 'mono' => true])
+        ->and(ActivityLine::describe($lines->where('action', 'operation.start')->sole(), false)['detail'])->toBe("GET /api/v1/operations/{$operation->id}");
 
     operationsApi($key, 'GET', 'operations?state=finished')->assertOk()->assertJsonPath('data.total', 1)
         ->assertJsonMissingPath('data.operations.0.machines');
@@ -221,15 +224,37 @@ test('maintenance starts and ends on every machine, with no job to wait for', fu
     [$workspace, $key] = operationsWorkspace(2);
     $maintenance = fn (array $params) => operationsApi($key, 'POST', 'operations', ['kind' => 'maintenance', 'selector' => ['labels' => ['env' => 'prod']], 'maintenance' => $params]);
 
-    $maintenance(['action' => 'start', 'minutes' => 30, 'reason' => 'Upgrading Postgres'])->assertOk()
+    $maintenance(['action' => 'start', 'minutes' => 30, 'reason' => 'Upgrading Postgres'])->assertAccepted()
         ->assertJsonPath('data.operation.state', 'finished')
         ->assertJsonPath('data.operation.progress.succeeded', 2);
     expect($workspace->machines()->get()->filter->inMaintenance()->pluck('name')->sort()->values()->all())->toBe(['web-1', 'web-2']);
 
-    $maintenance(['action' => 'end'])->assertOk()->assertJsonPath('data.operation.progress.succeeded', 2);
+    $maintenance(['action' => 'end'])->assertAccepted()->assertJsonPath('data.operation.progress.succeeded', 2);
     expect($workspace->machines()->get()->filter->inMaintenance()->all())->toBe([]);
 
     $maintenance(['action' => 'start', 'minutes' => 7])->assertStatus(422)->assertJsonPath('error.type', 'invalid_arguments');
+});
+
+test('wait_healthy_seconds also fails a machine whose monitor goes down while it waits, but not one that was already down', function () {
+    [$workspace, $key] = operationsWorkspace(3);
+    $machines = $workspace->machines()->orderBy('name')->get()->keyBy('name');
+    $monitor = fn (string $machine, array $attributes) => $workspace->monitors()->create(['machine_id' => $machines[$machine]->id, 'name' => "{$machine} site", 'type' => 'http', 'url' => 'https://shop.example.com', 'interval_seconds' => 60, 'timeout_seconds' => 10, ...$attributes]);
+    $monitor('web-1', ['status' => 'down', 'status_changed_at' => now()->subHour()]);
+    $operation = Operation::query()->findOrFail(restartProd($key, ['wait_healthy_seconds' => 60])->json('data.operation.id'));
+
+    finishJobs($operation);
+    tickOperations();
+    $this->travel(10)->seconds();
+    $monitor('web-2', ['status' => 'down', 'status_changed_at' => now()]);
+    $monitor('web-3', ['status' => 'down', 'status_changed_at' => now(), 'paused' => true]);
+
+    tickOperations();
+    expect(targetStates($operation))->toBe(['web-1' => 'checking', 'web-2' => 'failed', 'web-3' => 'checking'])
+        ->and($operation->targets()->where('machine_name', 'web-2')->value('outcome'))->toContain('monitor web-2 site');
+
+    $this->travel(61)->seconds();
+    tickOperations();
+    expect(targetStates($operation))->toMatchArray(['web-1' => 'succeeded', 'web-3' => 'succeeded']);
 });
 
 test('wait_healthy_seconds needs the service to stay running before a machine counts as done', function () {
@@ -263,7 +288,7 @@ test('deploy_version runs deploy_new_version on each machine, and its refusal fa
         'machines' => ['web-1', 'web-2'],
         'deploy_version' => ['app' => 'blog', 'ref' => 'v2'],
         'strategy' => ['batch_size' => 1],
-    ])->assertOk()->json('data.operation.id'));
+    ])->assertAccepted()->json('data.operation.id'));
 
     expect($operation->state)->toBe('paused')
         ->and(targetStates($operation))->toBe(['web-1' => 'failed', 'web-2' => 'pending'])
@@ -280,7 +305,7 @@ test('only keys and people allowed to make changes can start or steer one', func
     restartProd($viewerKey)->assertForbidden();
 
     [, $key] = McpToken::issueKey($workspace, $workspace->owner, 'CI', Scopes::ALL, McpToken::API);
-    $id = restartProd($key, ['batch_size' => 1])->assertOk()->json('data.operation.id');
+    $id = restartProd($key, ['batch_size' => 1])->assertAccepted()->json('data.operation.id');
     operationsApi($readKey, 'GET', "operations/{$id}")->assertOk();
     operationsApi($readKey, 'POST', "operations/{$id}/cancel")->assertForbidden();
 
@@ -311,7 +336,7 @@ test('workspace limits cap machines per operation and operations at once', funct
 
     config()->set('api.operations.machines', 500);
     config()->set('api.operations.running', 1);
-    restartProd($key, ['batch_size' => 1])->assertOk();
+    restartProd($key, ['batch_size' => 1])->assertAccepted();
     restartProd($key)->assertStatus(422)->assertJsonPath('error.message', fn (string $m) => str_contains($m, 'at once'));
 });
 
@@ -319,8 +344,8 @@ test('the same Idempotency-Key starts one operation', function () {
     [, $key] = operationsWorkspace(2);
     $body = ['kind' => 'service_action', 'selector' => ['labels' => ['env' => 'prod']], 'service_action' => ['service' => 'shop', 'action' => 'restart']];
 
-    $first = operationsApi($key, 'POST', 'operations', $body, ['Idempotency-Key' => 'restart-shop'])->assertOk();
-    operationsApi($key, 'POST', 'operations', $body, ['Idempotency-Key' => 'restart-shop'])->assertOk()
+    $first = operationsApi($key, 'POST', 'operations', $body, ['Idempotency-Key' => 'restart-shop'])->assertAccepted();
+    operationsApi($key, 'POST', 'operations', $body, ['Idempotency-Key' => 'restart-shop'])->assertAccepted()
         ->assertHeader('Idempotent-Replayed', 'true')
         ->assertJsonPath('data.operation.id', $first->json('data.operation.id'));
 

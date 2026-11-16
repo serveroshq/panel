@@ -81,11 +81,12 @@ final class OpenApi
             }
             $operation['parameters'] = array_map(fn (array $p) => array_filter($p, fn ($v) => $v !== null), $parameters);
             $answer = $tool->responseSchema();
+            $content = ['application/json' => ['schema' => $answer === null
+                ? ['$ref' => '#/components/schemas/Data']
+                : ['type' => 'object', 'required' => ['data'], 'properties' => ['data' => $answer]],
+            ]];
             $operation['responses'] = [
-                '200' => ['description' => 'Done. What the tool answered is under data.', 'content' => ['application/json' => ['schema' => $answer === null
-                    ? ['$ref' => '#/components/schemas/Data']
-                    : ['type' => 'object', 'required' => ['data'], 'properties' => ['data' => $answer]],
-                ]]],
+                '200' => ['description' => 'Done. What the tool answered is under data.', 'content' => $content],
                 '400' => ['$ref' => '#/components/responses/InvalidJson'],
                 '401' => ['$ref' => '#/components/responses/Unauthenticated'],
                 '402' => ['$ref' => '#/components/responses/PlanRequired'],
@@ -95,6 +96,9 @@ final class OpenApi
                 '429' => ['$ref' => '#/components/responses/RateLimited'],
                 '500' => ['$ref' => '#/components/responses/ServerError'],
             ];
+            if ($tool->successStatus([]) === 202) {
+                $operation['responses']['202'] = ['description' => 'Started: the work carries on after this answer.', 'content' => $content];
+            }
             if ($method !== 'get') {
                 $operation['responses']['409'] = ['$ref' => '#/components/responses/Conflict'];
             }

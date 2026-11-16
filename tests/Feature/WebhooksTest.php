@@ -150,7 +150,7 @@ test('deploys finishing, machines going offline and back, and operations each se
     $machine->forceFill(['last_seen_at' => now()])->save();
     app(MachineWatcher::class)->run();
 
-    webhookApi($key, 'POST', 'operations', ['kind' => 'maintenance', 'machines' => ['web-1'], 'maintenance' => ['action' => 'start', 'minutes' => 30]])->assertOk();
+    webhookApi($key, 'POST', 'operations', ['kind' => 'maintenance', 'machines' => ['web-1'], 'maintenance' => ['action' => 'start', 'minutes' => 30]])->assertAccepted();
 
     $events = collect(sentWebhooks());
     expect($events->pluck(0)->all())->toBe(['deploy.finished', 'machine.offline', 'machine.online', 'operation.started', 'operation.finished'])

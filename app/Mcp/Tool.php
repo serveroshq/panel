@@ -36,6 +36,15 @@ abstract class Tool
         return null;
     }
 
+    /**
+     * The API's status code for what it answered: 202 when it started work
+     * that carries on after the answer.
+     */
+    public function successStatus(mixed $data): int
+    {
+        return 200;
+    }
+
     public function scope(): string
     {
         return Scopes::READ;

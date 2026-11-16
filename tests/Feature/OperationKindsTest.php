@@ -61,13 +61,13 @@ test('deploy runs deploy_template on every machine under one name, or deploy_fro
     [, $key] = kindsWorkspace();
 
     $id = kindsOperation($key, ['kind' => 'deploy', 'deploy' => ['template' => 'postgres', 'name' => 'db'], 'strategy' => ['batch_size' => 1]])
-        ->assertOk()->json('data.operation.id');
+        ->assertAccepted()->json('data.operation.id');
     expect(kindsStates($id))->toBe(['web-1' => 'running', 'web-2' => 'pending'])
         ->and(DaemonJob::query()->where('kind', 'deploy')->sole()->service)->toBe('db');
 
     // From a repository: deploy_from_git is the tool each machine runs (and here it can't reach the repository).
     $git = kindsOperation($key, ['kind' => 'deploy', 'machines' => ['web-1'], 'selector' => null, 'deploy' => ['repo' => 'https://github.com/acme/private-shop', 'name' => 'shop2', 'port' => 3000]])
-        ->assertOk()->json('data.operation');
+        ->assertAccepted()->json('data.operation');
     expect($git['machines'][0]['state'])->toBe('failed')
         ->and(McpToolCall::query()->where('tool', 'deploy_from_git')->count())->toBe(1);
 
@@ -108,7 +108,7 @@ test('rollback takes each machine back to the version before its live one, after
         ->assertJsonPath('error.message', fn (string $m) => str_contains($m, 'confirm'));
 
     $operation = kindsOperation($key, ['kind' => 'rollback', 'rollback' => ['app' => 'shop', 'confirm' => 'shop'], 'strategy' => ['stop_on_failure' => false]])
-        ->assertOk()->json('data.operation');
+        ->assertAccepted()->json('data.operation');
 
     expect(collect($operation['machines'])->pluck('state', 'machine.name')->all())->toBe(['web-1' => 'running', 'web-2' => 'failed'])
         ->and($operation['machines'][1]['outcome'])->toContain('no earlier version');
@@ -119,7 +119,7 @@ test('rollback takes each machine back to the version before its live one, after
 test('command runs in each container, needs the commands scope and two-factor, and a non-zero exit fails that machine', function () {
     [$workspace, $key] = kindsWorkspace();
     $id = kindsOperation($key, ['kind' => 'command', 'command' => ['service' => 'shop', 'command' => 'php artisan cache:clear'], 'strategy' => ['stop_on_failure' => false]])
-        ->assertOk()->json('data.operation.id');
+        ->assertAccepted()->json('data.operation.id');
 
     $jobs = DaemonJob::query()->where('kind', 'service_exec')->get();
     expect($jobs)->toHaveCount(2)
@@ -148,7 +148,7 @@ test('update_machines sets labels, tier and environment, and moves machines into
     $group = $workspace->machineGroups()->create(['name' => 'eu-web']);
 
     kindsOperation($key, ['kind' => 'update_machines', 'update_machines' => ['labels' => ['app' => 'shop', 'env' => null], 'tier' => 'web', 'group' => 'eu-web']])
-        ->assertOk()->assertJsonPath('data.operation.state', 'finished')->assertJsonPath('data.operation.progress.succeeded', 2);
+        ->assertAccepted()->assertJsonPath('data.operation.state', 'finished')->assertJsonPath('data.operation.progress.succeeded', 2);
 
     foreach ($workspace->machines()->get() as $machine) {
         expect($machine->labels)->toBe(['app' => 'shop'])
@@ -158,7 +158,7 @@ test('update_machines sets labels, tier and environment, and moves machines into
 
     $other = $workspace->machineGroups()->create(['name' => 'us-web']);
     kindsOperation($key, ['kind' => 'update_machines', 'selector' => ['labels' => ['app' => 'shop']], 'update_machines' => ['group' => 'us-web']])
-        ->assertOk()->assertJsonPath('data.operation.progress.succeeded', 2);
+        ->assertAccepted()->assertJsonPath('data.operation.progress.succeeded', 2);
     expect($workspace->machines()->pluck('machine_group_id')->unique()->all())->toBe([$other->id]);
 
     kindsOperation($key, ['kind' => 'update_machines', 'selector' => ['labels' => ['app' => 'shop']], 'update_machines' => []])->assertStatus(422);
@@ -168,7 +168,7 @@ test('update_machines sets labels, tier and environment, and moves machines into
 test('a deployed stack counts as healthy only while every container in it is running', function () {
     [$workspace, $key] = kindsWorkspace();
     $id = kindsOperation($key, ['kind' => 'deploy', 'deploy' => ['template' => 'postgres', 'name' => 'tools'], 'strategy' => ['wait_healthy_seconds' => 60, 'stop_on_failure' => false]])
-        ->assertOk()->json('data.operation.id');
+        ->assertAccepted()->json('data.operation.id');
     DaemonJob::query()->where('kind', 'deploy')->update(['state' => 'succeeded', 'finished_at' => now()]);
 
     foreach ($workspace->machines as $machine) {

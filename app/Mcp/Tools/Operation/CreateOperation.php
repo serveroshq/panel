@@ -33,7 +33,7 @@ final class CreateOperation extends Tool
     {
         return 'Runs one piece of work on many machines, in batches: deploy (a template or a Git repository, under one name), deploy_version (ship a new version of an app already on them), rollback (back to each machine’s previous version, or a commit), service_action (start, stop, restart or reload a service), command (run a shell command in a container; needs the commands scope and two-factor authentication, as the console does), maintenance (start or end it) or update_machines (labels, tier, environment, or move them into a group). '
             .'Pick the machines with a selector (groups, labels, provider, region, tier, online) or machines (ids or names); they are fixed when it starts, so a machine that joins later isn’t touched. Each machine runs the same tool you would call for one machine, with the same checks. '
-            .'strategy: batch_size (a number, or a percentage like "25%"; leave out to run all at once) runs that many at a time, and the next batch starts once every machine in it has finished; wait_healthy_seconds makes the service stay running that long first; pause_between_seconds waits between batches. When more than max_failures (default 0) machines fail, it pauses for a person to look, unless stop_on_failure is false. A machine that’s offline at its turn is skipped. '
+            .'strategy: batch_size (a number, or a percentage like "25%"; leave out to run all at once) runs that many at a time, and the next batch starts once every machine in it has finished; wait_healthy_seconds makes the service stay running, and the machine’s monitors stay up, that long first; pause_between_seconds waits between batches. When more than max_failures (default 0) machines fail, it pauses for a person to look, unless stop_on_failure is false. A machine that’s offline at its turn is skipped. '
             .'dry_run: true shows the machines and batches without starting anything. Follow it with get_operation; pause_operation, resume_operation and cancel_operation steer it.';
     }
 
@@ -87,7 +87,7 @@ final class CreateOperation extends Tool
                 'batch_size' => ['type' => ['integer', 'string'], 'maxLength' => 4, 'minimum' => 1, 'maximum' => 1000, 'description' => 'How many machines at a time: a number, or a percentage like "25%". Leave out to run them all at once.'],
                 'stop_on_failure' => Schema::boolean('Pause when more than max_failures machines fail (default true).'),
                 'max_failures' => Schema::integer('How many machines may fail before it pauses (default 0).', 0, 1000),
-                'wait_healthy_seconds' => Schema::integer('After each machine’s job, how long its service must stay running before it counts as done (0–3600, default 0).', 0, Operations::MAX_SECONDS),
+                'wait_healthy_seconds' => Schema::integer('After each machine’s job, how long its service must stay running, and that machine’s monitors stay up, before it counts as done (0–3600, default 0).', 0, Operations::MAX_SECONDS),
                 'pause_between_seconds' => Schema::integer('How long to wait between batches (0–3600, default 0).', 0, Operations::MAX_SECONDS),
             ]) + ['description' => 'How to roll it out.'],
             'dry_run' => Schema::boolean('Only show the machines and batches it would use; start nothing.'),
@@ -109,6 +109,11 @@ final class CreateOperation extends Tool
             'batches' => ['type' => 'array', 'items' => ['type' => 'array', 'items' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => ['type' => 'string']], ['id', 'name'])]],
             'machines' => ['type' => 'array', 'items' => ResponseSchemas::ref('Machine')],
         ], description: 'The operation it started, or with dry_run the machines and batches it would use.');
+    }
+
+    public function successStatus(mixed $data): int
+    {
+        return is_array($data) && ($data['dryRun'] ?? false) ? 200 : 202;
     }
 
     public function handle(McpContext $context, array $arguments): array

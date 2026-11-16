@@ -384,6 +384,9 @@ final class ActivityLine
             $out['detail'] = $meta['error'] ?? null;
         } elseif ($a->action === 'monitor.down') {
             $out['detail'] = $meta['cause'] ?? null;
+        } elseif (is_int($meta['operation'] ?? null)) {
+            $out['detail'] = 'GET /api/v1/operations/'.$meta['operation'];
+            $out['mono'] = true;
         }
 
         if (! $a->byPerson() && in_array($a->action, ['machine.offline', 'machine.online', 'machine.disk_full', 'monitor.down', 'monitor.up', 'backup.failed', 'backup.restore_failed', 'machine.connect', 'service.down', 'service.up', 'service.crash_loop', 'workflow.run', 'workflow.failed', 'workflow.skipped', 'fix.done', 'fix.failed', 'mcp.revoke', 'domain.active', 'machine.daemon_updated', 'daemon.update_waiting', 'panel.updated', 'panel.update_failed', 'email_domain.unverified', 'cloud.suspend', 'cloud.resume', 'cloud.end', 'cloud.throttle'], true)) {
