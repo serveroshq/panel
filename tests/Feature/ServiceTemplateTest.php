@@ -426,7 +426,7 @@ test('the deploy dialog learns which names and ports are taken, so a second data
 
     $this->actingAs($workspace->owner)->getJson($url.'/taken')
         ->assertOk()
-        ->assertExactJson(['services' => ['postgres', 'shop'], 'ports' => [80, 5432]]);
+        ->assertExactJson(['services' => ['postgres', 'shop'], 'ports' => [80, 5432], 'proxy' => null, 'canChooseProxy' => false]);
 
     $this->actingAs(User::factory()->create())->getJson($url.'/taken')->assertForbidden();
 });

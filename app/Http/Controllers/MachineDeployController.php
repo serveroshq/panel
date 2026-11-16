@@ -41,8 +41,9 @@ class MachineDeployController extends Controller
 
         DeployRequest::assertPublicRepo($data['repo']);
         DeployRequest::assertWildcard($machine, $data['domain'] ?? null, (bool) ($data['wildcard'] ?? false));
+        $proxy = DeployRequest::proxy($machine, $data['domain'] ?? null, $data['proxy'] ?? null);
 
-        return $this->dispatch($request, $machine, $queue, DeployRequest::gitJob($data));
+        return $this->dispatch($request, $machine, $queue, DeployRequest::withProxy(DeployRequest::gitJob($data), $proxy));
     }
 
     public function taken(Workspace $workspace, Machine $machine): JsonResponse
@@ -50,7 +51,11 @@ class MachineDeployController extends Controller
         abort_unless($machine->workspace_id === $workspace->id, 404);
         Gate::authorize('manageMachines', $workspace);
 
-        return response()->json(Placement::taken($machine));
+        return response()->json([
+            ...Placement::taken($machine),
+            'proxy' => $machine->proxy,
+            'canChooseProxy' => DaemonJobQueue::canChooseProxy($machine),
+        ]);
     }
 
     private function deployTemplate(Request $request, Machine $machine, DaemonJobQueue $queue, ServiceTemplateCatalog $catalog): JsonResponse
@@ -71,9 +76,10 @@ class MachineDeployController extends Controller
         }
         DeployRequest::assertWildcard($machine, $template->web ? ($data['domain'] ?? null) : null, (bool) ($data['wildcard'] ?? false));
         DeployRequest::assertComposeFromRepo($machine, $template);
+        $proxy = DeployRequest::proxy($machine, $template->web ? ($data['domain'] ?? null) : null, $data['proxy'] ?? null);
 
         $deployment = new TemplateDeployment($template, $machine, $data);
-        $response = $this->dispatch($request, $machine, $queue, $deployment->job());
+        $response = $this->dispatch($request, $machine, $queue, DeployRequest::withProxy($deployment->job(), $proxy));
 
         if ($response->getStatusCode() !== 202) {
             return $response;

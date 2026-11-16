@@ -408,6 +408,11 @@ class DaemonJobQueue
         }
     }
 
+    public static function canChooseProxy(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.proxy_choice_since'));
+    }
+
     public static function canWildcard(Machine $machine): bool
     {
         return self::atLeast($machine, (string) config('daemon.wildcard_domains_since'));
