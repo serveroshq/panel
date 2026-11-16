@@ -404,6 +404,10 @@ class AssistantAgent
             'stale' => 'the machine stopped answering',
             default => null,
         });
+        $line = DeployFailure::keyLine((array) ($job->error['output_tail'] ?? []));
+        if ($line !== null && is_string($error) && ! str_contains($error, $line)) {
+            $error = rtrim($error, '. ').". The machine said: {$line}";
+        }
 
         return [
             'ok' => ! $finished || $job->state === 'succeeded',

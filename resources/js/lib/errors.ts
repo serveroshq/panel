@@ -77,12 +77,34 @@ export function reasonIn(raw: unknown): string | null {
     return null;
 }
 
+const TELLING =
+    /^E: |\b(error|errors|fail|failed|failure|fatal|denied|not found|unable|cannot|can['’]t|couldn['’]?t|invalid|refused|no such|missing|timed out|killed)\b/i;
+
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, 'g');
+
+export function keyLine(lines: unknown): string | null {
+    if (!Array.isArray(lines)) return null;
+    const clean = lines
+        .filter((line): line is string => typeof line === 'string')
+        .map((line) => line.replace(ANSI, '').trim())
+        .filter((line) => line !== '' && !/^(W: |warning\b)/i.test(line));
+    const line =
+        [...clean].reverse().find((l) => TELLING.test(l)) ?? clean.at(-1);
+    if (!line) return null;
+    return line.length > 300 ? `${line.slice(0, 299)}…` : line;
+}
+
 export function jobReason(error: unknown, fallback: string): string {
     if (!error || typeof error !== 'object') return fallback;
     const e = error as Record<string, unknown>;
     const message = text(e.message);
     const next = e.next_step ?? e.nextStep;
-    return message ? withNextStep(message, next) : (text(next) ?? fallback);
+    const base = message
+        ? withNextStep(message, next)
+        : (text(next) ?? fallback);
+    const line = keyLine(e.output_tail ?? e.outputTail);
+    if (!line || base.includes(line)) return base;
+    return `${base.replace(/[.\s]*$/, '.')} ${trans('The machine said: :line', { line })}`;
 }
 
 export function statusMessage(status: number): string {

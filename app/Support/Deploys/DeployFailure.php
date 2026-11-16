@@ -3,6 +3,7 @@
 namespace App\Support\Deploys;
 
 use App\Models\DaemonJob;
+use Illuminate\Support\Str;
 
 final class DeployFailure
 {
@@ -268,6 +269,19 @@ final class DeployFailure
             ],
             default => null,
         };
+    }
+
+    /** @param  array<mixed>  $lines */
+    public static function keyLine(array $lines): ?string
+    {
+        $clean = array_values(array_filter(
+            array_map(fn ($line) => is_string($line) ? trim((string) preg_replace('/\x1b\[[0-9;]*[A-Za-z]/', '', $line)) : '', $lines),
+            fn (string $line) => $line !== '' && preg_match('/^(W: |warning\b)/i', $line) !== 1,
+        ));
+        $telling = array_values(array_filter($clean, fn (string $line) => preg_match('/^E: |\b(error|errors|fail|failed|failure|fatal|denied|not found|unable|cannot|can[\'’]t|couldn[\'’]?t|invalid|refused|no such|missing|timed out|killed)\b/i', $line) === 1));
+        $line = end($telling) ?: end($clean);
+
+        return $line === false ? null : Str::limit($line, 300);
     }
 
     private static function missingVariable(string $text): ?string

@@ -113,3 +113,13 @@ test('a workflow step that fails says why, without leaking database or HTTP clie
         ->and($failure(new ConnectionException('cURL error 7 for https://hooks.example.com/secret-token')))->toContain('Couldn’t connect')
         ->and($failure(new LogicException('internal')))->toContain('It’s been logged');
 });
+
+test('the most telling line of a failure’s output is picked out', function (array $lines, ?string $expected) {
+    expect(DeployFailure::keyLine($lines))->toBe($expected);
+})->with([
+    'apt' => [['Reading package lists...', 'Building dependency tree...', 'E: Unable to locate package nginx-full', 'W: some warning'], 'E: Unable to locate package nginx-full'],
+    'colours stripped' => [["\e[31merror: permission denied\e[0m", 'done'], 'error: permission denied'],
+    'nothing telling' => [['step 1', 'step 2', ''], 'step 2'],
+    'empty' => [[], null],
+    'not text' => [[['nested'], 42], null],
+]);

@@ -3584,5 +3584,6 @@
     "Too many tries. Wait a minute, then try again.": "Demasiados intentos. Espera un minuto y vuelve a intentarlo.",
     "You don’t have permission to do that in this workspace.": "No tienes permiso para hacer eso en este espacio de trabajo.",
     "You’re offline. Check your connection and try again.": "Estás sin conexión. Revisa tu conexión e inténtalo de nuevo.",
-    "You’ve been signed out. Reload the page and sign in again.": "Se cerró tu sesión. Recarga la página e inicia sesión de nuevo."
+    "You’ve been signed out. Reload the page and sign in again.": "Se cerró tu sesión. Recarga la página e inicia sesión de nuevo.",
+    "The machine said: :line": "La máquina dijo: :line"
 }

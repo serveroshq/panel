@@ -2030,7 +2030,7 @@ const focusRing =
                     {{ ' ' + $t('Fetching logs…') + ' ' }}
                 </p>
                 <p v-else-if="logsJob.error" class="px-4 text-(--ds-red)">
-                    {{ logsJob.error.message }}
+                    {{ jobReason(logsJob.error, $t('That didn’t finish.')) }}
                 </p>
                 <p
                     v-else-if="logs.length === 0"
@@ -2996,7 +2996,12 @@ const focusRing =
                                         {{ line }}
                                     </div>
                                     <p v-if="job.error" class="text-(--ds-red)">
-                                        {{ job.error.message }}
+                                        {{
+                                            jobReason(
+                                                job.error,
+                                                $t('That didn’t finish.'),
+                                            )
+                                        }}
                                     </p>
                                 </div>
                             </div>

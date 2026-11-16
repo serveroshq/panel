@@ -92,7 +92,7 @@ import type { Component } from 'vue';
 import { jobStatus } from '@/lib/jobStatus';
 import type { Tone } from '@/lib/jobStatus';
 import type { Workspace, WorkspaceAccess } from '@/types';
-import { describe, errorMessage } from '@/lib/errors';
+import { describe, errorMessage, jobReason } from '@/lib/errors';
 
 const upgrade = useUpgradeLink();
 
@@ -442,7 +442,7 @@ function jobIcon(job: DaemonJob): Component {
 }
 
 function jobDetail(job: DaemonJob): string {
-    if (job.error) return job.explanation?.cause ?? job.error.message ?? '';
+    if (job.error) return job.explanation?.cause ?? jobReason(job.error, '');
     if (job.state === 'succeeded' && job.result?.container) {
         return trans('Container: :container · port :port', {
             container: String(job.result.container ?? ''),

@@ -68,11 +68,13 @@ final class JobAlerts
         if ($failed && ! $previousFailed) {
             $error = is_array($job->error) ? trim((string) ($job->error['message'] ?? '')) : '';
             $why = DeployFailure::explain($job);
+            $line = DeployFailure::keyLine((array) ($job->error['output_tail'] ?? []));
             $this->alerts->notify($machine->workspace, 'deploy.failed', "{$job->service} on {$machine->name} failed to deploy", array_values(array_filter($why !== null ? [
                 $why['cause'],
                 trim($why['fix'].(isset($why['command']) ? ' '.$why['command'] : '')),
             ] : [
                 $job->state === 'timed_out' ? 'The deploy took too long and was stopped.' : ($error !== '' ? $error : 'The deploy failed.'),
+                $line !== null && ! str_contains($error, $line) ? "The machine said: {$line}" : null,
                 'If an earlier version was running, it still is. The deploy’s log shows where it stopped.',
             ])), $url.'?job='.$job->id, true, 'Open the deploy', $extra);
         } elseif (! $failed && $previousFailed) {
