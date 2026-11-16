@@ -1,4 +1,5 @@
 {
+    ":proxy gets a certificate and sends HTTP to HTTPS, as soon as the domain points here.": ":proxy holt ein Zertifikat und leitet HTTP auf HTTPS um, sobald die Domain hierher zeigt.",
     ":to, updated from :from": ":to, aktualisiert von :from",
     "A development build": "Ein Entwicklungs-Build",
     "Add a card and start my free trial": "Karte hinzufügen und kostenlos testen",
@@ -16,7 +17,9 @@
     "HTTPS on its own, wildcard subdomains too": "HTTPS von selbst, auch für Wildcard-Subdomains",
     "is on": "läuft auf",
     "Not checked yet.": "Noch nicht geprüft.",
+    "Plain HTTP, no certificate. For when a CDN or proxy in front does HTTPS.": "Einfaches HTTP, kein Zertifikat. Für den Fall, dass ein CDN oder Proxy davor HTTPS übernimmt.",
     "Reverse proxy": "Reverse Proxy",
+    "Serve over HTTPS": "Über HTTPS ausliefern",
     "ServerOS :version": "ServerOS :version",
     "ServerOS :version is available. You’re on :current.": "ServerOS :version ist verfügbar. Du bist auf :current.",
     "ServerOS :version is out": "ServerOS :version ist da",

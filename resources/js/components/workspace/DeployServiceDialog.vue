@@ -462,6 +462,7 @@ const form = ref({
     domain: '',
     wildcard: false,
     proxy: '',
+    https: true,
     env: {} as Record<string, string | boolean>,
     extra_env: '',
 });
@@ -493,6 +494,7 @@ const proxyNames: Record<Proxy, string> = {
 };
 const machineProxy = ref<string | null>(null);
 const canChooseProxy = ref(false);
+const canChooseHttps = ref(false);
 const deployedProxy = ref<Proxy>('caddy');
 
 const currentProxy = computed<Proxy>(() =>
@@ -572,10 +574,12 @@ async function loadTaken(): Promise<void> {
             ports: number[];
             proxy?: string | null;
             canChooseProxy?: boolean;
+            canChooseHttps?: boolean;
         };
         taken.value = { services: body.services, ports: body.ports };
         machineProxy.value = body.proxy ?? null;
         canChooseProxy.value = Boolean(body.canChooseProxy);
+        canChooseHttps.value = Boolean(body.canChooseHttps);
     } catch {
         return;
     }
@@ -663,6 +667,7 @@ function choose(
         domain: '',
         wildcard: false,
         proxy: '',
+        https: true,
         env: Object.fromEntries(
             template.env.map((field) => [
                 field.key,
@@ -834,6 +839,10 @@ async function deploy(): Promise<void> {
                     canChooseProxy.value &&
                     chosenProxy.value !== currentProxy.value
                         ? chosenProxy.value
+                        : null,
+                https:
+                    template.web && form.value.domain && canChooseHttps.value
+                        ? form.value.https
                         : null,
                 env,
                 extra_env: form.value.extra_env || null,
@@ -2031,6 +2040,38 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                         />
                                     </div>
                                     <label
+                                        v-if="form.domain && canChooseHttps"
+                                        class="mt-1 flex cursor-pointer items-start gap-2.5 text-[13px]/5 text-(--ds-text-secondary) select-none"
+                                    >
+                                        <TickBox
+                                            v-model="form.https"
+                                            class="mt-0.5"
+                                        />
+                                        <span class="flex flex-col gap-0.5">
+                                            <span class="text-(--ds-text)">{{
+                                                $t('Serve over HTTPS')
+                                            }}</span>
+                                            <span
+                                                class="text-xs/4 text-(--ds-text-faint)"
+                                                >{{
+                                                    form.https
+                                                        ? $t(
+                                                              ':proxy gets a certificate and sends HTTP to HTTPS, as soon as the domain points here.',
+                                                              {
+                                                                  proxy: proxyNames[
+                                                                      chosenProxy
+                                                                  ],
+                                                              },
+                                                          )
+                                                        : $t(
+                                                              'Plain HTTP, no certificate. For when a CDN or proxy in front does HTTPS.',
+                                                          )
+                                                }}</span
+                                            >
+                                        </span>
+                                    </label>
+                                    <InputError :message="errorFor('https')" />
+                                    <label
                                         v-if="form.domain"
                                         class="mt-1 flex cursor-pointer items-start gap-2.5 text-[13px]/5 text-(--ds-text-secondary) select-none"
                                     >
@@ -2046,7 +2087,7 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                 class="text-xs/4 text-(--ds-text-faint)"
                                                 >{{
                                                     $t(
-                                                        chosenProxy === 'caddy'
+                                                        chosenProxy === 'caddy' && form.https
                                                             ? 'Every subdomain, like tenant.:domain, is served by this app and gets its own certificate the first time it’s visited. No DNS provider needed.'
                                                             : 'Every subdomain, like tenant.:domain, is served by this app over plain HTTP: a certificate for every subdomain needs Caddy.',
                                                         {

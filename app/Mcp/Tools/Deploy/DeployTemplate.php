@@ -62,6 +62,7 @@ final class DeployTemplate extends Tool
             'env' => ['type' => 'object', 'description' => 'The template’s settings by key (list_templates with template shows them), like {"WP_TITLE": "Field notes"}. Values are text; a setting to accept takes "true", once the person has accepted it. Leave secrets out to have them generated.', 'additionalProperties' => ['type' => 'string']],
             'extra_env' => Schema::string('More environment variables, as KEY=value lines (like "MAIL_MAILER=log\nAPI_URL=https://api.example.com").', maxLength: 10000),
             'proxy' => Schema::string('The reverse proxy that serves the domain: caddy (the default), nginx, apache or traefik. Picking one the machine doesn’t use yet moves every site on it over first. nginx, Apache and Traefik serve wildcard subdomains over plain HTTP. Only with domain.', array_keys(Machine::PROXIES)),
+            'https' => Schema::boolean('Serve the domain over HTTPS (default true): a certificate and HTTP redirected to it. false serves plain HTTP, for a CDN or proxy in front that does HTTPS. Only with domain.'),
             'replace' => Schema::boolean('Deploy even though something is already deployed under this name on the machine, replacing it. Only after the person agrees.'),
             'wait' => Deploys::waitSchema(),
         ], ['machine', 'template']);
@@ -92,6 +93,7 @@ final class DeployTemplate extends Tool
             'domain' => ['sometimes', 'nullable', 'string', 'max:300'],
             'wildcard' => ['sometimes', 'boolean'],
             'proxy' => ['sometimes', 'nullable', 'string', 'in:caddy,nginx,apache,traefik'],
+            'https' => ['sometimes', 'nullable', 'boolean'],
             'env' => ['sometimes', 'nullable', 'array'],
             'extra_env' => ['sometimes', 'nullable'],
             'replace' => ['sometimes', 'boolean'],
@@ -132,6 +134,7 @@ final class DeployTemplate extends Tool
             'compose_file' => $args['compose_file'] ?? null,
             'domain' => DeployRequest::bareDomain($args['domain'] ?? null),
             'wildcard' => ($args['wildcard'] ?? false) ? true : null,
+            'https' => isset($args['https']) ? (bool) $args['https'] : null,
             'env' => $env,
             'extra_env' => $extra,
         ], fn ($value) => $value !== null && $value !== '' && $value !== []);
@@ -158,7 +161,8 @@ final class DeployTemplate extends Tool
         Deploys::check(fn () => DeployRequest::assertComposeFromRepo($machine, $template));
 
         $proxy = Deploys::check(fn () => DeployRequest::proxy($machine, $template->web ? ($data['domain'] ?? null) : null, $args['proxy'] ?? null));
-        $job = $this->deploys->deploy($context, $machine, DeployRequest::withProxy($deployment->job(), is_string($proxy) ? $proxy : null));
+        $https = Deploys::check(fn () => DeployRequest::https($machine, $template->web ? ($data['domain'] ?? null) : null, $args['https'] ?? null));
+        $job = $this->deploys->deploy($context, $machine, DeployRequest::withHttps(DeployRequest::withProxy($deployment->job(), is_string($proxy) ? $proxy : null), is_bool($https) ? $https : null));
         AppInstall::record($machine, $context->user, $template->slug, $job->id, 'mcp');
         $job = $context->waitForJob($job, (int) ($args['wait'] ?? 0));
         $result = DeployRequest::templateResult($deployment, $data);

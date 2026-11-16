@@ -1,4 +1,5 @@
 {
+    ":proxy gets a certificate and sends HTTP to HTTPS, as soon as the domain points here.": "जैसे ही डोमेन यहाँ पॉइंट करता है, :proxy सर्टिफ़िकेट लेता है और HTTP को HTTPS पर भेजता है।",
     ":to, updated from :from": ":to, :from से अपडेट हुआ",
     "A development build": "एक डेवलपमेंट बिल्ड",
     "Add a card and start my free trial": "कार्ड जोड़ें और मेरा मुफ़्त ट्रायल शुरू करें",
@@ -16,7 +17,9 @@
     "HTTPS on its own, wildcard subdomains too": "HTTPS अपने आप, वाइल्डकार्ड सबडोमेन के लिए भी",
     "is on": "अब इस पर है:",
     "Not checked yet.": "अभी तक चेक नहीं किया गया।",
+    "Plain HTTP, no certificate. For when a CDN or proxy in front does HTTPS.": "सादा HTTP, कोई सर्टिफ़िकेट नहीं। तब के लिए जब आगे कोई CDN या प्रॉक्सी HTTPS संभालता है।",
     "Reverse proxy": "रिवर्स प्रॉक्सी",
+    "Serve over HTTPS": "HTTPS पर सर्व करें",
     "ServerOS :version": "ServerOS :version",
     "ServerOS :version is available. You’re on :current.": "ServerOS :version उपलब्ध है। आप :current पर हैं।",
     "ServerOS :version is out": "ServerOS :version आ गया है",

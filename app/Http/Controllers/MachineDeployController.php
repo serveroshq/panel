@@ -47,9 +47,11 @@ class MachineDeployController extends Controller
         DeployRequest::assertWildcard($machine, $data['domain'] ?? null, (bool) ($data['wildcard'] ?? false));
         DeployRequest::assertDocker($machine, $request->user());
         $proxy = DeployRequest::proxy($machine, $data['domain'] ?? null, $data['proxy'] ?? null);
+        $https = DeployRequest::https($machine, $data['domain'] ?? null, $data['https'] ?? null);
         $data['commit'] = $this->resolveCommit($data['repo'], $data['commit'] ?? null, $workspace, $refs);
 
-        $response = $this->dispatch($request, $machine, $queue, DeployRequest::withProxy(DeployRequest::gitJob($data), $proxy));
+        $job = DeployRequest::withHttps(DeployRequest::withProxy(DeployRequest::gitJob($data), $proxy), $https);
+        $response = $this->dispatch($request, $machine, $queue, $job);
 
         return $response->getStatusCode() === 202
             ? response()->json([...$response->getData(true), 'commit' => $data['commit']], 202)
@@ -65,6 +67,7 @@ class MachineDeployController extends Controller
             ...Placement::taken($machine),
             'proxy' => $machine->proxy,
             'canChooseProxy' => DaemonJobQueue::canChooseProxy($machine),
+            'canChooseHttps' => DaemonJobQueue::canChooseHttps($machine),
         ]);
     }
 
@@ -86,13 +89,14 @@ class MachineDeployController extends Controller
         DeployRequest::assertComposeFromRepo($machine, $template);
         DeployRequest::assertDocker($machine, $request->user());
         $proxy = DeployRequest::proxy($machine, $template->web ? ($data['domain'] ?? null) : null, $data['proxy'] ?? null);
+        $https = DeployRequest::https($machine, $template->web ? ($data['domain'] ?? null) : null, $data['https'] ?? null);
         if ($template->isApp()) {
             DeployRequest::assertPublicRepo($data['repo']);
             $data['commit'] = $this->resolveCommit($data['repo'], $data['commit'] ?? null, $workspace, $refs);
         }
 
         $deployment = new TemplateDeployment($template, $machine, $data);
-        $response = $this->dispatch($request, $machine, $queue, DeployRequest::withProxy($deployment->job(), $proxy));
+        $response = $this->dispatch($request, $machine, $queue, DeployRequest::withHttps(DeployRequest::withProxy($deployment->job(), $proxy), $https));
 
         if ($response->getStatusCode() !== 202) {
             return $response;

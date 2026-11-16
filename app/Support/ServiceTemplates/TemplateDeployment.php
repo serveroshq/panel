@@ -41,7 +41,7 @@ final class TemplateDeployment
 
         $domain = $this->domain();
         $this->url = $domain !== null
-            ? "https://{$domain}"
+            ? (($input['https'] ?? true) ? 'https://' : 'http://').$domain
             : $machine->localAddress($this->port) ?? 'http://'.($machine->ip_address ?: 'localhost').':'.$this->port;
 
         $this->resolveEnv();

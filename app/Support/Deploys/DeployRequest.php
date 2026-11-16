@@ -41,6 +41,7 @@ final class DeployRequest
             'domain' => ['nullable', 'string', 'max:253', 'regex:'.self::DOMAIN_PATTERN],
             'wildcard' => ['sometimes', 'boolean'],
             'proxy' => ['nullable', 'string', Rule::in(array_keys(Machine::PROXIES))],
+            'https' => ['sometimes', 'nullable', 'boolean'],
         ];
     }
 
@@ -56,6 +57,7 @@ final class DeployRequest
             'domain' => ['nullable', 'string', 'max:253', 'regex:'.self::DOMAIN_PATTERN],
             'wildcard' => ['sometimes', 'boolean'],
             'proxy' => ['nullable', 'string', Rule::in(array_keys(Machine::PROXIES))],
+            'https' => ['sometimes', 'nullable', 'boolean'],
             'env' => ['nullable', 'array'],
             'env.*' => ['nullable', 'string', 'max:2000'],
             'extra_env' => ['nullable', 'string', 'max:10000'],
@@ -137,6 +139,35 @@ final class DeployRequest
     public static function withProxy(array $job, ?string $proxy): array
     {
         return $proxy === null ? $job : [...$job, 'proxy' => $proxy];
+    }
+
+    /**
+     * Whether a deploy with a domain serves it over HTTPS, when it says.
+     * Null leaves it to the daemon: what the app had, HTTPS for a new one.
+     */
+    public static function https(Machine $machine, ?string $domain, mixed $https): ?bool
+    {
+        if (blank($domain) || $https === null) {
+            return null;
+        }
+        if (! DaemonJobQueue::canChooseHttps($machine)) {
+            if (! $https) {
+                throw ValidationException::withMessages(['https' => $machine->name.'’s daemon is too old to serve a domain without HTTPS. It updates itself, or run “sudo serverosd update” on the server.']);
+            }
+
+            return null;
+        }
+
+        return (bool) $https;
+    }
+
+    /**
+     * @param  array<string, mixed>  $job
+     * @return array<string, mixed>
+     */
+    public static function withHttps(array $job, ?bool $https): array
+    {
+        return $https === null ? $job : [...$job, 'https' => $https];
     }
 
     public static function assertPublicRepo(string $repo): void
