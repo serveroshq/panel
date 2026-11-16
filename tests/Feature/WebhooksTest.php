@@ -385,3 +385,27 @@ test('an address that could be read two ways is refused, and tests are limited',
         ->assertJsonPath('error.message', fn (string $m) => str_contains($m, '10 test events a minute'));
     expect(sentWebhooks())->toHaveCount(10);
 });
+
+test('a delivery looks its address up once, and one that turns private in between is refused, not sent', function () {
+    Http::fake(['hooks.example.com/*' => Http::response('ok')]);
+    [$workspace, , $key] = webhookWorkspace();
+    addEndpoint($key);
+
+    // From here on the name answers publicly the first time it's asked, and privately after.
+    $resolver = new class extends HostResolver
+    {
+        public int $asked = 0;
+
+        protected function addresses(string $host): array
+        {
+            return [++$this->asked === 1 ? '93.184.216.34' : '10.0.0.5'];
+        }
+    };
+    app()->instance(HostResolver::class, $resolver);
+    app()->forgetInstance(Webhooks::class);
+
+    Webhooks::dispatch($workspace->id, 'machine.offline', ['machine_id' => 1, 'state' => 'offline']);
+
+    expect($resolver->asked)->toBe(1)
+        ->and(WebhookDelivery::query()->sole()->only(['state', 'attempts']))->toBe(['state' => 'delivered', 'attempts' => 1]);
+});

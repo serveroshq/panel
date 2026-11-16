@@ -8,6 +8,7 @@ use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Models\McpToken;
 use App\Models\Operation;
+use App\Models\OperationMachine;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Activity\ActivityLine;
@@ -419,18 +420,25 @@ test('a cancel that lands while a batch is starting stops the rest, and stays ca
         ->and(targetStates($operation)['web-1'])->toBe('succeeded');
 });
 
-test('a pause that lands while batches are going through stops the next one', function () {
+test('a pause that lands while batches are going through stops the next one, and stays paused', function () {
     [$workspace, $key] = operationsWorkspace();
-    $operation = Operation::query()->findOrFail(restartProd($key, ['batch_size' => 1])->json('data.operation.id'));
+    $operation = Operation::query()->findOrFail(restartProd($key, ['batch_size' => 1, 'stop_on_failure' => false])->json('data.operation.id'));
     finishJobs($operation);
+    // web-2 and web-3 are offline, so their batches are skipped one after the other in the same run.
+    Machine::query()->whereIn('name', ['web-2', 'web-3'])->update(['last_seen_at' => now()->subHour()]);
 
-    // Paused as the scheduler reaches it: nothing new starts, and it isn't put back to running or finished.
-    Http::fake(['127.0.0.1:8090/*' => fn () => throw new RuntimeException('nothing should start')]);
-    app(Operations::class)->pause($operation, new McpContext($workspace, $workspace->owner, null, 'api'));
+    // Someone pauses it just as web-2 is skipped, before web-3's turn.
+    $paused = false;
+    OperationMachine::saved(function (OperationMachine $target) use (&$paused, $workspace) {
+        if (! $paused && $target->state === 'skipped') {
+            $paused = true;
+            app(Operations::class)->pause(Operation::query()->findOrFail($target->operation_id), new McpContext($workspace, $workspace->owner, null, 'api'));
+        }
+    });
     tickOperations();
 
     expect($operation->refresh()->state)->toBe('paused')
-        ->and(targetStates($operation))->toBe(['web-1' => 'succeeded', 'web-2' => 'pending', 'web-3' => 'pending']);
+        ->and(targetStates($operation))->toBe(['web-1' => 'succeeded', 'web-2' => 'skipped', 'web-3' => 'pending']);
     operationsApi($key, 'POST', "operations/{$operation->id}/pause")->assertStatus(422);
 });
 
@@ -447,17 +455,21 @@ test('a machine whose start was cut short is failed, never started twice', funct
         ->and(DaemonJob::query()->count())->toBe(2);
 });
 
-test('someone suspended, or a workspace with no plan, stops the rest from starting', function () {
+test('access that ends while it runs stops the rest from starting', function (Closure $end) {
     [$workspace, $key] = operationsWorkspace(2);
     $operation = Operation::query()->findOrFail(restartProd($key, ['batch_size' => 1])->json('data.operation.id'));
 
-    $workspace->owner->forceFill(['suspended_at' => now()])->save();
+    $end($workspace);
     finishJobs($operation);
     tickOperations();
 
     expect(targetStates($operation))->toBe(['web-1' => 'succeeded', 'web-2' => 'skipped'])
         ->and(DaemonJob::query()->count())->toBe(1);
-});
+})->with([
+    'the person is suspended' => [fn (Workspace $w) => $w->owner->forceFill(['suspended_at' => now()])->save()],
+    'the workspace starts requiring two-factor they don’t have' => [fn (Workspace $w) => $w->forceFill(['require_two_factor' => true])->save()],
+    'the workspace’s plan ends' => [fn (Workspace $w) => $w->forceFill(['plan' => null, 'trial_ends_at' => now()->subDay()])->save()],
+]);
 
 test('an operation on many machines is left for the scheduler to start', function () {
     [$workspace, $key] = operationsWorkspace(3);
@@ -479,10 +491,25 @@ test('one operation going wrong doesn’t hold up the others', function () {
     [, $key] = operationsWorkspace(2);
     $broken = Operation::query()->findOrFail(restartProd($key, ['batch_size' => 1])->json('data.operation.id'));
     $fine = Operation::query()->findOrFail(restartProd($key, ['batch_size' => 1], ['selector' => ['labels' => ['env' => 'staging']]])->json('data.operation.id'));
-    DB::table('operations')->where('id', $broken->id)->update(['params' => 'not what was stored']);
+    // A kind this panel doesn't know makes working on it throw.
+    DB::table('operations')->where('id', $broken->id)->update(['kind' => 'gone']);
+    finishJobs($broken);
     finishJobs($fine);
 
     tickOperations();
 
     expect($fine->refresh()->state)->toBe('finished');
+});
+
+test('creating one holds the workspace’s lock, so two requests at once can’t both slip under the limit', function () {
+    [$workspace, $key] = operationsWorkspace();
+    $held = null;
+    // Asked at the moment the operation is written: could anyone else be creating one for this workspace now?
+    Operation::creating(function () use (&$held, $workspace) {
+        $held = ! Cache::lock("operations:create:{$workspace->id}", 5)->get();
+    });
+
+    restartProd($key)->assertAccepted();
+
+    expect($held)->toBeTrue();
 });
