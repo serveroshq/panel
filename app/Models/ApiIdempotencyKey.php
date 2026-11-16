@@ -20,6 +20,12 @@ class ApiIdempotencyKey extends Model
 
     protected $guarded = [];
 
+    /** An answer can hold something shown only once, like a webhook's secret. */
+    protected function casts(): array
+    {
+        return ['body' => 'encrypted'];
+    }
+
     /** @return Builder<static> */
     public function prunable(): Builder
     {

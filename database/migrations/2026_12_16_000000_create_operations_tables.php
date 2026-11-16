@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('via', 16);
             $table->json('scopes')->nullable();
             $table->string('kind', 32);
-            $table->json('params');
+            $table->longText('params');
             $table->json('selector')->nullable();
             $table->string('batch', 8)->nullable();
             $table->unsignedInteger('batch_size');

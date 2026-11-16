@@ -9,6 +9,7 @@ use App\Models\McpToolCall;
 use App\Models\Operation;
 use App\Models\Workspace;
 use App\Support\Operations\Operations;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -189,4 +190,33 @@ test('a deployed stack counts as healthy only while every container in it is run
     $this->travel(61)->seconds();
     app(Operations::class)->tick();
     expect(kindsStates($id)['web-1'])->toBe('succeeded');
+});
+
+test('what a deploy’s env holds is kept encrypted and never shown', function () {
+    [, $key] = kindsWorkspace();
+
+    $operation = kindsOperation($key, ['kind' => 'deploy', 'deploy' => ['template' => 'postgres', 'name' => 'db', 'env' => ['POSTGRES_PASSWORD' => 'hunter2-very-secret']], 'strategy' => ['batch_size' => 1]])
+        ->assertAccepted()->json('data.operation');
+
+    expect($operation['deploy']['env'])->toBe(['POSTGRES_PASSWORD' => '[hidden]'])
+        ->and((string) DB::table('operations')->where('id', $operation['id'])->value('params'))->not->toContain('hunter2')
+        ->and(Operation::query()->findOrFail($operation['id'])->params['env'])->toBe(['POSTGRES_PASSWORD' => 'hunter2-very-secret'])
+        ->and(test()->flushHeaders()->withHeader('Authorization', "Bearer {$key}")->getJson('/api/v1/operations')->getContent())->not->toContain('hunter2');
+});
+
+test('resuming a command operation takes the access that starting it does', function () {
+    [$workspace, $key] = kindsWorkspace();
+    $id = kindsOperation($key, ['kind' => 'command', 'command' => ['service' => 'shop', 'command' => 'ls'], 'strategy' => ['batch_size' => 1]])
+        ->assertAccepted()->json('data.operation.id');
+    DaemonJob::query()->where('kind', 'service_exec')->sole()->forceFill(['state' => 'failed', 'finished_at' => now()])->save();
+    app(Operations::class)->tick();
+    expect(Operation::query()->findOrFail($id)->state)->toBe('paused');
+
+    [, $writeKey] = McpToken::issueKey($workspace, $workspace->owner, 'write', [Scopes::READ, Scopes::WRITE], McpToken::API);
+    test()->flushHeaders()->withHeader('Authorization', "Bearer {$writeKey}")->postJson("/api/v1/operations/{$id}/resume")
+        ->assertStatus(422)->assertJsonPath('error.message', fn (string $m) => str_contains($m, 'run commands'));
+    expect(Operation::query()->findOrFail($id)->state)->toBe('paused');
+
+    test()->flushHeaders()->withHeader('Authorization', "Bearer {$key}")->postJson("/api/v1/operations/{$id}/resume")->assertOk();
+    expect(kindsStates($id))->toBe(['web-1' => 'failed', 'web-2' => 'running']);
 });

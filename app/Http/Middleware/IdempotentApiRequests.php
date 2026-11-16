@@ -51,10 +51,12 @@ class IdempotentApiRequests
         } catch (UniqueConstraintViolationException) {
             $first = ApiIdempotencyKey::query()->where('mcp_token_id', $tokenId)->where('key_hash', $keyHash)->first();
 
+            // Retry-After marks the one 409 worth sending again: the first request hasn't answered yet.
+            $running = fn () => self::fail(409, 'conflict', 'A request with this Idempotency-Key is still running. Try again in a moment.')->header('Retry-After', '2');
+
             return self::honoured($key, match (true) {
-                $first === null => self::fail(409, 'conflict', 'A request with this Idempotency-Key is still running. Try again in a moment.'),
+                $first === null, $first->request_hash === $requestHash && $first->status === null => $running(),
                 $first->request_hash !== $requestHash => self::fail(409, 'conflict', 'This Idempotency-Key was already used for a different request in the last 24 hours. Use a new key for a new request.'),
-                $first->status === null => self::fail(409, 'conflict', 'A request with this Idempotency-Key is still running. Try again in a moment.'),
                 default => response((string) $first->body, $first->status, ['Content-Type' => 'application/json', 'Idempotent-Replayed' => 'true']),
             });
         }

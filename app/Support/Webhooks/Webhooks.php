@@ -99,7 +99,11 @@ final class Webhooks
     public function attempt(WebhookDelivery $delivery, bool $force = false): void
     {
         $endpoint = $delivery->endpoint;
-        if ($delivery->state !== 'pending' || ($delivery->next_attempt_at?->isFuture() && ! $force)) {
+        // Taken for two minutes, so a delivery queued twice, or picked up by two workers, is still sent once.
+        $taken = WebhookDelivery::query()->whereKey($delivery->id)->where('state', 'pending')
+            ->when(! $force, fn ($q) => $q->where('next_attempt_at', '<=', now()))
+            ->update(['next_attempt_at' => now()->addMinutes(2)]);
+        if ($taken === 0) {
             return;
         }
         if (! $endpoint->enabled && ! $force) {
@@ -136,7 +140,9 @@ final class Webhooks
             'next_attempt_at' => $giveUp ? null : now()->addSeconds($wait),
         ])->save();
 
-        if ($giveUp && $delivery->event !== self::TEST_EVENT && $endpoint->enabled) {
+        // One event a receiver keeps refusing doesn't turn off an endpoint that takes the others.
+        if ($giveUp && $delivery->event !== self::TEST_EVENT && $endpoint->enabled
+            && ! $endpoint->deliveries()->where('state', 'delivered')->where('delivered_at', '>=', now()->subHours(self::GIVE_UP_HOURS))->exists()) {
             $this->turnOff($endpoint, $error);
         }
     }
@@ -180,15 +186,25 @@ final class Webhooks
     /** Why an address can't take webhooks, or null if it can. */
     public function refusal(string $url): ?string
     {
+        return $this->check($url)[0];
+    }
+
+    /**
+     * @return array{0: string|null, 1: list<string>} why it can't take webhooks (or null), and the public addresses its host has
+     */
+    private function check(string $url): array
+    {
         $host = parse_url($url, PHP_URL_HOST);
-        if (! str_starts_with(strtolower($url), 'https://') || ! is_string($host) || $host === '') {
-            return 'A webhook needs an https:// address.';
+        if (! str_starts_with(strtolower($url), 'https://') || ! is_string($host) || $host === ''
+            || filter_var($url, FILTER_VALIDATE_URL) === false || preg_match('/[\s\\\\]/', $url) === 1) {
+            return ['A webhook needs an https:// address.', []];
         }
         if (parse_url($url, PHP_URL_USER) !== null) {
-            return 'Leave the user name and password out of the address; use the signature to trust deliveries.';
+            return ['Leave the user name and password out of the address; use the signature to trust deliveries.', []];
         }
+        $addresses = $this->resolver->resolve($host);
 
-        return $this->resolver->resolve($host) === [] ? 'That address can’t be reached from the panel.' : null;
+        return [$addresses === [] ? 'That address can’t be reached from the panel.' : null, $addresses];
     }
 
     private function turnOff(WebhookEndpoint $endpoint, string $error): void
@@ -222,11 +238,12 @@ final class Webhooks
      */
     private function post(string $url, string $body, array $headers): array
     {
-        if (($refusal = $this->refusal($url)) !== null) {
+        // Looked up once: the address checked is the address sent to.
+        [$refusal, $addresses] = $this->check($url);
+        if ($refusal !== null) {
             return [null, $refusal];
         }
         $host = (string) parse_url($url, PHP_URL_HOST);
-        $addresses = $this->resolver->resolve($host);
         $ip = str_contains($addresses[0], ':') ? "[{$addresses[0]}]" : $addresses[0];
         $port = parse_url($url, PHP_URL_PORT) ?? 443;
 

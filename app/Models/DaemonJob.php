@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Mcp\McpContext;
 use App\Models\Concerns\CreditsWhoStartedIt;
+use App\Support\DaemonJobQueue;
 use App\Support\Webhooks\Webhooks;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
@@ -53,8 +54,12 @@ class DaemonJob extends Model
 
     protected static function booted(): void
     {
-        // Every way a job ends (the daemon's answer, a timeout, a cancel) goes through here.
+        // A job that changed something ended: the daemon's answer, a refusal or a cancel all save it here.
+        // Reads (logs, rescans, file listings) are the dashboard's own plumbing, so they send nothing.
         $finished = function (DaemonJob $job): void {
+            if (in_array($job->kind, DaemonJobQueue::READS, true)) {
+                return;
+            }
             $workspace = Machine::query()->whereKey($job->machine_id)->value('workspace_id');
             if ($workspace !== null) {
                 Webhooks::dispatch((int) $workspace, 'job.finished', [

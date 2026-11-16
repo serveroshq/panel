@@ -20,7 +20,7 @@ class DaemonJobQueue
 {
     public const array NEEDS_PLAN = ['deploy', 'release', 'rollback', 'service_exec', 'service_clone', 'database_query'];
 
-    private const array READS = ['database_query', 'service_logs', 'service_inspect', 'discover', 'file_list', 'file_read', 'package_updates', 'disk_usage'];
+    public const array READS = ['database_query', 'service_logs', 'service_inspect', 'discover', 'file_list', 'file_read', 'package_updates', 'disk_usage'];
 
     public function __construct(private readonly DaemonGatewayClient $gateway) {}
 

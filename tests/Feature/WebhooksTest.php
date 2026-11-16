@@ -317,3 +317,71 @@ test('the API settings page lists endpoints with their deliveries, and owners ma
     expect(WebhookEndpoint::query()->count())->toBe(0)
         ->and(Activity::query()->where('workspace_id', $workspace->id)->whereIn('action', ['api.webhook_create', 'api.webhook_update', 'api.webhook_delete'])->count())->toBe(3);
 });
+
+test('reads the dashboard makes for itself, like rescans and logs, send no job.finished', function () {
+    Http::fake(['hooks.example.com/*' => Http::response('ok')]);
+    [$workspace, $machine, $key] = webhookWorkspace();
+    addEndpoint($key);
+
+    foreach (['discover', 'service_logs', 'file_list'] as $kind) {
+        DaemonJob::query()->create(['id' => (string) Str::uuid(), 'machine_id' => $machine->id, 'user_id' => $workspace->owner->id, 'kind' => $kind, 'state' => 'queued', 'command' => []])
+            ->forceFill(['state' => 'succeeded', 'finished_at' => now()])->save();
+    }
+
+    expect(WebhookDelivery::query()->count())->toBe(0);
+});
+
+test('a delivery picked up twice at once is sent once', function () {
+    Http::fake(['hooks.example.com/*' => Http::response('down', 500)]);
+    [$workspace, , $key] = webhookWorkspace();
+    addEndpoint($key);
+    Webhooks::dispatch($workspace->id, 'machine.offline', ['machine_id' => 1, 'state' => 'offline']);
+    $this->travel(61)->seconds();
+
+    // Two workers load the same due delivery before either sends it.
+    [$one, $two] = [WebhookDelivery::query()->sole(), WebhookDelivery::query()->sole()];
+    app(Webhooks::class)->attempt($one);
+    app(Webhooks::class)->attempt($two);
+
+    expect(sentWebhooks())->toHaveCount(2)
+        ->and(WebhookDelivery::query()->sole()->attempts)->toBe(2);
+});
+
+test('one event a receiver keeps refusing doesn’t turn off an endpoint that takes the others', function () {
+    Notification::fake();
+    Http::fake(['hooks.example.com/*' => fn (Request $r) => str_contains($r->body(), 'machine.offline') ? Http::response('no', 400) : Http::response('ok')]);
+    [$workspace, , $key] = webhookWorkspace();
+    [$endpoint] = addEndpoint($key);
+
+    Webhooks::dispatch($workspace->id, 'machine.offline', ['machine_id' => 1, 'state' => 'offline']);
+    $refused = WebhookDelivery::query()->sole();
+    foreach (range(1, 40) as $ignored) {
+        if ($refused->refresh()->state !== 'pending') {
+            break;
+        }
+        $this->travelTo($refused->next_attempt_at->addSecond());
+        Webhooks::dispatch($workspace->id, 'machine.online', ['machine_id' => 1, 'state' => 'online']);
+        Artisan::call('webhooks:retry');
+    }
+
+    expect($refused->state)->toBe('failed')
+        ->and($endpoint->refresh()->enabled)->toBeTrue();
+    Notification::assertNothingSent();
+});
+
+test('an address that could be read two ways is refused, and tests are limited', function () {
+    Http::fake(['hooks.example.com/*' => Http::response('ok')]);
+    [, , $key] = webhookWorkspace();
+
+    foreach (['https://hooks.example.com\\@inside.example.com/x', 'https://hooks.example.com/a b', "https://hooks.example.com/a\nb", 'https:///x'] as $url) {
+        webhookApi($key, 'POST', 'webhooks', ['url' => $url])->assertStatus(422);
+    }
+
+    [$endpoint] = addEndpoint($key);
+    foreach (range(1, 10) as $ignored) {
+        webhookApi($key, 'POST', "webhooks/{$endpoint->id}/test")->assertOk();
+    }
+    webhookApi($key, 'POST', "webhooks/{$endpoint->id}/test")->assertStatus(422)
+        ->assertJsonPath('error.message', fn (string $m) => str_contains($m, '10 test events a minute'));
+    expect(sentWebhooks())->toHaveCount(10);
+});

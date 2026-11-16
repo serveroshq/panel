@@ -6,6 +6,7 @@ use App\Models\ApiIdempotencyKey;
 use App\Models\McpToken;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
 /** @return array{0: Workspace, 1: string} */
@@ -82,7 +83,9 @@ test('a key whose request is still running is a 409 until it answers, or for 5 m
         'created_at' => now(),
     ]);
 
-    idempotent($key, 'running', $body)->assertStatus(409)->assertJsonPath('error.message', fn (string $m) => str_contains($m, 'still running'));
+    idempotent($key, 'running', $body)->assertStatus(409)->assertHeader('Retry-After', '2')->assertJsonPath('error.message', fn (string $m) => str_contains($m, 'still running'));
+    // A different request under that key isn't worth sending again, so it gets no Retry-After.
+    idempotent($key, 'running', ['name' => 'other'])->assertStatus(409)->assertHeaderMissing('Retry-After');
 
     $this->travel(6)->minutes();
     idempotent($key, 'running', $body)->assertOk()->assertHeaderMissing('Idempotent-Replayed');
@@ -104,4 +107,13 @@ test('reads ignore the header, a malformed key is refused, and old keys are prun
     Artisan::call('model:prune', ['--model' => [ApiIdempotencyKey::class]]);
 
     expect(ApiIdempotencyKey::query()->count())->toBe(1);
+});
+
+test('a stored answer is encrypted, so something shown once isn’t readable in the table', function () {
+    [, $key] = idempotencyWorkspace();
+
+    $first = idempotent($key, 'group-secret', ['name' => 'eu-secret-name'])->assertOk();
+
+    expect((string) DB::table('api_idempotency_keys')->value('body'))->not->toContain('eu-secret-name');
+    expect(idempotent($key, 'group-secret', ['name' => 'eu-secret-name'])->assertOk()->getContent())->toBe($first->getContent());
 });

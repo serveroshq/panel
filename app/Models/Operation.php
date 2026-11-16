@@ -50,7 +50,7 @@ class Operation extends Model
     {
         return [
             'scopes' => 'array',
-            'params' => 'array',
+            'params' => 'encrypted:array',
             'selector' => 'array',
             'stop_on_failure' => 'boolean',
             'started_at' => 'datetime',

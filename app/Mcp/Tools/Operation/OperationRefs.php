@@ -19,6 +19,8 @@ final class OperationRefs
     {
         $operation = is_numeric($id) ? Operation::query()->where('workspace_id', $context->workspace->id)->find((int) $id) : null;
 
+        $id = is_scalar($id) ? (string) $id : '';
+
         return $operation ?? throw new ToolError("No operation #{$id} in {$context->workspace->name}. list_operations shows them.");
     }
 }

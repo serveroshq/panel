@@ -26,6 +26,8 @@ final class WebhookRefs
     {
         $endpoint = is_numeric($id) ? WebhookEndpoint::query()->where('workspace_id', $context->workspace->id)->find((int) $id) : null;
 
+        $id = is_scalar($id) ? (string) $id : '';
+
         return $endpoint ?? throw new ToolError("No webhook endpoint #{$id} in {$context->workspace->name}. list_webhooks shows them.");
     }
 }

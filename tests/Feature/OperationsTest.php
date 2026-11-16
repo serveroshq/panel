@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\Plan;
+use App\Mcp\McpContext;
 use App\Mcp\Scopes;
 use App\Models\Activity;
 use App\Models\DaemonJob;
@@ -12,6 +13,7 @@ use App\Models\Workspace;
 use App\Support\Activity\ActivityLine;
 use App\Support\Operations\Operations;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -388,4 +390,99 @@ test('only one advance at a time starts machines', function () {
     tickOperations();
     expect(targetStates($operation))->toBe(['web-1' => 'succeeded', 'web-2' => 'running'])
         ->and(DaemonJob::query()->count())->toBe(2);
+});
+
+test('a cancel that lands while a batch is starting stops the rest, and stays cancelled', function () {
+    [$workspace, $key] = operationsWorkspace();
+    $operations = app(Operations::class);
+    $context = new McpContext($workspace, $workspace->owner, null, 'api');
+    $cancelled = false;
+    // The gateway is called as each machine's job is queued: cancel as the first one goes out.
+    Http::fake(['127.0.0.1:8090/*' => function () use (&$cancelled, $operations, $context) {
+        if (! $cancelled) {
+            $cancelled = true;
+            $operations->cancel(Operation::query()->latest('id')->firstOrFail(), $context);
+        }
+
+        return Http::response(['queued' => true], 202);
+    }]);
+
+    $operation = Operation::query()->findOrFail(restartProd($key)->assertAccepted()->json('data.operation.id'));
+
+    expect($operation->state)->toBe('cancelled')
+        ->and(targetStates($operation))->toBe(['web-1' => 'running', 'web-2' => 'skipped', 'web-3' => 'skipped'])
+        ->and(DaemonJob::query()->count())->toBe(1);
+
+    finishJobs($operation);
+    tickOperations();
+    expect($operation->refresh()->state)->toBe('cancelled')
+        ->and(targetStates($operation)['web-1'])->toBe('succeeded');
+});
+
+test('a pause that lands while batches are going through stops the next one', function () {
+    [$workspace, $key] = operationsWorkspace();
+    $operation = Operation::query()->findOrFail(restartProd($key, ['batch_size' => 1])->json('data.operation.id'));
+    finishJobs($operation);
+
+    // Paused as the scheduler reaches it: nothing new starts, and it isn't put back to running or finished.
+    Http::fake(['127.0.0.1:8090/*' => fn () => throw new RuntimeException('nothing should start')]);
+    app(Operations::class)->pause($operation, new McpContext($workspace, $workspace->owner, null, 'api'));
+    tickOperations();
+
+    expect($operation->refresh()->state)->toBe('paused')
+        ->and(targetStates($operation))->toBe(['web-1' => 'succeeded', 'web-2' => 'pending', 'web-3' => 'pending']);
+    operationsApi($key, 'POST', "operations/{$operation->id}/pause")->assertStatus(422);
+});
+
+test('a machine whose start was cut short is failed, never started twice', function () {
+    [, $key] = operationsWorkspace(2);
+    $operation = Operation::query()->findOrFail(restartProd($key, ['batch_size' => 1, 'stop_on_failure' => false])->json('data.operation.id'));
+    // As if the panel died after claiming web-1 and before its job was noted.
+    $operation->targets()->where('machine_name', 'web-1')->update(['job_id' => null]);
+
+    tickOperations();
+
+    expect(targetStates($operation))->toBe(['web-1' => 'failed', 'web-2' => 'running'])
+        ->and($operation->targets()->where('machine_name', 'web-1')->value('outcome'))->toContain('may or may not have run')
+        ->and(DaemonJob::query()->count())->toBe(2);
+});
+
+test('someone suspended, or a workspace with no plan, stops the rest from starting', function () {
+    [$workspace, $key] = operationsWorkspace(2);
+    $operation = Operation::query()->findOrFail(restartProd($key, ['batch_size' => 1])->json('data.operation.id'));
+
+    $workspace->owner->forceFill(['suspended_at' => now()])->save();
+    finishJobs($operation);
+    tickOperations();
+
+    expect(targetStates($operation))->toBe(['web-1' => 'succeeded', 'web-2' => 'skipped'])
+        ->and(DaemonJob::query()->count())->toBe(1);
+});
+
+test('an operation on many machines is left for the scheduler to start', function () {
+    [$workspace, $key] = operationsWorkspace(3);
+    // More machines than the plan in these tests allows, so made without its check.
+    Machine::withoutEvents(function () use ($workspace) {
+        foreach (range(4, Operations::INLINE_MACHINES + 1) as $n) {
+            operationsMachine($workspace, "web-{$n}", ['env' => 'prod']);
+        }
+    });
+
+    $answer = restartProd($key)->assertAccepted()->assertJsonPath('data.operation.progress.pending', Operations::INLINE_MACHINES + 1);
+    expect(DaemonJob::query()->count())->toBe(0);
+
+    tickOperations();
+    expect(Operation::query()->findOrFail($answer->json('data.operation.id'))->targets()->where('state', 'running')->count())->toBe(Operations::INLINE_MACHINES + 1);
+});
+
+test('one operation going wrong doesn’t hold up the others', function () {
+    [, $key] = operationsWorkspace(2);
+    $broken = Operation::query()->findOrFail(restartProd($key, ['batch_size' => 1])->json('data.operation.id'));
+    $fine = Operation::query()->findOrFail(restartProd($key, ['batch_size' => 1], ['selector' => ['labels' => ['env' => 'staging']]])->json('data.operation.id'));
+    DB::table('operations')->where('id', $broken->id)->update(['params' => 'not what was stored']);
+    finishJobs($fine);
+
+    tickOperations();
+
+    expect($fine->refresh()->state)->toBe('finished');
 });

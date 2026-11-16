@@ -36,6 +36,9 @@ final class Operations
 {
     public const int MAX_SECONDS = 3600;
 
+    /** An operation on more machines than this is started by the scheduler, within a minute, so creating never outlasts the request. */
+    public const int INLINE_MACHINES = 25;
+
     public const array SERVICE_ACTIONS = ['start', 'stop', 'restart', 'reload'];
 
     public const array MAINTENANCE_ACTIONS = ['start', 'end'];
@@ -56,16 +59,7 @@ final class Operations
         }
         $params = $this->params($kind, $input[$kind] ?? null);
 
-        // The person (or key) needs to be allowed to run the single-machine tools themselves.
-        foreach (self::toolsFor($kind, $params) as $name) {
-            $tool = $this->tools->find($name);
-            if ($tool !== null && ($denied = $this->tools->denial($tool, $context)) !== null) {
-                throw new ToolError($denied);
-            }
-        }
-        if ($kind === 'command' && ! $context->user->hasEnabledTwoFactorAuthentication()) {
-            throw new ToolError('Running commands needs two-factor authentication on your account, as the console does: turn it on under Settings › Security.');
-        }
+        $this->authorize($context, $kind, $params);
         if ($kind === 'rollback' && ($params['confirm'] ?? null) !== $params['app']) {
             throw new ToolError("This rolls {$params['app']} back on every machine picked. Ask the person first, then pass rollback.confirm set to “{$params['app']}” exactly.");
         }
@@ -116,18 +110,37 @@ final class Operations
     }
 
     /**
+     * The person (or key) needs to be allowed to run the single-machine tools themselves.
+     *
+     * @param  array<string, mixed>  $params
+     */
+    private function authorize(McpContext $context, string $kind, array $params): void
+    {
+        foreach (self::toolsFor($kind, $params) as $name) {
+            $tool = $this->tools->find($name);
+            if ($tool !== null && ($denied = $this->tools->denial($tool, $context)) !== null) {
+                throw new ToolError($denied);
+            }
+        }
+        if ($kind === 'command' && ! $context->user->hasEnabledTwoFactorAuthentication()) {
+            throw new ToolError('Running commands needs two-factor authentication on your account, as the console does: turn it on under Settings › Security.');
+        }
+    }
+
+    /**
      * @param  array{kind: string, params: array<string, mixed>, machines: Collection<int, Machine>, batch: ?string, batch_size: int, stop_on_failure: bool, max_failures: int, wait_healthy_seconds: int, pause_between_seconds: int}  $plan
      * @param  array<string, mixed>|null  $selector
      */
     public function create(McpContext $context, array $plan, ?array $selector): Operation
     {
         $workspace = $context->workspace;
-        $most = $workspace->limitOf(Limit::OperationsRunning);
-        if ($most !== null && Operation::query()->where('workspace_id', $workspace->id)->whereIn('state', Operation::OPEN)->count() >= $most) {
-            throw new ToolError("{$workspace->name} already has {$most} operations running or paused, which is as many as it can have at once. Wait for one to finish, or cancel one.");
-        }
 
-        $operation = DB::transaction(function () use ($context, $plan, $selector) {
+        // One at a time for a workspace, so two requests at once can't both slip under the limit.
+        $operation = Cache::lock("operations:create:{$workspace->id}", 30)->block(10, fn () => DB::transaction(function () use ($context, $workspace, $plan, $selector) {
+            $most = $workspace->limitOf(Limit::OperationsRunning);
+            if ($most !== null && Operation::query()->where('workspace_id', $workspace->id)->whereIn('state', Operation::OPEN)->count() >= $most) {
+                throw new ToolError("{$workspace->name} already has {$most} operations running or paused, which is as many as it can have at once. Wait for one to finish, or cancel one.");
+            }
             $operation = Operation::query()->create([
                 'workspace_id' => $context->workspace->id,
                 'created_by' => $context->user->id,
@@ -157,10 +170,12 @@ final class Operations
             }
 
             return $operation;
-        });
+        }));
 
         self::event($operation, 'operation.started');
-        $this->advance($operation);
+        if ($plan['machines']->count() <= self::INLINE_MACHINES) {
+            $this->advance($operation);
+        }
 
         // Recorded after the first batch: each machine's tool call starts its own audit record.
         $count = $plan['machines']->count();
@@ -179,37 +194,58 @@ final class Operations
     public function tick(): int
     {
         $count = 0;
-        Operation::query()->where('state', 'running')->orderBy('id')->each(function (Operation $operation) use (&$count) {
-            $this->advance($operation);
+        // One operation going wrong mustn't hold up everyone else's.
+        Operation::query()->where('state', 'running')->eachById(function (Operation $operation) use (&$count) {
+            rescue(fn () => $this->advance($operation));
             $count++;
         });
 
         // A cancelled or paused operation lets the jobs it started finish, and records how they went.
         Operation::query()->whereIn('state', ['cancelled', 'paused'])
             ->whereHas('targets', fn ($q) => $q->whereIn('state', ['running', 'checking']))
-            ->each(function (Operation $operation) {
+            ->eachById(fn (Operation $operation) => rescue(fn () => $this->locked($operation, function () use ($operation) {
                 $context = $this->context($operation);
                 foreach ($operation->targets()->whereIn('state', ['running', 'checking'])->with('machine')->get() as $target) {
                     $this->progress($target, $operation, $context);
                 }
-            });
+            })));
 
         return $count;
     }
 
     public function advance(Operation $operation): void
     {
-        // The scheduler and a request (create, resume) can get here at once; only one may start machines.
-        $lock = Cache::lock("operations:{$operation->id}", 300);
+        $this->locked($operation, fn () => $this->step($operation));
+    }
+
+    /** The scheduler and a request (create, resume) can get here at once; only one may work on an operation's machines. */
+    private function locked(Operation $operation, callable $work): void
+    {
+        $lock = Cache::lock("operations:{$operation->id}", 900);
         if (! $lock->get()) {
             return;
         }
         try {
             $operation->refresh();
-            $this->step($operation);
+            $work();
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Changes an operation's state only while it's still in one of $from, so a
+     * pause or cancel made in the meantime is never overwritten.
+     *
+     * @param  list<string>  $from
+     * @param  array<string, mixed>  $to
+     */
+    private static function move(Operation $operation, array $from, array $to): bool
+    {
+        $moved = Operation::query()->whereKey($operation->id)->whereIn('state', $from)->update($to) === 1;
+        $operation->refresh();
+
+        return $moved;
     }
 
     private function step(Operation $operation): void
@@ -228,21 +264,25 @@ final class Operations
         }
 
         while (true) {
+            // Paused or cancelled since this began: start nothing more.
+            if (Operation::query()->whereKey($operation->id)->value('state') !== 'running') {
+                return;
+            }
             $failed = $targets->where('state', 'failed');
             if ($operation->stop_on_failure && $failed->count() - $operation->failures_before > $operation->max_failures) {
-                $operation->forceFill([
-                    'state' => 'paused',
-                    'paused_reason' => 'Paused after '.self::names(array_values($failed->skip($operation->failures_before)->map(fn (OperationMachine $t) => $t->machine_name)->all())).' failed. Resume to carry on, or cancel.',
-                ])->save();
-                self::event($operation, 'operation.paused');
+                $reason = 'Paused after '.self::names(array_values($failed->skip($operation->failures_before)->map(fn (OperationMachine $t) => $t->machine_name)->all())).' failed. Resume to carry on, or cancel.';
+                if (self::move($operation, ['running'], ['state' => 'paused', 'paused_reason' => mb_substr($reason, 0, 500)])) {
+                    self::event($operation, 'operation.paused');
+                }
 
                 return;
             }
 
             $pending = $targets->where('state', 'pending')->values();
             if ($pending->isEmpty()) {
-                $operation->forceFill(['state' => 'finished', 'finished_at' => now()])->save();
-                self::event($operation, 'operation.finished');
+                if (self::move($operation, ['running'], ['state' => 'finished', 'finished_at' => now()])) {
+                    self::event($operation, 'operation.finished');
+                }
 
                 return;
             }
@@ -264,38 +304,45 @@ final class Operations
 
     public function pause(Operation $operation, McpContext $context): void
     {
-        if ($operation->state !== 'running') {
+        if (! self::move($operation, ['running'], ['state' => 'paused', 'paused_reason' => mb_substr('Paused by '.$context->user->name.'.', 0, 500)])) {
             throw new ToolError("Operation #{$operation->id} is {$operation->state}, so it can’t be paused.");
         }
-        $operation->forceFill(['state' => 'paused', 'paused_reason' => 'Paused by '.$context->user->name.'.'])->save();
         self::event($operation, 'operation.paused');
         $context->record('operation.pause', null, null, ['operation' => $operation->id, 'kind' => $operation->kind]);
     }
 
     public function resume(Operation $operation, McpContext $context): void
     {
-        if ($operation->state !== 'paused') {
-            throw new ToolError("Operation #{$operation->id} is {$operation->state}, so there’s nothing to resume.");
-        }
-        $operation->forceFill([
+        // Resuming starts the work again, so it takes the same access as starting it.
+        $this->authorize($context, $operation->kind, $operation->params);
+        $resumed = self::move($operation, ['paused'], [
             'state' => 'running',
             'paused_reason' => null,
             // Failures so far were looked at; only new ones count towards max_failures.
             'failures_before' => $operation->targets()->where('state', 'failed')->count(),
-        ])->save();
-        $this->advance($operation);
+        ]);
+        if (! $resumed) {
+            throw new ToolError("Operation #{$operation->id} is {$operation->state}, so there’s nothing to resume.");
+        }
+        if ($operation->targets()->count() <= self::INLINE_MACHINES) {
+            $this->advance($operation);
+        }
         $context->record('operation.resume', null, null, ['operation' => $operation->id, 'kind' => $operation->kind]);
     }
 
     public function cancel(Operation $operation, McpContext $context): void
     {
-        if (! in_array($operation->state, Operation::OPEN, true)) {
+        $cancelled = DB::transaction(function () use ($operation) {
+            if (! self::move($operation, Operation::OPEN, ['state' => 'cancelled', 'finished_at' => now()])) {
+                return false;
+            }
+            $operation->targets()->where('state', 'pending')->update(['state' => 'skipped', 'outcome' => 'Cancelled before its turn.', 'finished_at' => now()]);
+
+            return true;
+        });
+        if (! $cancelled) {
             throw new ToolError("Operation #{$operation->id} is {$operation->state} already.");
         }
-        DB::transaction(function () use ($operation) {
-            $operation->forceFill(['state' => 'cancelled', 'finished_at' => now()])->save();
-            $operation->targets()->where('state', 'pending')->update(['state' => 'skipped', 'outcome' => 'Cancelled before its turn.', 'finished_at' => now()]);
-        });
         self::event($operation, 'operation.finished');
         $context->record('operation.cancel', null, null, ['operation' => $operation->id, 'kind' => $operation->kind]);
     }
@@ -309,7 +356,7 @@ final class Operations
         return [
             'id' => $operation->id,
             'kind' => $operation->kind,
-            $operation->kind => (object) $operation->params,
+            $operation->kind => (object) self::shown($operation->params),
             'state' => $operation->state,
             'pausedReason' => $operation->paused_reason,
             'selector' => $operation->selector === null ? null : (object) $operation->selector,
@@ -339,6 +386,24 @@ final class Operations
                 'finishedAt' => $t->finished_at?->toIso8601String(),
             ])->all()] : []),
         ];
+    }
+
+    /**
+     * The settings as they may be shown: what a deploy's env holds stays out, as do credentials in an address.
+     *
+     * @param  array<string, mixed>  $params
+     * @return array<string, mixed>
+     */
+    private static function shown(array $params): array
+    {
+        if (is_array($params['env'] ?? null)) {
+            $params['env'] = array_map(fn () => '[hidden]', $params['env']);
+        }
+        if (is_string($params['repo'] ?? null)) {
+            $params['repo'] = (string) preg_replace('#(://)[^/@\s]+@#', '$1[hidden]@', $params['repo']);
+        }
+
+        return $params;
     }
 
     /**
@@ -450,7 +515,9 @@ final class Operations
     private function context(Operation $operation): ?McpContext
     {
         $user = $operation->creator;
-        if ($user === null || $operation->workspace->roleOf($user) === null) {
+        $workspace = $operation->workspace;
+        // The same checks a request with the key gets, every time: access can end while an operation runs.
+        if ($user === null || $user->suspended_at !== null || $workspace->roleOf($user) === null || ! $workspace->satisfiesTwoFactor($user) || ! $workspace->isActive()) {
             return null;
         }
         $token = null;
@@ -460,7 +527,7 @@ final class Operations
                 return null;
             }
         }
-        $context = new McpContext($operation->workspace, $user, $token, $operation->via, $operation->scopes);
+        $context = new McpContext($workspace, $user, $token, $operation->via, $operation->scopes);
         $context->operation = $operation->id;
 
         return $context;
@@ -468,9 +535,14 @@ final class Operations
 
     private function start(OperationMachine $target, Operation $operation, ?McpContext $context): string
     {
+        // A machine starts once, whatever else is going on: a cancel may have skipped it already.
+        if (OperationMachine::query()->whereKey($target->id)->where('state', 'pending')->update(['state' => 'running', 'started_at' => now()]) === 0) {
+            return $target->refresh()->state;
+        }
+        $target->refresh();
         $machine = $target->machine;
         if ($context === null) {
-            return $this->settle($target, 'skipped', 'Not started: whoever started the operation has left the workspace, or the key it was started with was revoked.');
+            return $this->settle($target, 'skipped', 'Not started: whoever started the operation no longer has access to the workspace, or the key it was started with was revoked.');
         }
         if ($machine === null || $machine->workspace_id !== $operation->workspace_id) {
             return $this->settle($target, 'skipped', 'Not started: the machine was removed or moved to another workspace.');
@@ -517,9 +589,8 @@ final class Operations
 
         $data = is_array($body['data'] ?? null) ? $body['data'] : [];
         $job = $data['jobId'] ?? $data['job']['id'] ?? null;
-        $target->forceFill(['started_at' => now()])->save();
         if (is_string($job)) {
-            $target->forceFill(['state' => 'running', 'job_id' => $job])->save();
+            $target->forceFill(['job_id' => $job])->save();
 
             return 'running';
         }
@@ -532,6 +603,7 @@ final class Operations
         if ($target->state === 'running') {
             $job = $target->job_id === null ? null : DaemonJob::query()->find($target->job_id);
             match (true) {
+                $target->job_id === null => $this->settle($target, 'failed', 'The panel was interrupted while starting it, so it may or may not have run. Check the machine.'),
                 $job === null => $this->settle($target, 'failed', 'Its job went missing.'),
                 $job->isStale() => $this->settle($target, 'failed', 'The machine stopped answering while it ran.'),
                 in_array($job->state, ['failed', 'timed_out', 'refused', 'cancelled'], true) => $this->settle($target, 'failed', 'It didn’t finish: '.(self::error($job) ?: str_replace('_', ' ', $job->state)).'.'),
