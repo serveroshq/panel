@@ -3000,6 +3000,7 @@ const focusRing =
                                             jobReason(
                                                 job.error,
                                                 $t('That didn’t finish.'),
+                                                false,
                                             )
                                         }}
                                     </p>

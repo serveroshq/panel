@@ -148,3 +148,44 @@ await test('a failed job shows the line from the machine that says why', () => {
         'E: Unable to locate package x',
     );
 });
+
+await test('edge cases read as plain sentences', () => {
+    assert.equal(describe(200, {}), 'That didn’t work. Try again.');
+    assert.match(
+        describe(404, {
+            message: 'No query results for model [App\\Models\\Machine] 5',
+        }),
+        /isn’t there any more/,
+    );
+    assert.match(
+        describe(405, {
+            message:
+                'The POST method is not supported for route machines. Supported methods: GET, HEAD.',
+        }),
+        /error 405/,
+    );
+    assert.equal(
+        describe(409, {
+            error: 'Is it running?',
+            next_step: 'Check the machine.',
+        }),
+        'Is it running? Check the machine.',
+    );
+    assert.equal(
+        errorMessage(
+            Object.assign(new Error('Request was cancelled (/x)'), {
+                code: 'ERR_CANCELLED',
+            }),
+            'Fallback.',
+        ),
+        'Fallback.',
+    );
+    assert.equal(
+        jobReason(
+            { message: 'exited 1', output_tail: ['SECRET=x'] },
+            'x',
+            false,
+        ),
+        'exited 1',
+    );
+});

@@ -16,7 +16,7 @@ final class DeployFailure
      */
     public static function explain(DaemonJob $job): ?array
     {
-        if (! in_array($job->state, ['failed', 'timed_out', 'refused'], true)) {
+        if (! in_array($job->state, ['failed', 'timed_out', 'refused'], true) || $job->kind === 'service_exec') {
             return null;
         }
 
@@ -279,7 +279,7 @@ final class DeployFailure
             fn (string $line) => $line !== '' && preg_match('/^(W: |warning\b)/i', $line) !== 1,
         ));
         $telling = array_values(array_filter($clean, fn (string $line) => preg_match('/^E: |\b(error|errors|fail|failed|failure|fatal|denied|not found|unable|cannot|can[\'’]t|couldn[\'’]?t|invalid|refused|no such|missing|timed out|killed)\b/i', $line) === 1));
-        $line = end($telling) ?: end($clean);
+        $line = $telling !== [] ? end($telling) : end($clean);
 
         return $line === false ? null : Str::limit($line, 300);
     }

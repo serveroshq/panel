@@ -26,6 +26,7 @@ use App\Support\Projects\Placement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -95,7 +96,7 @@ class MachineServiceController extends Controller
                         'state' => $job->state,
                         'log' => $hidden ? [] : ($job->log ?? []),
                         'result' => $hidden ? null : $job->result,
-                        'error' => $job->error,
+                        'error' => $hidden && is_array($job->error) ? Arr::except($job->error, ['output_tail']) : $job->error,
                         'createdAt' => $job->created_at?->toIso8601String(),
                     ];
                 }),

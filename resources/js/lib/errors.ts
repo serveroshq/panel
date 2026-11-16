@@ -14,15 +14,30 @@ const BUILT_IN = [
 
 const LARAVEL_DEFAULTS = new Set([
     'Server Error',
+    'Internal Server Error',
     'Unauthenticated.',
+    'Unauthorized.',
+    'Unauthorized',
     'CSRF token mismatch.',
     'This action is unauthorized.',
     'Too Many Attempts.',
+    'Too Many Requests',
     'Not Found',
     'Page Expired',
     'Forbidden',
+    'Bad Request',
+    'Method Not Allowed',
+    'Payload Too Large',
     'Service Unavailable',
 ]);
+
+const LARAVEL_INTERNALS =
+    /^No query results for model|^The route .* could not be found|method is not supported for route/i;
+
+function sentence(message: string): string {
+    const trimmed = message.trimEnd();
+    return /[.!?…]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
 
 function text(value: unknown): string | null {
     if (typeof value === 'string') {
@@ -50,7 +65,7 @@ function parse(body: unknown): unknown {
 function withNextStep(message: string, next: unknown): string {
     const step = text(next);
     if (!step || message.includes(step)) return message;
-    return `${message.replace(/[.\s]*$/, '.')} ${step}`;
+    return `${sentence(message)} ${step}`;
 }
 
 export function reasonIn(raw: unknown): string | null {
@@ -71,7 +86,11 @@ export function reasonIn(raw: unknown): string | null {
     if (error) return withNextStep(error, b.next_step ?? b.nextStep);
 
     const message = text(b.message);
-    if (message && !LARAVEL_DEFAULTS.has(message)) {
+    if (
+        message &&
+        !LARAVEL_DEFAULTS.has(message) &&
+        !LARAVEL_INTERNALS.test(message)
+    ) {
         return withNextStep(message, b.next_step ?? b.nextStep);
     }
     return null;
@@ -94,7 +113,11 @@ export function keyLine(lines: unknown): string | null {
     return line.length > 300 ? `${line.slice(0, 299)}…` : line;
 }
 
-export function jobReason(error: unknown, fallback: string): string {
+export function jobReason(
+    error: unknown,
+    fallback: string,
+    withOutput = true,
+): string {
     if (!error || typeof error !== 'object') return fallback;
     const e = error as Record<string, unknown>;
     const message = text(e.message);
@@ -102,12 +125,13 @@ export function jobReason(error: unknown, fallback: string): string {
     const base = message
         ? withNextStep(message, next)
         : (text(next) ?? fallback);
-    const line = keyLine(e.output_tail ?? e.outputTail);
+    const line = withOutput ? keyLine(e.output_tail ?? e.outputTail) : null;
     if (!line || base.includes(line)) return base;
-    return `${base.replace(/[.\s]*$/, '.')} ${trans('The machine said: :line', { line })}`;
+    return `${sentence(base)} ${trans('The machine said: :line', { line })}`;
 }
 
 export function statusMessage(status: number): string {
+    if (status < 400) return trans('That didn’t work. Try again.');
     if (status === 401)
         return trans(
             'You’ve been signed out. Reload the page and sign in again.',
@@ -182,8 +206,18 @@ export function isNetworkError(cause: unknown): boolean {
     return cause instanceof TypeError && NETWORK.test(cause.message);
 }
 
+function isCancelled(cause: unknown): boolean {
+    return (
+        cause instanceof Error &&
+        (cause.name === 'AbortError' ||
+            (cause as { code?: unknown }).code === 'ERR_CANCELLED')
+    );
+}
+
 export function errorMessage(cause: unknown, fallback?: string): string {
     if (isNetworkError(cause)) return networkMessage();
+    if (isCancelled(cause))
+        return fallback ?? trans('That was cancelled. Try again.');
 
     const response = (
         cause as { response?: { status?: unknown; data?: unknown } }

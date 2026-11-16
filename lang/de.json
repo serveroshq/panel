@@ -3585,5 +3585,7 @@
     "You don’t have permission to do that in this workspace.": "Du hast in diesem Workspace keine Berechtigung dafür.",
     "You’re offline. Check your connection and try again.": "Du bist offline. Prüfe deine Verbindung und versuch es noch mal.",
     "You’ve been signed out. Reload the page and sign in again.": "Du wurdest abgemeldet. Lade die Seite neu und melde dich wieder an.",
-    "The machine said: :line": "Die Maschine meldete: :line"
+    "The machine said: :line": "Die Maschine meldete: :line",
+    "That didn’t work. Try again.": "Das hat nicht geklappt. Versuch es nochmal.",
+    "That was cancelled. Try again.": "Das wurde abgebrochen. Versuch es noch mal."
 }

@@ -1,10 +1,12 @@
 <?php
 
 use App\Models\DaemonJob;
+use App\Models\Machine;
 use App\Support\Deploys\DeployFailure;
 use App\Support\Workflows\WorkflowEngine;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Psr7\Request;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Client\ConnectionException;
 
 function causeOf(string $phase, string $message, array $tail = [], bool $timedOut = false): ?string
@@ -104,6 +106,12 @@ test('other kinds of job get a cause and a fix for common failures too', functio
     'still running' => ['running', 'No space left on device', [], null],
 ]);
 
+test('a console command’s own output isn’t explained as a machine problem', function () {
+    $job = (new DaemonJob)->forceFill(['kind' => 'service_exec', 'state' => 'failed', 'error' => ['message' => 'exited 1'], 'log' => ['curl: (6) Could not resolve host: nope']]);
+
+    expect(DeployFailure::explain($job))->toBeNull();
+});
+
 test('a workflow step that fails says why, without leaking database or HTTP client details', function () {
     $failure = Closure::bind(fn (Throwable $e): string => WorkflowEngine::failure($e), null, WorkflowEngine::class);
 
@@ -111,7 +119,8 @@ test('a workflow step that fails says why, without leaking database or HTTP clie
         ->and($failure(new PDOException('SQLSTATE[42S02]: Base table or view not found: workflows')))->not->toContain('SQLSTATE')
         ->and($failure(new ConnectException('cURL error 6 for https://hooks.example.com/secret-token', new Request('POST', 'https://hooks.example.com/secret-token'))))->not->toContain('secret-token')
         ->and($failure(new ConnectionException('cURL error 7 for https://hooks.example.com/secret-token')))->toContain('Couldn’t connect')
-        ->and($failure(new LogicException('internal')))->toContain('It’s been logged');
+        ->and($failure(new LogicException('internal')))->toContain('It’s been logged')
+        ->and($failure((new ModelNotFoundException)->setModel(Machine::class, [5])))->toContain('was deleted')->not->toContain('App\\Models');
 });
 
 test('the most telling line of a failure’s output is picked out', function (array $lines, ?string $expected) {
