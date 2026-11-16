@@ -2,6 +2,7 @@
 
 use App\Api\ApiRoutes;
 use App\Api\OpenApi;
+use App\Api\Schemas;
 use App\Enums\Plan;
 use App\Mcp\Scopes;
 use App\Mcp\ToolRegistry;
@@ -52,57 +53,6 @@ function schemaApi(string $key, string $method, string $path, array $body = []):
     return test()->flushHeaders()->withHeader('Authorization', "Bearer {$key}")->json($method, "/api/v1/{$path}", $body);
 }
 
-/**
- * Checks a decoded JSON value (objects as stdClass) against the JSON Schema
- * features the API's response schemas use, and returns what doesn't match.
- *
- * @param  array<string, mixed>  $schema
- * @param  array<string, mixed>  $components
- * @return list<string>
- */
-function schemaProblems(mixed $value, array $schema, array $components, string $at = 'data'): array
-{
-    if (isset($schema['$ref'])) {
-        return schemaProblems($value, $components[substr($schema['$ref'], strlen('#/components/schemas/'))], $components, $at);
-    }
-    $types = (array) ($schema['type'] ?? []);
-    $actual = match (true) {
-        $value === null => 'null',
-        is_bool($value) => 'boolean',
-        is_int($value) => 'integer',
-        is_float($value) => 'number',
-        is_string($value) => 'string',
-        is_array($value) => 'array',
-        default => 'object',
-    };
-    if ($types !== [] && ! in_array($actual, $types, true) && ! ($actual === 'integer' && in_array('number', $types, true))) {
-        return ["{$at} is {$actual}, the schema says ".implode('|', $types)];
-    }
-    if (isset($schema['enum']) && ! is_object($value) && ! in_array($value, $schema['enum'], true)) {
-        return ["{$at} is ".json_encode($value).', not one of '.json_encode($schema['enum'])];
-    }
-    $problems = [];
-    if ($value instanceof stdClass) {
-        foreach ($schema['required'] ?? [] as $name) {
-            if (! property_exists($value, $name)) {
-                $problems[] = "{$at}.{$name} is missing";
-            }
-        }
-        foreach ($schema['properties'] ?? [] as $name => $property) {
-            if (property_exists($value, $name)) {
-                array_push($problems, ...schemaProblems($value->{$name}, $property, $components, "{$at}.{$name}"));
-            }
-        }
-    }
-    if (is_array($value) && isset($schema['items'])) {
-        foreach ($value as $i => $item) {
-            array_push($problems, ...schemaProblems($item, $schema['items'], $components, "{$at}[{$i}]"));
-        }
-    }
-
-    return $problems;
-}
-
 /** Checks an answer against the schema its route documents, and returns the data. */
 function matchesDocumented(TestResponse $response, string $tool, array &$checked, int $status = 200): mixed
 {
@@ -110,7 +60,7 @@ function matchesDocumented(TestResponse $response, string $tool, array &$checked
     $document = OpenApi::document(app(ToolRegistry::class));
     $schema = app(ToolRegistry::class)->find($tool)->responseSchema();
     $data = json_decode($response->getContent())->data;
-    expect(schemaProblems($data, $schema, $document['components']['schemas']))->toBe([], $tool);
+    answersAsDocumented($tool, $data);
     $checked[$tool] = true;
 
     return $data;
@@ -145,8 +95,21 @@ test('every tool that documents its answer answers just that', function () {
     matchesDocumented(schemaApi($key, 'GET', "webhooks/{$webhook->id}/deliveries"), 'list_webhook_deliveries', $checked);
     matchesDocumented(schemaApi($key, 'DELETE', "webhooks/{$webhook->id}"), 'delete_webhook', $checked);
 
-    $documented = collect(app(ToolRegistry::class)->all())->filter(fn ($tool) => $tool->responseSchema() !== null)->keys()->sort()->values()->all();
-    expect(collect($checked)->keys()->sort()->values()->all())->toBe($documented);
+    expect($checked)->toHaveCount(16);
+});
+
+test('no two groups name a shared shape the same', function () {
+    $names = collect([Schemas\Machines::class, Schemas\Services::class, Schemas\Deploys::class, Schemas\Monitoring::class, Schemas\Workflows::class, Schemas\Team::class])
+        ->flatMap(fn (string $group) => array_keys($group::components()));
+
+    expect($names->duplicates()->values()->all())->toBe([])
+        ->and($names->intersect(['Job', 'Machine', 'Operation', 'Webhook', 'WebhookDelivery'])->values()->all())->toBe([]);
+});
+
+test('every tool documents what it answers', function () {
+    $missing = collect(app(ToolRegistry::class)->all())->filter(fn ($tool) => $tool->responseSchema() === null)->keys()->sort()->values()->all();
+
+    expect($missing)->toBe([]);
 });
 
 test('the OpenAPI document is whole: shared shapes resolve, ids are unique, every route documents its errors', function () {

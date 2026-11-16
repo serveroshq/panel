@@ -45,7 +45,7 @@ final class ListJobs extends Tool
 
     public function responseSchema(): array
     {
-        return ResponseSchemas::page('jobs', ResponseSchemas::ref('Job'));
+        return ResponseSchemas::page('jobs', ResponseSchemas::ref('Job'), ['limit' => ['type' => 'integer', 'description' => 'The most it answers with.']]);
     }
 
     public function handle(McpContext $context, array $arguments): array

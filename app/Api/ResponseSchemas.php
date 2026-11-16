@@ -9,7 +9,9 @@ use App\Support\Webhooks\Webhooks;
 /**
  * What the API answers under `data`, for the tools that describe it
  * (Tool::responseSchema()). Shared shapes live under components/schemas.
- * tests/Feature/ApiResponseSchemasTest.php checks real answers against them.
+ * Every mcpCall() in the tests checks the tool's answer against its schema
+ * (schemaProblems() in tests/Pest.php), and ApiResponseSchemasTest checks
+ * that every tool has one.
  */
 final class ResponseSchemas
 {
@@ -37,14 +39,17 @@ final class ResponseSchemas
     }
 
     /**
-     * A page of a list, with the cursor for the next.
+     * A page of a list, with the cursor for the next, and any other
+     * properties the list answers with in $extra.
      *
      * @param  array<string, mixed>  $items
+     * @param  array<string, array<string, mixed>>  $extra
      * @return array<string, mixed>
      */
-    public static function page(string $key, array $items): array
+    public static function page(string $key, array $items, array $extra = []): array
     {
         return self::object([
+            ...$extra,
             'total' => ['type' => 'integer'],
             'offset' => ['type' => 'integer', 'deprecated' => true],
             'more' => ['type' => 'boolean'],
@@ -84,6 +89,9 @@ final class ResponseSchemas
                 'startedBy' => $maybeString,
                 'stale' => ['type' => 'boolean'],
                 'retryable' => ['type' => 'boolean'],
+                'note' => ['type' => 'string', 'description' => 'Why the log or result is left out, when it is.'],
+                'updatedAt' => $time,
+                'url' => ['type' => 'string', 'description' => 'The job on its machine’s page in the dashboard.'],
             ], ['id', 'kind', 'state', 'finished', 'machineId', 'log', 'logLines'], 'Work on a machine.'),
             'Machine' => self::object([
                 'id' => ['type' => 'integer'],
@@ -102,15 +110,25 @@ final class ResponseSchemas
                 'region' => $maybeString,
                 'tier' => $maybeString,
                 'labels' => ['type' => 'object', 'additionalProperties' => $string],
-                'maintenance' => ['type' => ['object', 'null'], 'properties' => ['until' => $string, 'reason' => $maybeString]],
+                'maintenance' => ['type' => ['object', 'null'], 'properties' => ['until' => $string, 'reason' => $maybeString, 'public' => ['type' => 'boolean']]],
                 'lastSeen' => $time,
                 'daemonVersion' => $maybeString,
+                'icon' => ['type' => ['string', 'null'], 'description' => 'Its icon’s address, when it has one.'],
                 'url' => $string,
+                'osUpdates' => self::object([
+                    'checkedAt' => $time,
+                    'waiting' => ['type' => ['integer', 'null'], 'description' => 'Null until it has been checked.'],
+                    'security' => ['type' => ['integer', 'null']],
+                    'rebootRequired' => ['type' => ['boolean', 'null']],
+                    'held' => ['type' => 'array', 'items' => $string],
+                    'complete' => ['type' => ['boolean', 'null']],
+                ], description: 'OS package updates waiting.'),
             ], ['id', 'name', 'environment', 'status'], 'A machine running the ServerOS daemon.'),
             'Operation' => self::object([
                 'id' => ['type' => 'integer'],
                 'kind' => ['type' => 'string', 'enum' => Operation::KINDS],
                 'state' => ['type' => 'string', 'enum' => ['running', 'paused', 'finished', 'cancelled']],
+                ...array_fill_keys(Operation::KINDS, ['type' => 'object', 'description' => 'The settings it was started with, under its kind.']),
                 'pausedReason' => $maybeString,
                 'selector' => ['type' => ['object', 'null']],
                 'strategy' => self::object([
@@ -161,6 +179,12 @@ final class ResponseSchemas
                 'deliveredAt' => $time,
                 'nextAttemptAt' => $time,
             ], ['id', 'eventId', 'event', 'state', 'attempts'], 'One event sent to one endpoint.'),
+            ...Schemas\Machines::components(),
+            ...Schemas\Services::components(),
+            ...Schemas\Deploys::components(),
+            ...Schemas\Monitoring::components(),
+            ...Schemas\Workflows::components(),
+            ...Schemas\Team::components(),
         ];
     }
 }

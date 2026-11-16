@@ -54,7 +54,10 @@ final class ListMachines extends Tool
 
     public function responseSchema(): array
     {
-        return ResponseSchemas::page('machines', ResponseSchemas::ref('Machine'));
+        return ResponseSchemas::page('machines', ResponseSchemas::ref('Machine'), [
+            'count' => ['type' => 'integer', 'description' => 'How many are on this page.'],
+            'url' => ['type' => 'string', 'description' => 'The machines page in the dashboard.'],
+        ]);
     }
 
     public function handle(McpContext $context, array $arguments): array

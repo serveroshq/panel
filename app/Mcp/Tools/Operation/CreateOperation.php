@@ -104,6 +104,7 @@ final class CreateOperation extends Tool
         return ResponseSchemas::object([
             'operation' => ResponseSchemas::ref('Operation'),
             'dryRun' => ['type' => 'boolean', 'description' => 'With dry_run: nothing was started.'],
+            'kind' => ['type' => 'string', 'enum' => Operation::KINDS, 'description' => 'With dry_run: the kind it would run.'],
             'count' => ['type' => 'integer'],
             'machinesPerBatch' => ['type' => 'integer'],
             'batches' => ['type' => 'array', 'items' => ['type' => 'array', 'items' => ResponseSchemas::object(['id' => ['type' => 'integer'], 'name' => ['type' => 'string']], ['id', 'name'])]],
