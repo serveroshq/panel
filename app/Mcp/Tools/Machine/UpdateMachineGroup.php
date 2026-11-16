@@ -9,6 +9,7 @@ use App\Mcp\Tool;
 use App\Mcp\ToolError;
 use App\Models\Machine;
 use App\Support\Audit\AuditContext;
+use App\Support\Machines\MachineSelector;
 
 final class UpdateMachineGroup extends Tool
 {
@@ -35,6 +36,7 @@ final class UpdateMachineGroup extends Tool
             'group' => Schema::string('The group: its id or name (as list_machine_groups shows).', maxLength: 120),
             'name' => Schema::string('A new name for it (up to 60 characters).', maxLength: 60),
             'machines' => Schema::array($machine, 'Exactly the machines it should have.', 500),
+            'selector' => MachineSelector::schema('Instead of machines: exactly the machines this picks now, by what they are, like {"tier": "web"}. Every field given must match.'),
             'add' => Schema::array($machine, 'Machines to put in it.', 500),
             'remove' => Schema::array($machine, 'Machines to take out of it.', 500),
             'policy' => Schema::string('The machine policy its machines follow (unless one picked its own): an id or name from list_machine_policies, or "default" to follow the workspace’s default.', maxLength: 60),
@@ -53,6 +55,7 @@ final class UpdateMachineGroup extends Tool
 
     public function handle(McpContext $context, array $arguments): array
     {
+        $arguments = MachineSelector::expand($context, $arguments);
         $data = $this->validate(ServerWork::trimmed($arguments, 'name'), [
             'group' => ['required', ServerWork::reference()],
             'name' => ['sometimes', 'required', 'string', 'max:60'],

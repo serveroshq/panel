@@ -8,6 +8,7 @@ use App\Mcp\Scopes;
 use App\Mcp\Tool;
 use App\Models\Machine;
 use App\Models\MachineGroup;
+use App\Support\Machines\MachineSelector;
 
 final class CreateMachineGroup extends Tool
 {
@@ -31,6 +32,7 @@ final class CreateMachineGroup extends Tool
         return Schema::object([
             'name' => Schema::string('The group’s name.', maxLength: 60),
             'machines' => Schema::array(Schema::machine('A machine: its id or name.'), 'The machines to put in it.', 500),
+            'selector' => MachineSelector::schema('Instead of machines: put in the machines this picks, by what they are, like {"labels": {"env": "prod"}}. Every field given must match.'),
             'policy' => Schema::string('The machine policy its machines follow: an id or name from list_machine_policies. Leave it out for the workspace’s default.', maxLength: 60),
         ], ['name']);
     }
@@ -42,6 +44,7 @@ final class CreateMachineGroup extends Tool
 
     public function handle(McpContext $context, array $arguments): array
     {
+        $arguments = MachineSelector::expand($context, $arguments);
         $data = $this->validate(ServerWork::trimmed($arguments, 'name'), [
             'name' => ['required', 'string', 'max:60'],
             'machines' => ['sometimes', 'array', 'list', 'max:500'],

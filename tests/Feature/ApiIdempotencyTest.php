@@ -32,14 +32,15 @@ test('the same key and request twice does the work once and answers the same bot
     [$workspace, $key] = idempotencyWorkspace();
 
     $first = idempotent($key, 'group-eu', ['name' => 'eu-web'])->assertOk();
-    $again = idempotent($key, 'group-eu', ['name' => 'eu-web'])->assertOk()->assertHeader('Idempotent-Replayed', 'true');
+    $again = idempotent($key, 'group-eu', ['name' => 'eu-web'])->assertOk()->assertHeader('Idempotent-Replayed', 'true')->assertHeader('Idempotency-Key', 'group-eu');
+    $first->assertHeader('Idempotency-Key', 'group-eu');
 
     expect($again->getContent())->toBe($first->getContent())
         ->and($workspace->machineGroups()->count())->toBe(1);
 
     // Without a key, sending it again does it again.
     idempotent($key, null, ['name' => 'us-web'])->assertOk();
-    idempotent($key, null, ['name' => 'us-web'])->assertHeaderMissing('Idempotent-Replayed');
+    idempotent($key, null, ['name' => 'us-web'])->assertHeaderMissing('Idempotent-Replayed')->assertHeaderMissing('Idempotency-Key');
     expect(ApiIdempotencyKey::query()->count())->toBe(1);
 });
 
@@ -47,7 +48,7 @@ test('the same key with a different request is a 409, and nothing is done', func
     [$workspace, $key] = idempotencyWorkspace();
 
     idempotent($key, 'release-1', ['name' => 'eu-web'])->assertOk();
-    idempotent($key, 'release-1', ['name' => 'us-web'])->assertStatus(409)->assertJsonPath('error.type', 'conflict');
+    idempotent($key, 'release-1', ['name' => 'us-web'])->assertStatus(409)->assertJsonPath('error.type', 'conflict')->assertHeader('Idempotency-Key', 'release-1');
     idempotent($key, 'release-1', ['name' => 'eu-web'], 'POST', 'monitors')->assertStatus(409);
 
     expect($workspace->machineGroups()->pluck('name')->all())->toBe(['eu-web']);

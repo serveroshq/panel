@@ -8,6 +8,7 @@ use App\Mcp\Scopes;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
 use App\Models\Machine;
+use App\Support\Machines\MachineSelector;
 use App\Support\Machines\PackageRollouts;
 use Illuminate\Validation\ValidationException;
 
@@ -43,6 +44,7 @@ final class CreatePackageRollout extends Tool
             'mode' => Schema::string('latest (default) or exact.', ['latest', 'exact']),
             'allow_downgrade' => Schema::boolean('Exact versions only: allow going back to an older version.'),
             'machines' => Schema::array(Schema::integer('A machine id.'), 'The machines, by id. Default: every machine with one of the packages waiting.', 2000),
+            'selector' => MachineSelector::schema('Instead of machines: the machines this picks, by what they are, like {"labels": {"env": "staging"}}. Every field given must match.'),
             'batch_size' => Schema::integer('Machines at a time (default: all at once).', 1, 1000),
             'stop_on_failure' => Schema::boolean('Stop before the next batch when a machine fails (default true).'),
             'reboot' => Schema::string('never (default) or if_required.', ['never', 'if_required']),
@@ -64,6 +66,7 @@ final class CreatePackageRollout extends Tool
 
     public function handle(McpContext $context, array $arguments): array
     {
+        $arguments = MachineSelector::expand($context, $arguments);
         $input = [...$arguments, 'mode' => $arguments['mode'] ?? 'latest'];
         unset($input['confirm']);
         if (! isset($input['packages']) && ! ($input['all'] ?? false)) {

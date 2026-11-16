@@ -51,12 +51,12 @@ class IdempotentApiRequests
         } catch (UniqueConstraintViolationException) {
             $first = ApiIdempotencyKey::query()->where('mcp_token_id', $tokenId)->where('key_hash', $keyHash)->first();
 
-            return match (true) {
+            return self::honoured($key, match (true) {
                 $first === null => self::fail(409, 'conflict', 'A request with this Idempotency-Key is still running. Try again in a moment.'),
                 $first->request_hash !== $requestHash => self::fail(409, 'conflict', 'This Idempotency-Key was already used for a different request in the last 24 hours. Use a new key for a new request.'),
                 $first->status === null => self::fail(409, 'conflict', 'A request with this Idempotency-Key is still running. Try again in a moment.'),
                 default => response((string) $first->body, $first->status, ['Content-Type' => 'application/json', 'Idempotent-Replayed' => 'true']),
-            };
+            });
         }
 
         try {
@@ -72,6 +72,14 @@ class IdempotentApiRequests
         } else {
             $record->forceFill(['status' => $response->getStatusCode(), 'body' => (string) $response->getContent()])->save();
         }
+
+        return self::honoured($key, $response);
+    }
+
+    /** Sends the key back, so a client knows this panel honours it and a retried write is done once. */
+    private static function honoured(string $key, Response $response): Response
+    {
+        $response->headers->set('Idempotency-Key', $key);
 
         return $response;
     }

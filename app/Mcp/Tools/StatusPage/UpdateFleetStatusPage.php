@@ -14,6 +14,7 @@ use App\Models\StatusPage;
 use App\Models\WorkspaceStatusPage;
 use App\Support\Audit\AuditContext;
 use App\Support\Edition;
+use App\Support\Machines\MachineSelector;
 use App\Support\StatusPages\FleetStatusReport;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -57,6 +58,7 @@ final class UpdateFleetStatusPage extends Tool
             'show_uptime' => Schema::boolean('Show the 90-day uptime bars.'),
             'every_machine' => Schema::boolean('true: cover every machine, including ones connected later.'),
             'machines' => $machines('Exactly the machines to cover.'),
+            'selector' => MachineSelector::schema('Instead of machines: exactly the machines this picks now, by what they are, like {"region": "eu-central"}. Every field given must match.'),
             'add_machines' => $machines('Machines to add to the page.'),
             'remove_machines' => $machines('Machines to take off the page.'),
             'monitors' => Schema::array(Schema::string('An uptime monitor on no machine: its id or name.', maxLength: 120), 'Exactly the uptime monitors on no machine to show (empty: none).', 200),
@@ -85,6 +87,7 @@ final class UpdateFleetStatusPage extends Tool
 
     public function handle(McpContext $context, array $arguments): array
     {
+        $arguments = MachineSelector::expand($context, $arguments);
         $args = $this->validate($arguments, [
             'enabled' => ['sometimes', 'boolean'],
             'public' => ['sometimes', 'boolean'],

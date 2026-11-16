@@ -22,7 +22,7 @@ final class MachineSelector
     private const FIELDS = ['groups', 'labels', 'provider', 'region', 'tier', 'online'];
 
     /** @return array<string, mixed> */
-    public static function schema(): array
+    public static function schema(string $description = 'Which machines, by what they are. Every field given must match. Give at least one.'): array
     {
         $oneOrMore = fn (string $description, int $maxLength) => [
             'type' => ['string', 'array'],
@@ -45,8 +45,30 @@ final class MachineSelector
                 'tier' => Schema::string('Machines in this tier (any case).', maxLength: 60),
                 'online' => Schema::boolean('true: only machines that are online now; false: only those that aren’t.'),
             ]),
-            'description' => 'Which machines, by what they are. Every field given must match. Give at least one.',
+            'description' => $description,
         ];
+    }
+
+    /**
+     * For a tool that takes a list of machines in $field: a `selector` instead
+     * becomes that list, as the ids of the machines it picks.
+     *
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
+    public static function expand(McpContext $context, array $arguments, string $field = 'machines'): array
+    {
+        $selector = $arguments['selector'] ?? null;
+        unset($arguments['selector']);
+        if ($selector === null) {
+            return $arguments;
+        }
+        if (($arguments[$field] ?? null) !== null) {
+            throw new ToolError("Invalid arguments: give a selector or {$field}, not both.");
+        }
+        $arguments[$field] = self::pick($context, ['selector' => $selector])->pluck('id')->all();
+
+        return $arguments;
     }
 
     /**

@@ -4,6 +4,7 @@ use App\Enums\Plan;
 use App\Mcp\Scopes;
 use App\Models\Machine;
 use App\Models\McpToken;
+use App\Models\PackageRollout;
 use App\Models\Workspace;
 use Illuminate\Support\Str;
 
@@ -83,4 +84,28 @@ test('a selector only sees the key’s own workspace', function () {
 
     expect(resolvedNames($key, ['selector' => ['labels' => ['env' => 'prod']]]))->not->toContain('theirs');
     resolveSelector($key, ['machines' => ['theirs']])->assertStatus(422);
+});
+
+test('routes that take a list of machines take a selector instead: groups, package rollouts and the fleet status page', function () {
+    [$workspace, $key] = selectorWorkspace();
+    $api = fn (string $method, string $path, array $body) => test()->flushHeaders()->withHeader('Authorization', "Bearer {$key}")->json($method, "/api/v1/{$path}", $body);
+    $namesIn = fn (string $group) => $workspace->machines()->whereHas('group', fn ($q) => $q->where('name', $group))->orderBy('name')->pluck('name')->all();
+
+    $api('POST', 'machine-groups', ['name' => 'prod-web', 'selector' => ['labels' => ['env' => 'prod'], 'tier' => 'web']])->assertOk();
+    expect($namesIn('prod-web'))->toBe(['eu-1', 'eu-2']);
+
+    $api('PATCH', 'machine-groups/prod-web', ['selector' => ['labels' => ['env' => 'prod']]])->assertOk();
+    expect($namesIn('prod-web'))->toBe(['db-1', 'eu-1', 'eu-2']);
+
+    $api('POST', 'package-rollouts', ['packages' => [['name' => 'openssl']], 'selector' => ['region' => 'nyc'], 'confirm' => '1 machine'])->assertOk();
+    expect(PackageRollout::query()->sole()->targets()->pluck('machine_id')->all())->toBe([$workspace->machines()->where('name', 'us-1')->value('id')]);
+
+    $api('PATCH', 'status-pages/fleet', ['selector' => ['tier' => 'db']])->assertOk();
+    expect($workspace->fleetStatusPage()->first()?->machines)->toBe([$workspace->machines()->where('name', 'db-1')->value('id')]);
+
+    $api('POST', 'machine-groups', ['name' => 'both', 'machines' => ['db-1'], 'selector' => ['tier' => 'db']])->assertStatus(422)
+        ->assertJsonPath('error.message', fn (string $m) => str_contains($m, 'not both'));
+    $api('POST', 'machine-groups', ['name' => 'nobody', 'selector' => ['labels' => ['env' => 'dev']]])->assertStatus(422)
+        ->assertJsonPath('error.message', fn (string $m) => str_contains($m, 'No machines'));
+    expect($workspace->machineGroups()->whereIn('name', ['both', 'nobody'])->exists())->toBeFalse();
 });
