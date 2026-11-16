@@ -68,6 +68,7 @@ use Illuminate\Support\Facades\Storage;
  * @property list<string>|null $held_packages packages held at their version
  * @property array{id: string|null, version_id: string|null, pretty_name: string|null}|null $os_release
  * @property bool $updates_complete false when the list came from an older daemon's capped lines
+ * @property CarbonImmutable|null $vulns_scanned_at when its waiting updates were last matched against known vulnerabilities
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
@@ -120,6 +121,7 @@ class Machine extends Model
             'held_packages' => 'array',
             'os_release' => 'array',
             'updates_complete' => 'boolean',
+            'vulns_scanned_at' => 'datetime',
         ];
     }
 
@@ -141,6 +143,16 @@ class Machine extends Model
     public function packageUpdates(): HasMany
     {
         return $this->hasMany(MachinePackageUpdate::class);
+    }
+
+    /**
+     * Known vulnerabilities its waiting updates fix.
+     *
+     * @return HasMany<MachineVulnerability, $this>
+     */
+    public function vulnerabilities(): HasMany
+    {
+        return $this->hasMany(MachineVulnerability::class);
     }
 
     /** @return BelongsTo<MachineGroup, $this> */

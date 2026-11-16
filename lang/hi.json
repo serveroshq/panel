@@ -3579,5 +3579,7 @@
     "Its path in the repository. Every service in it runs as one stack.": "रिपॉज़िटरी में इसका पाथ। इसकी हर सर्विस एक स्टैक के रूप में चलती है।",
     "They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.": "ये Compose फ़ाइल में ${NAME} भरते हैं। इन्हें किसी सर्विस के environment में दें, जैसे DATABASE_URL: ${DATABASE_URL}।",
     "You need permission to manage machines to deploy here.": "यहाँ डिप्लॉय करने के लिए आपको मशीनें मैनेज करने की अनुमति चाहिए।",
-    "Deploys aren’t set up on this panel yet.": "इस पैनल पर अभी डिप्लॉय सेट अप नहीं है।"
+    "Deploys aren’t set up on this panel yet.": "इस पैनल पर अभी डिप्लॉय सेट अप नहीं है।",
+    "A waiting update fixes a known vulnerability": "इंतज़ार कर रहा अपडेट किसी जानी-मानी कमज़ोरी को ठीक करता है",
+    "High and critical CVEs, at most once a day. Straight away for any being used in attacks.": "हाई और क्रिटिकल CVE, दिन में ज़्यादा से ज़्यादा एक बार। अगर किसी का हमलों में इस्तेमाल हो रहा है तो तुरंत।"
 }

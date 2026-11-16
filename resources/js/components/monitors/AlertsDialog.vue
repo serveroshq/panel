@@ -51,6 +51,13 @@ const kinds = [
         label: trans('A daemon update waits for approval'),
         hint: trans('And when one is installed, on machines that ask first.'),
     },
+    {
+        key: 'security',
+        label: trans('A waiting update fixes a known vulnerability'),
+        hint: trans(
+            'High and critical CVEs, at most once a day. Straight away for any being used in attacks.',
+        ),
+    },
 ] as const;
 
 function sends(kind: string): boolean {

@@ -3579,5 +3579,7 @@
     "Its path in the repository. Every service in it runs as one stack.": "Der Pfad im Repository. Alle Dienste darin laufen als ein Stack.",
     "They fill in ${NAME} in the Compose file. Pass them to a service under environment, like DATABASE_URL: ${DATABASE_URL}.": "Sie füllen ${NAME} in der Compose-Datei aus. Gib sie einem Dienst unter environment weiter, etwa DATABASE_URL: ${DATABASE_URL}.",
     "You need permission to manage machines to deploy here.": "Zum Deployen hier brauchst du die Berechtigung, Maschinen zu verwalten.",
-    "Deploys aren’t set up on this panel yet.": "Deploys sind auf diesem Panel noch nicht eingerichtet."
+    "Deploys aren’t set up on this panel yet.": "Deploys sind auf diesem Panel noch nicht eingerichtet.",
+    "A waiting update fixes a known vulnerability": "Ein wartendes Update behebt eine bekannte Sicherheitslücke",
+    "High and critical CVEs, at most once a day. Straight away for any being used in attacks.": "Hohe und kritische CVEs, höchstens einmal am Tag. Sofort, wenn eine schon für Angriffe genutzt wird."
 }

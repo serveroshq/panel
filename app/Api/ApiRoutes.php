@@ -6,7 +6,7 @@ final class ApiRoutes
 {
     public const TAGS = [
         'Workspace' => 'The workspace itself, search, issues, activity and your own notification settings.',
-        'Machines' => 'Servers running the ServerOS daemon: details, maintenance, updates, reboots and the firewall.',
+        'Machines' => 'Servers running the ServerOS daemon: details, maintenance, updates, known vulnerabilities, reboots and the firewall.',
         'Machine groups' => 'Groups of machines, for filtering and status pages.',
         'Services' => 'What runs on a machine: containers and systemd units, their lifecycle, logs and commands.',
         'Service groups' => 'Groups of services on one machine.',
@@ -69,6 +69,8 @@ final class ApiRoutes
                 ['POST', 'machines/{machine}/packages', 'install_packages'],
                 ['POST', 'machines/{machine}/reboot', 'reboot_machine'],
                 ['GET', 'package-updates', 'list_package_updates'],
+                ['GET', 'vulnerabilities', 'list_vulnerabilities'],
+                ['GET', 'machines/{machine}/vulnerabilities', 'list_vulnerabilities'],
                 ['POST', 'package-rollouts', 'create_package_rollout'],
                 ['GET', 'package-rollouts', 'get_package_rollout'],
                 ['GET', 'package-rollouts/{rollout}', 'get_package_rollout'],

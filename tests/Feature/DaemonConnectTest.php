@@ -175,6 +175,28 @@ test('a machine behind NAT on an overlay network shows the address it connects f
     }
 });
 
+test('a machine on a private network follows its new address after the network changes it', function () {
+    config()->set('daemon.gateway_secret', 'test-gateway-secret');
+    $machine = Machine::factory()->create(['ip_address' => '192.168.1.135']);
+    $machine->forceFill(['uid' => (string) Str::uuid(), 'certificate_serial' => 'abc123'])->save();
+    $facts = fn (string $address) => ['hostname' => 'box', 'interfaces' => [
+        ['name' => 'lo', 'addresses' => ['127.0.0.1']],
+        ['name' => 'docker0', 'addresses' => ['172.17.0.1/16']],
+        ['name' => 'eno1', 'addresses' => ["{$address}/24"]],
+    ]];
+
+    $this->postJson('/api/gateway/hello', [
+        'serial' => 'abc123',
+        'hello' => ['machine_id' => $machine->uid, 'daemon_version' => 'v0.1.0', 'supported_majors' => [1], 'facts' => $facts('192.168.4.135')],
+    ], ['X-Gateway-Secret' => 'test-gateway-secret'])->assertOk();
+    expect($machine->fresh()->ip_address)->toBe('192.168.4.135');
+
+    $this->postJson("/api/gateway/machines/{$machine->uid}/ingest", [
+        'envelopes' => [['v' => 1, 'kind' => 'facts', 'payload' => $facts('10.0.0.20')]],
+    ], ['X-Gateway-Secret' => 'test-gateway-secret'])->assertOk();
+    expect($machine->fresh()->ip_address)->toBe('10.0.0.20');
+});
+
 test('a machine joining with a command staff left reads as ServerOS Support, with no IP on either row', function () {
     config()->set('daemon.install_ready', true);
     Queue::fake([SendNtfy::class]);

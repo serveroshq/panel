@@ -25,6 +25,8 @@ Schedule::command('machines:watch')->everyMinute()->withoutOverlapping(5);
 Schedule::command('maintenance:tick')->everyMinute()->withoutOverlapping(5);
 Schedule::command('updates:check-due')->hourlyAt(23)->withoutOverlapping(30);
 Schedule::command('updates:tick')->everyMinute()->withoutOverlapping(5);
+// The CVE watcher: free feeds (OSV, CISA KEV, NVD, EPSS) against every connected machine's waiting updates, emails and the Discord feed.
+Schedule::command('security:cves')->everyFifteenMinutes()->withoutOverlapping(30)->runInBackground();
 Schedule::command('domains:check')->everyMinute()->withoutOverlapping(5);
 Schedule::command('email-domains:recheck')->dailyAt('04:19')->withoutOverlapping();
 Schedule::command('workflows:tick')->everyThirtySeconds()->withoutOverlapping(5);
