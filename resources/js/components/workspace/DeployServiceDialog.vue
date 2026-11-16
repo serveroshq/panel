@@ -26,6 +26,7 @@ import TickBox from '@/components/workspace/TickBox.vue';
 import { useStepFrame } from '@/composables/useStepFrame';
 import { useZipUpload } from '@/composables/useZipUpload';
 import { toast } from '@/lib/toast';
+import { describe, errorMessage } from '@/lib/errors';
 
 export type TemplateField = {
     key: string;
@@ -264,13 +265,10 @@ async function detect(): Promise<void> {
             },
             body: JSON.stringify({ repository }),
         });
-        const body = await response.json();
+        const body = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            detectError.value =
-                body.errors?.repository?.[0] ??
-                body.message ??
-                trans('Couldn’t check that repository.');
+            detectError.value = describe(response.status, body);
 
             return;
         }
@@ -278,8 +276,8 @@ async function detect(): Promise<void> {
         detection.value = body as Detection;
         customSlug.value = body.template ?? '';
         void loadBranches(body as Detection);
-    } catch {
-        detectError.value = trans('Couldn’t reach the panel. Try again.');
+    } catch (cause) {
+        detectError.value = errorMessage(cause);
     } finally {
         detecting.value = false;
     }
@@ -773,7 +771,7 @@ async function deploy(): Promise<void> {
                 extra_env: form.value.extra_env || null,
             }),
         });
-        const body = await response.json();
+        const body = await response.json().catch(() => ({}));
 
         if (response.status === 422 && body.errors) {
             errors.value = Object.fromEntries(
@@ -786,9 +784,7 @@ async function deploy(): Promise<void> {
         }
 
         if (!response.ok) {
-            errors.value = {
-                form: body.error ?? trans('Couldn’t queue the deployment.'),
-            };
+            errors.value = { form: describe(response.status, body) };
 
             return;
         }
@@ -796,8 +792,8 @@ async function deploy(): Promise<void> {
         result.value = body as DeployResult;
         step.value = 'done';
         emit('deployed', result.value);
-    } catch {
-        errors.value = { form: trans('Couldn’t reach the panel. Try again.') };
+    } catch (cause) {
+        errors.value = { form: errorMessage(cause) };
     } finally {
         submitting.value = false;
     }

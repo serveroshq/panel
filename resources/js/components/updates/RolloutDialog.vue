@@ -22,6 +22,7 @@ import type {
     UpdatesMachine,
     UpdatesPackage,
 } from './updates';
+import { errorMessage } from '@/lib/errors';
 
 const props = defineProps<{
     packages: UpdatesPackage[];
@@ -257,7 +258,7 @@ async function submit(): Promise<void> {
         open.value = false;
         emit('created', rollout);
     } catch (cause) {
-        error.value = (cause as Error).message;
+        error.value = errorMessage(cause);
     } finally {
         sending.value = false;
     }

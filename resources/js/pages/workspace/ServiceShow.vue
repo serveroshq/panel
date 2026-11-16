@@ -82,6 +82,14 @@ import { useZipUpload } from '@/composables/useZipUpload';
 import { timeAgo } from '@/lib/timeAgo';
 import { edit as securityEdit } from '@/routes/security';
 import type { Workspace, WorkspaceAccess } from '@/types';
+import {
+    describe,
+    errorMessage,
+    jobReason,
+    networkMessage,
+    reasonIn,
+    responseError,
+} from '@/lib/errors';
 
 const upgrade = useUpgradeLink();
 
@@ -394,7 +402,7 @@ async function act(
         const body = await response.json().catch(() => ({}));
 
         if (!response.ok && response.status !== 422) {
-            toast.error(body.error ?? trans('That didn’t work.'));
+            toast.error(describe(response.status, body));
         }
 
         if (response.ok) {
@@ -402,8 +410,8 @@ async function act(
         }
 
         return { ok: response.ok, body };
-    } catch {
-        toast.error(trans('Couldn’t reach the panel.'));
+    } catch (cause) {
+        toast.error(errorMessage(cause));
 
         return { ok: false, body: {} };
     } finally {
@@ -512,11 +520,13 @@ watch(
             }
         } else {
             toast.error(
-                pendingJob.value?.error?.message ??
+                jobReason(
+                    pendingJob.value?.error,
                     trans('Couldn’t :action :displayName.', {
                         action: String(current.action),
                         displayName: String(displayName.value),
                     }),
+                ),
                 { id: current.toast },
             );
         }
@@ -651,7 +661,9 @@ async function saveDatabase(value: string): Promise<void> {
         },
     ).catch(() => null);
     if (!response?.ok) {
-        toast.error(trans('Couldn’t save that.'));
+        toast.error(
+            response ? await responseError(response) : networkMessage(),
+        );
     }
     router.reload({ only: ['app'] });
 }
@@ -673,7 +685,9 @@ async function saveSnapshotBefore(on: boolean): Promise<void> {
     ).catch(() => null);
     if (!response?.ok) {
         snapshotBefore.value = !on;
-        toast.error(trans('Couldn’t save that.'));
+        toast.error(
+            response ? await responseError(response) : networkMessage(),
+        );
     }
 }
 
@@ -790,10 +804,10 @@ async function shipVersion(file: File | undefined) {
         toast.success(trans('Building the new version…'));
         router.visit(`/machines/${props.machine.id}?job=${json.jobId}`);
     } catch (cause) {
-        zip.error.value =
-            cause instanceof Error
-                ? cause.message
-                : trans('Couldn’t start the deploy.');
+        zip.error.value = errorMessage(
+            cause,
+            trans('Couldn’t start the deploy.'),
+        );
     } finally {
         shipping.value = false;
         if (zipInput.value) zipInput.value.value = '';
@@ -897,10 +911,10 @@ async function moveDomain() {
         );
         router.visit(`/machines/${props.machine.id}?job=${json.jobId}`);
     } catch (cause) {
-        moveError.value =
-            cause instanceof Error
-                ? cause.message
-                : trans('Couldn’t change the domain.');
+        moveError.value = errorMessage(
+            cause,
+            trans('Couldn’t change the domain.'),
+        );
     } finally {
         moveBusy.value = false;
     }
@@ -1043,10 +1057,7 @@ async function unlock(): Promise<void> {
         const body = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            unlockError.value =
-                body.errors?.code?.[0] ??
-                body.error ??
-                trans('Couldn’t unlock.');
+            unlockError.value = describe(response.status, body);
             unlockCode.value = '';
 
             return;
@@ -1057,6 +1068,8 @@ async function unlock(): Promise<void> {
             only: ['consoleLock'],
             onFinish: () => nextTick(() => consoleInput.value?.focus()),
         });
+    } catch (cause) {
+        unlockError.value = errorMessage(cause);
     } finally {
         unlocking.value = false;
     }
@@ -1158,13 +1171,7 @@ async function remove(): Promise<void> {
         );
         router.visit(`/machines/${props.machine.id}`);
     } else {
-        removeError.value =
-            (body.errors as Record<string, string[]> | undefined)
-                ?.confirm?.[0] ??
-            (body.errors as Record<string, string[]> | undefined)
-                ?.delete_adopted_volumes?.[0] ??
-            (body.error as string | undefined) ??
-            trans('Couldn’t remove it.');
+        removeError.value = reasonIn(body) ?? trans('Couldn’t remove it.');
     }
 }
 

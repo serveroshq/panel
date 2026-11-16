@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import AppButton from '@/components/workspace/AppButton.vue';
 import SubmitButton from '@/components/workspace/SubmitButton.vue';
+import { describe, errorMessage, jobReason } from '@/lib/errors';
 
 export type DaemonJob = {
     id: string;
@@ -153,7 +154,7 @@ async function post(action: 'retry' | 'abandon'): Promise<string | null> {
     const body = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-        error.value = body.error ?? trans('That didn’t work. Try again.');
+        error.value = describe(response.status, body);
 
         return null;
     }
@@ -175,6 +176,8 @@ async function retry(): Promise<void> {
         if (jobId) {
             emit('retried', jobId);
         }
+    } catch (cause) {
+        error.value = errorMessage(cause);
     } finally {
         busy.value = null;
     }
@@ -214,7 +217,7 @@ async function installAndRetry(): Promise<void> {
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok || !body.jobId) {
-            error.value = body.error ?? trans('That didn’t work. Try again.');
+            error.value = describe(response.status, body);
 
             return;
         }
@@ -245,7 +248,7 @@ async function installAndRetry(): Promise<void> {
             ) {
                 error.value = status?.error?.message
                     ? trans('The install didn’t work: :message', {
-                          message: String(status.error.message),
+                          message: jobReason(status.error, ''),
                       })
                     : trans(
                           'The install didn’t work. Try the command above on the machine instead.',
@@ -260,6 +263,8 @@ async function installAndRetry(): Promise<void> {
         if (jobId) {
             emit('retried', jobId);
         }
+    } catch (cause) {
+        error.value = errorMessage(cause);
     } finally {
         installing.value = null;
     }
@@ -277,6 +282,8 @@ async function stopWaiting(): Promise<void> {
         if (await post('abandon')) {
             emit('changed');
         }
+    } catch (cause) {
+        error.value = errorMessage(cause);
     } finally {
         busy.value = null;
     }
@@ -402,7 +409,9 @@ async function stopWaiting(): Promise<void> {
                         {{
                             job.explanation?.cause ??
                             job.error.message ??
-                            $t('The deploy failed.')
+                            (job.kind === 'deploy'
+                                ? $t('The deploy failed.')
+                                : $t('That didn’t finish.'))
                         }}
                     </p>
                     <div

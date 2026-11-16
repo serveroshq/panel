@@ -20,6 +20,7 @@ use App\Models\ProjectNode;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Ai\AiProviders;
+use App\Support\Deploys\DeployFailure;
 use App\Support\Extensions\DocsSource;
 use App\Support\Fixes\FixAllowance;
 use App\Support\Projects\ProjectActions;
@@ -307,7 +308,7 @@ class AssistantAgent
             if (! $answered) {
                 $this->chat['messages'][] = ['role' => 'tool', 'id' => $call['id'], 'name' => $call['name'], 'content' => 'Error: something went wrong running this. It may or may not have happened: check before trying again.'];
             }
-            ($this->emit)(['type' => 'result', 'id' => $call['id'], 'ok' => false, 'state' => 'failed', 'summary' => 'Something went wrong']);
+            ($this->emit)(['type' => 'result', 'id' => $call['id'], 'ok' => false, 'state' => 'failed', 'summary' => 'Something went wrong running this. It may or may not have happened: check before trying again.']);
         }
     }
 
@@ -396,6 +397,13 @@ class AssistantAgent
 
         $finished = in_array($job->state, McpContext::FINISHED, true);
         $error = is_array($job->error) ? ($job->error['message'] ?? null) : null;
+        $error = is_string($error) && trim($error) !== '' ? $error : (DeployFailure::explain($job)['cause'] ?? match ($job->state) {
+            'timed_out' => 'it took too long and was stopped',
+            'refused' => 'the machine refused it',
+            'cancelled' => 'it was cancelled',
+            'stale' => 'the machine stopped answering',
+            default => null,
+        });
 
         return [
             'ok' => ! $finished || $job->state === 'succeeded',

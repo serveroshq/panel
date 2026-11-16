@@ -36,6 +36,7 @@ import { providerBrand } from '@/lib/providerBrand';
 import { timeAgo } from '@/lib/timeAgo';
 import { toast } from '@/lib/toast';
 import type { Workspace, WorkspaceAccess } from '@/types';
+import { errorMessage, jobReason } from '@/lib/errors';
 
 type View = 'packages' | 'machines' | 'rollouts';
 
@@ -180,7 +181,7 @@ async function checkAll(): Promise<void> {
         );
         reload();
     } catch (cause) {
-        toast.error((cause as Error).message);
+        toast.error(errorMessage(cause));
     } finally {
         checkingAll.value = false;
     }
@@ -308,7 +309,7 @@ async function hold(on: boolean): Promise<void> {
         }
         void followHolds(result.queued);
     } catch (cause) {
-        toast.error((cause as Error).message);
+        toast.error(errorMessage(cause));
     } finally {
         holding.value = false;
     }
@@ -325,13 +326,13 @@ async function followHolds(
             try {
                 const status = await sendJson<{
                     state: string;
-                    error: { message?: string } | null;
+                    error: { message?: string; next_step?: string } | null;
                 }>('GET', `/machines/${job.machineId}/updates/${job.jobId}`);
                 if (['queued', 'running'].includes(status.state)) {
                     next.push(job);
                 } else if (status.state !== 'succeeded') {
                     toast.error(
-                        `${job.machine}: ${status.error?.message ?? trans('That didn’t finish.')}`,
+                        `${job.machine}: ${jobReason(status.error, trans('That didn’t finish.'))}`,
                     );
                 }
             } catch {

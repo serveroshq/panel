@@ -27,11 +27,15 @@ use App\Support\Monitors\MonitorAlerts;
 use App\Support\Monitors\MonitorRunner;
 use App\Support\Projects\Environments;
 use App\Support\Projects\ProjectData;
+use GuzzleHttp\Exception\GuzzleException;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\RateLimiter;
+use PDOException;
 use RuntimeException;
 use Throwable;
 
@@ -119,7 +123,7 @@ class WorkflowEngine
                     $result = $this->execute($run, $node);
                 } catch (Throwable $e) {
                     report($e);
-                    $result = ['state' => 'failed', 'message' => 'Something went wrong running this step.'];
+                    $result = ['state' => 'failed', 'message' => self::failure($e)];
                 }
                 $this->settle($run, $node, $result);
             }
@@ -589,7 +593,7 @@ class WorkflowEngine
             $result = ['state' => 'failed', 'phase' => null, 'message' => $e->getMessage()];
         } catch (Throwable $e) {
             report($e);
-            $result = ['state' => 'failed', 'phase' => null, 'message' => 'Something went wrong opening the pull request.'];
+            $result = ['state' => 'failed', 'phase' => null, 'message' => self::failure($e, 'Something went wrong opening the pull request. It’s been logged; run the workflow again.')];
         }
 
         DB::transaction(function () use ($run, $node, $nodeId, $result) {
@@ -1128,5 +1132,15 @@ class WorkflowEngine
         $logs = $run->logs ?? [];
         $logs[] = ['t' => (int) floor(microtime(true) * 1000), 'node' => $node, 'level' => $level, 'message' => $message];
         $run->logs = array_slice($logs, -self::LOG_LIMIT);
+    }
+
+    private static function failure(Throwable $e, string $otherwise = 'Something went wrong running this step. It’s been logged; check the step’s settings and run it again.'): string
+    {
+        return match (true) {
+            $e instanceof RuntimeException && ! $e instanceof PDOException && ! $e instanceof GuzzleException && trim($e->getMessage()) !== '' => $e->getMessage(),
+            $e instanceof ConnectionException => 'Couldn’t connect: the address didn’t answer or couldn’t be found. Check it and run the workflow again.',
+            $e instanceof RequestException => "The address answered with an error ({$e->response->status()}). Check it and run the workflow again.",
+            default => $otherwise,
+        };
     }
 }

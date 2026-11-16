@@ -92,6 +92,7 @@ import type { Component } from 'vue';
 import { jobStatus } from '@/lib/jobStatus';
 import type { Tone } from '@/lib/jobStatus';
 import type { Workspace, WorkspaceAccess } from '@/types';
+import { describe, errorMessage } from '@/lib/errors';
 
 const upgrade = useUpgradeLink();
 
@@ -593,9 +594,9 @@ async function refreshNow(): Promise<void> {
         const json = await response.json().catch(() => ({}));
         note = response.ok
             ? (json.note ?? null)
-            : trans('Couldn’t ask for a scan.');
-    } catch {
-        note = trans('Couldn’t ask for a scan.');
+            : describe(response.status, json);
+    } catch (cause) {
+        note = errorMessage(cause);
     }
 
     if (note) {

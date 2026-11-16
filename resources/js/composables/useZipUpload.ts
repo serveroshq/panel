@@ -1,5 +1,6 @@
 import { trans } from 'laravel-vue-i18n';
 import { ref } from 'vue';
+import { errorMessage, failIfBad } from '@/lib/errors';
 
 export type UploadedSource = {
     detected: boolean;
@@ -31,18 +32,8 @@ async function post(url: string, body: BodyInit, type: string) {
         },
         body,
     });
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(
-            json.errors?.file?.[0] ??
-                json.errors?.filename?.[0] ??
-                json.errors?.size?.[0] ??
-                json.error ??
-                json.message ??
-                trans('That upload didn’t work. Try again.'),
-        );
-    }
-    return json;
+    await failIfBad(response);
+    return await response.json().catch(() => ({}));
 }
 
 export function useZipUpload() {
@@ -89,10 +80,10 @@ export function useZipUpload() {
                 'application/json',
             )) as UploadedSource;
         } catch (cause) {
-            error.value =
-                cause instanceof Error
-                    ? cause.message
-                    : trans('That upload didn’t work. Try again.');
+            error.value = errorMessage(
+                cause,
+                trans('That upload didn’t work. Try again.'),
+            );
             return null;
         } finally {
             uploading.value = false;

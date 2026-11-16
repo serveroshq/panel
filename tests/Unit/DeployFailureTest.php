@@ -1,6 +1,11 @@
 <?php
 
+use App\Models\DaemonJob;
 use App\Support\Deploys\DeployFailure;
+use App\Support\Workflows\WorkflowEngine;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Psr7\Request;
+use Illuminate\Http\Client\ConnectionException;
 
 function causeOf(string $phase, string $message, array $tail = [], bool $timedOut = false): ?string
 {
@@ -82,4 +87,29 @@ test('missing Docker or its plugins offers to install them', function () {
         ->and(DeployFailure::fromError('build', 'docker compose up exited 1', ["docker: 'compose' is not a docker command."])['install']['packages'])
         ->toBe(['docker-buildx', 'docker-compose-v2'])
         ->and(DeployFailure::fromError('build', 'docker build exited 1', ['no space left on device']))->not->toHaveKey('install');
+});
+
+test('other kinds of job get a cause and a fix for common failures too', function (string $state, string $message, array $log, ?string $expected) {
+    $job = (new DaemonJob)->forceFill(['kind' => 'update_machine', 'state' => $state, 'error' => ['message' => $message], 'log' => $log]);
+
+    expect(DeployFailure::explain($job)['cause'] ?? null)->toBe($expected);
+})->with([
+    'disk' => ['failed', 'apt-get exited 100', ['E: Write error - write (28: No space left on device)'], 'The machine ran out of disk space.'],
+    'apt lock' => ['failed', 'apt-get exited 100', ['E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 1234 (unattended-upgr)'], 'Another install or update is already running on the machine, so the package manager is locked.'],
+    'no package' => ['failed', 'E: Unable to locate package nginx-full', [], 'The machine’s package list doesn’t have that package.'],
+    'port' => ['failed', 'listen tcp :8080: bind: address already in use', [], 'The port is already taken by something else on this machine.'],
+    'dns' => ['failed', 'Temporary failure in name resolution', [], 'The machine couldn’t reach the internet.'],
+    'timeout' => ['timed_out', '', [], 'It took too long and was stopped.'],
+    'unknown' => ['failed', 'exit 1', [], null],
+    'still running' => ['running', 'No space left on device', [], null],
+]);
+
+test('a workflow step that fails says why, without leaking database or HTTP client details', function () {
+    $failure = Closure::bind(fn (Throwable $e): string => WorkflowEngine::failure($e), null, WorkflowEngine::class);
+
+    expect($failure(new RuntimeException('Whoever last saved this workflow can no longer manage machines.')))->toBe('Whoever last saved this workflow can no longer manage machines.')
+        ->and($failure(new PDOException('SQLSTATE[42S02]: Base table or view not found: workflows')))->not->toContain('SQLSTATE')
+        ->and($failure(new ConnectException('cURL error 6 for https://hooks.example.com/secret-token', new Request('POST', 'https://hooks.example.com/secret-token'))))->not->toContain('secret-token')
+        ->and($failure(new ConnectionException('cURL error 7 for https://hooks.example.com/secret-token')))->toContain('Couldn’t connect')
+        ->and($failure(new LogicException('internal')))->toContain('It’s been logged');
 });

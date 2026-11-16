@@ -6,6 +6,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Component } from 'vue';
 import { shake } from '@/lib/shake';
 import { toast } from '@/lib/toast';
+import { errorMessage, failIfBad } from '@/lib/errors';
 import PolicySends from '@/components/machines/PolicySends.vue';
 import ToggleSwitch from '@/components/workspace/ToggleSwitch.vue';
 import {
@@ -317,16 +318,9 @@ async function postJson(
         },
         body: JSON.stringify(body),
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(
-            typeof data.message === 'string'
-                ? data.message
-                : trans('Something went wrong. Please try again.'),
-        );
-    }
+    await failIfBad(response);
 
-    return data;
+    return await response.json().catch(() => ({}));
 }
 
 async function addCard(): Promise<void> {
@@ -347,10 +341,7 @@ async function addCard(): Promise<void> {
         }
         window.location.href = data.checkoutUrl;
     } catch (error) {
-        cardError.value =
-            error instanceof Error
-                ? error.message
-                : trans('Something went wrong. Please try again.');
+        cardError.value = errorMessage(error);
         busy.value = false;
     }
 }
@@ -381,10 +372,7 @@ async function checkCardReturn(): Promise<void> {
         }
     } catch (error) {
         cardMessage.value = null;
-        cardError.value =
-            error instanceof Error
-                ? error.message
-                : trans('Something went wrong. Please try again.');
+        cardError.value = errorMessage(error);
     }
 }
 
@@ -482,22 +470,18 @@ async function createCommand(): Promise<void> {
             },
             body: JSON.stringify({ replace: true }),
         });
+        await failIfBad(response);
         const result = await response.json();
-        if (!response.ok) {
-            throw new Error(
-                result.error ?? trans('Could not create an install command.'),
-            );
-        }
         command.value = result.command;
         enrolmentId.value = result.enrolmentId;
         expiresAt.value = Date.parse(result.expiresAt);
         poller = setInterval(poll, 4000);
         clock = setInterval(() => (now.value = Date.now()), 1000);
     } catch (cause) {
-        commandError.value =
-            cause instanceof Error
-                ? cause.message
-                : trans('Could not create an install command.');
+        commandError.value = errorMessage(
+            cause,
+            trans('Could not create an install command.'),
+        );
     }
 }
 
@@ -541,21 +525,12 @@ async function createApiKey(): Promise<void> {
             },
             body: JSON.stringify({ name: 'Provisioning', access: 'write' }),
         });
+        await failIfBad(response);
         const result = await response.json();
-        if (!response.ok) {
-            const first = Object.values(result.errors ?? {})[0];
-            throw new Error(
-                (Array.isArray(first) ? first[0] : null) ??
-                    trans('Could not make a key.'),
-            );
-        }
         apiKey.value = result.secret;
         track('welcome_api_key_created');
     } catch (cause) {
-        apiKeyError.value =
-            cause instanceof Error
-                ? cause.message
-                : trans('Could not make a key.');
+        apiKeyError.value = errorMessage(cause, trans('Could not make a key.'));
     } finally {
         apiKeyBusy.value = false;
     }

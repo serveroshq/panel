@@ -12,6 +12,7 @@ import {
 } from '@/lib/solarIcons';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { toast } from '@/lib/toast';
+import { errorMessage, failIfBad } from '@/lib/errors';
 import {
     Dialog,
     DialogContent,
@@ -184,21 +185,12 @@ async function create(
             },
             body: JSON.stringify(body),
         });
-        if (!response.ok) {
-            const result = await response.json().catch(() => ({}));
-            formError.value =
-                Object.values(
-                    (result.errors ?? {}) as Record<string, string[]>,
-                )[0]?.[0] ??
-                result.message ??
-                trans('Something went wrong. Try again.');
-            return;
-        }
+        await failIfBad(response);
         await loadOptions(true);
         if (options.value) pick(options.value, String(body.name).trim());
         view.value = 'pick';
-    } catch {
-        formError.value = trans('Something went wrong. Try again.');
+    } catch (cause) {
+        formError.value = errorMessage(cause);
     } finally {
         saving.value = false;
     }
@@ -366,20 +358,17 @@ async function makeCommand(): Promise<void> {
                     : { replace: madeHere.value },
             ),
         });
+        await failIfBad(response);
         const result = await response.json();
-        if (!response.ok)
-            throw new Error(
-                result.error ?? trans('Could not create an install command.'),
-            );
         command.value = result.command;
         enrolmentId.value = result.enrolmentId;
         madeHere.value = true;
         timer = setInterval(poll, 4000);
     } catch (cause) {
-        error.value =
-            cause instanceof Error
-                ? cause.message
-                : trans('Could not create an install command.');
+        error.value = errorMessage(
+            cause,
+            trans('Could not create an install command.'),
+        );
     } finally {
         loading.value = false;
     }
