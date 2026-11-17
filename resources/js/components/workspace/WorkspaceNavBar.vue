@@ -35,6 +35,7 @@ const page = usePage<{
     workspace: Workspace;
     machine?: Machine;
     service?: { name: string };
+    task?: { title: string };
     monitor?: { name: string };
     workflow?: { name: string };
     ticket?: { reference: string };
@@ -48,6 +49,7 @@ const assistant = useAssistant();
 
 const tabOrder = [
     'Home',
+    'Agents',
     'Machines',
     'Updates',
     'Services',
@@ -118,6 +120,10 @@ const crumbs = computed<Crumb[]>(() => {
 
     if (component === 'workspace/WorkflowEditor' && props.workflow) {
         return [{ label: props.workflow.name }];
+    }
+
+    if (component === 'workspace/AgentTaskShow' && props.task) {
+        return [{ label: props.task.title }];
     }
 
     if (component === 'workspace/MonitorShow' && props.monitor) {

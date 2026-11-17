@@ -71,6 +71,8 @@ type DeployResult = {
 const props = defineProps<{
     templates: ServiceTemplate[];
     machineId: number;
+    /** A template's slug to open on, like coding-agent from ?deploy=coding-agent. */
+    startWith?: string | null;
 }>();
 
 const emit = defineEmits<{ deployed: [result: DeployResult] }>();
@@ -909,6 +911,17 @@ watch(
 );
 
 const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
+
+// Opened from a link that names a template: go straight to setting it up.
+watch(
+    open,
+    (isOpen) => {
+        if (isOpen && props.startWith && step.value === 'pick') {
+            choose(props.templates.find((t) => t.slug === props.startWith));
+        }
+    },
+    { immediate: true },
+);
 </script>
 
 <template>

@@ -78,7 +78,11 @@ const props = defineProps<{
     }[];
 }>();
 
-const page = usePage<{ workspaceAccess: WorkspaceAccess | null }>();
+const page = usePage<{
+    workspaceAccess: WorkspaceAccess | null;
+    agentsPreview?: boolean;
+}>();
+const agentsPreview = computed(() => page.props.agentsPreview === true);
 const canManage = computed(
     () =>
         page.props.workspaceAccess?.permissions.includes('manage-machines') ??
@@ -264,6 +268,14 @@ const focusRing =
         </template>
 
         <template v-if="canManage" #actions>
+            <a
+                v-if="monitor.status === 'down' && agentsPreview"
+                :href="`/agents?from=monitor:${monitor.id}`"
+                class="ds-raised-button cursor-pointer"
+                :class="focusRing"
+            >
+                {{ $t('Fix with an agent') }}
+            </a>
             <button
                 type="button"
                 class="ds-raised-button cursor-pointer"

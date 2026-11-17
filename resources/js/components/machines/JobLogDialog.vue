@@ -10,6 +10,8 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import AppButton from '@/components/workspace/AppButton.vue';
+import { usePage } from '@inertiajs/vue3';
+import { appButtonClasses } from '@/lib/appButton';
 import SubmitButton from '@/components/workspace/SubmitButton.vue';
 import { describe, errorMessage, jobReason } from '@/lib/errors';
 
@@ -47,6 +49,10 @@ const props = defineProps<{
     machineId: number;
     canManage: boolean;
 }>();
+
+// Agents can pick up a failed job with its log, when they're turned on.
+const agentsPage = usePage<{ agentsPreview?: boolean }>();
+const agentsPreview = computed(() => agentsPage.props.agentsPreview === true);
 
 const copiedInstall = ref(false);
 function copyInstall(): void {
@@ -542,6 +548,13 @@ async function stopWaiting(): Promise<void> {
                 >
                     {{ busy === 'stop' ? $t('Stopping…') : $t('Stop waiting') }}
                 </AppButton>
+                <a
+                    v-if="failed && canManage && agentsPreview"
+                    :href="`/agents?from=job:${job.id}`"
+                    :class="appButtonClasses('secondary', 'sm')"
+                >
+                    {{ $t('Fix with an agent') }}
+                </a>
                 <AppButton size="sm" variant="quiet" @click="open = false">
                     {{ ' ' + $t('Close') + ' ' }}
                 </AppButton>

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Console\Dev\DevAgents;
 use App\Console\Dev\DevDaemon;
 use App\Console\Dev\DevNode;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -84,7 +85,7 @@ class AppServiceProvider extends ServiceProvider
         CommunityLicense::register($this->app->make(Extensions::class));
 
         if ($this->app->isLocal() && $this->app->runningInConsole()) {
-            $this->commands([DevDaemon::class, DevNode::class]);
+            $this->commands([DevAgents::class, DevDaemon::class, DevNode::class]);
         }
 
         Event::listen(Login::class, function (Login $event): void {

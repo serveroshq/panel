@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ActivityController;
+use App\Http\Controllers\AgentTaskController;
 use App\Http\Controllers\AppVersionController;
 use App\Http\Controllers\AssistantController;
 use App\Http\Controllers\Auth\SocialLoginController;
@@ -187,6 +188,17 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
         Route::post('fixes', [FixController::class, 'store'])->middleware('throttle:30,1')->name('workspace.fixes.store');
         Route::post('fixes/{fix}/approve', [FixController::class, 'approve'])->withoutScopedBindings()->middleware('throttle:10,1')->name('workspace.fixes.approve');
         Route::post('fixes/{fix}/decline', [FixController::class, 'decline'])->withoutScopedBindings()->name('workspace.fixes.decline');
+        Route::get('agents', [AgentTaskController::class, 'index'])->name('workspace.agents.index');
+        Route::post('agents', [AgentTaskController::class, 'store'])->middleware('throttle:20,1')->name('workspace.agents.store');
+        Route::get('agents/machines/{machine}/templates', [AgentTaskController::class, 'templates'])->withoutScopedBindings()->middleware('throttle:30,1')->name('workspace.agents.templates');
+        Route::get('agents/{task}', [AgentTaskController::class, 'show'])->withoutScopedBindings()->name('workspace.agents.show');
+        Route::post('agents/{task}/runs', [AgentTaskController::class, 'more'])->withoutScopedBindings()->middleware('throttle:20,1')->name('workspace.agents.runs.store');
+        Route::get('agents/{task}/runs/{run}/changes', [AgentTaskController::class, 'changes'])->withoutScopedBindings()->whereNumber('run')->middleware('throttle:60,1')->name('workspace.agents.runs.changes');
+        Route::post('agents/{task}/runs/{run}/merge', [AgentTaskController::class, 'merge'])->withoutScopedBindings()->whereNumber('run')->middleware('throttle:10,1')->name('workspace.agents.runs.merge');
+        Route::post('agents/{task}/runs/{run}/deploy', [AgentTaskController::class, 'deploy'])->withoutScopedBindings()->whereNumber('run')->middleware('throttle:10,1')->name('workspace.agents.runs.deploy');
+        Route::post('agents/{task}/runs/{run}/preview', [AgentTaskController::class, 'preview'])->withoutScopedBindings()->whereNumber('run')->middleware('throttle:10,1')->name('workspace.agents.runs.preview');
+        Route::post('agents/{task}/stop', [AgentTaskController::class, 'stop'])->withoutScopedBindings()->name('workspace.agents.stop');
+        Route::delete('agents/{task}', [AgentTaskController::class, 'destroy'])->withoutScopedBindings()->name('workspace.agents.destroy');
         Route::get('workflows', [WorkflowController::class, 'index'])->name('workspace.workflows.index');
         Route::post('workflows', [WorkflowController::class, 'store'])->middleware('throttle:20,1')->name('workspace.workflows.store');
         Route::get('workflows/{workflow}', [WorkflowController::class, 'show'])->withoutScopedBindings()->name('workspace.workflows.show');

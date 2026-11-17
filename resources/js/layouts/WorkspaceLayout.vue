@@ -3,6 +3,7 @@ import SubscriptionBanner from '@/components/workspace/SubscriptionBanner.vue';
 import { useSubscriptionNotice } from '@/composables/useSubscriptionNotice';
 import { usePage } from '@inertiajs/vue3';
 import {
+    computed,
     defineAsyncComponent,
     onBeforeUnmount,
     onMounted,
@@ -47,6 +48,14 @@ const mobileOpen = ref(false);
 const searching = ref(false);
 
 const { layout } = useNavLayout();
+
+// Pages that bring their own header row and fill the height, like an agent
+// task's chat and changes, skip the bar on wide screens with the sidebar.
+const fullHeight = computed(
+    () =>
+        layout.value === 'sidebar' &&
+        ['workspace/AgentTaskShow'].includes(page.component),
+);
 const COLLAPSED_KEY = 'workspace-sidebar-collapsed';
 const collapsed = ref(false);
 
@@ -164,6 +173,7 @@ watch(
                     :class="{ 'lg:ml-[3px]': layout === 'sidebar' }"
                 >
                     <WorkspaceNavBar
+                        :class="{ 'lg:hidden': fullHeight }"
                         :sidebar="layout === 'sidebar'"
                         @search="openSearch"
                         @menu="mobileOpen = true"

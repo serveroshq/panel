@@ -455,7 +455,8 @@ class Workspace extends Model
      */
     public function workflows(): HasMany
     {
-        return $this->hasMany(Workflow::class);
+        // ServerOS's own (an agent task's) aren't the workspace's to list or edit.
+        return $this->hasMany(Workflow::class)->where('internal', false);
     }
 
     public function logRetentionDays(): int

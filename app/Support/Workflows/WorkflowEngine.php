@@ -618,9 +618,9 @@ class WorkflowEngine
     private function openAgentPullRequest(WorkflowRun $run, string $nodeId, array $rules, DaemonJob $job, array $outcome): ?string
     {
         $workflow = $run->workflow;
-        $user = $workflow->runAs;
+        $user = AgentSpec::actor($run);
         if ($user === null || ! $workflow->workspace->allows($user, WorkspacePermission::ManageMachines)) {
-            throw new RuntimeException('Whoever last saved this workflow can no longer manage machines. Save it again as someone who can.');
+            throw new RuntimeException('Whoever started this can no longer manage machines.');
         }
         $changes = AgentSpec::changes($job);
         if ($changes['files'] === []) {
@@ -1027,9 +1027,11 @@ class WorkflowEngine
             return [null, null, 'The machine is gone, or this trigger isn’t about one.'];
         }
         $workflow = $run->workflow;
-        $user = $workflow->runAs;
+        $user = AgentSpec::actor($run);
         if ($user === null || ! $workflow->workspace->allows($user, WorkspacePermission::ManageMachines)) {
-            return [$machine, null, 'Whoever last saved this workflow can no longer manage machines. Save it again as someone who can.'];
+            return [$machine, null, ($run->trigger['kind'] ?? null) === 'agent_task'
+                ? 'Whoever started this agent can no longer manage machines.'
+                : 'Whoever last saved this workflow can no longer manage machines. Save it again as someone who can.'];
         }
         if (($reason = $this->queue->unavailable($machine)) !== null) {
             return [$machine, $user, $reason];

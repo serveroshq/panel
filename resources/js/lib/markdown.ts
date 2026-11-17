@@ -46,7 +46,12 @@ if (DOMPurify.isSupported)
         }
     });
 
-export function renderMarkdown(markdown: string): string {
+/**
+ * Untrusted text (an agent's summary of what it saw on a machine) also loses
+ * class and id, so its HTML can't borrow the page's own styles to draw a
+ * fake screen over it.
+ */
+export function renderMarkdown(markdown: string, untrusted = false): string {
     if (!DOMPurify.isSupported) return '';
 
     const plain = markdown
@@ -74,7 +79,13 @@ export function renderMarkdown(markdown: string): string {
                 'button',
                 'style',
             ],
-            FORBID_ATTR: ['style', 'srcset', 'background', 'poster'],
+            FORBID_ATTR: [
+                'style',
+                'srcset',
+                'background',
+                'poster',
+                ...(untrusted ? ['class', 'id', 'name'] : []),
+            ],
         },
     );
 }

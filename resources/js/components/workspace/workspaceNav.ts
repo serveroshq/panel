@@ -17,6 +17,7 @@ import {
     SolarSettings,
     SolarWorkflows,
     SolarSparkles,
+    SolarCode,
 } from '@/lib/solarIcons';
 import { extensionIcon } from '@/lib/extensionIcons';
 import { onWorkspace } from '@/lib/workspaceRoute';
@@ -30,6 +31,7 @@ import projects from '@/routes/workspace/projects';
 import services from '@/routes/workspace/services';
 import updates from '@/routes/workspace/updates';
 import fixes from '@/routes/workspace/fixes';
+import agents from '@/routes/workspace/agents';
 import workflows from '@/routes/workspace/workflows';
 import members from '@/routes/workspace/members';
 import settings from '@/routes/workspace/settings';
@@ -80,6 +82,7 @@ export function useWorkspaceNav(): ComputedRef<WorkspaceNavItem[]> {
     const page = usePage<{
         workspace?: Workspace;
         extensions?: { nav: ExtensionNavItem[] } | null;
+        agentsPreview?: boolean;
     }>();
 
     const settingsNav = useSettingsNav();
@@ -100,6 +103,21 @@ export function useWorkspaceNav(): ComputedRef<WorkspaceNavItem[]> {
                 active: page.component === 'workspace/Home',
                 group: 'start',
             },
+            ...(page.props.agentsPreview
+                ? [
+                      {
+                          key: 'agents',
+                          label: trans('Agents'),
+                          icon: SolarCode,
+                          href: onWorkspace(agents.index(slug)),
+                          active: [
+                              'workspace/Agents',
+                              'workspace/AgentTaskShow',
+                          ].includes(page.component),
+                          group: 'start' as const,
+                      },
+                  ]
+                : []),
             {
                 key: 'machines',
                 label: trans('Machines'),

@@ -30,6 +30,7 @@ Schedule::command('security:cves')->everyFifteenMinutes()->withoutOverlapping(30
 Schedule::command('domains:check')->everyMinute()->withoutOverlapping(5);
 Schedule::command('email-domains:recheck')->dailyAt('04:19')->withoutOverlapping();
 Schedule::command('workflows:tick')->everyThirtySeconds()->withoutOverlapping(5);
+Schedule::command('agents:dispatch')->everyMinute()->withoutOverlapping(5)->onOneServer();
 Schedule::command('workflows:tick --prune')->dailyAt('03:23')->withoutOverlapping();
 Schedule::command('summaries:send')->weeklyOn(1, '07:41')->withoutOverlapping();
 Schedule::command('plans:expire-manual')->hourly()->withoutOverlapping();

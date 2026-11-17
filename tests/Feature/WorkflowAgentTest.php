@@ -206,7 +206,7 @@ test('without the GitHub App on the repository, the agent pushes with the contai
 });
 
 test('the agent’s summary can’t pass itself off as the change ServerOS sends back', function () {
-    expect(substr_count(AgentSpec::script(), "head -c 6000 \"\$work/out.txt\" | grep -v '^::serveros-' | head -n 200"))->toBe(2);
+    expect(substr_count(AgentSpec::script(), "head -c 6000 \"\$ctl/out.txt\" | grep -v '^::serveros-' | head -n 200"))->toBe(2);
 });
 
 test('a change that comes back damaged, or touches .git, opens no pull request', function () {
@@ -343,7 +343,7 @@ test('an agent step says what it needs before it can be turned on', function () 
     expect($problem([]))->toBeNull()
         ->and($problem(['service' => 'systemd:nginx.service']))->toBe('Choose the agent’s container, like one from the Coding agent template.')
         ->and($problem(['prompt' => '  ']))->toBe('Write what the agent should do.')
-        ->and($problem(['agent' => 'gpt']))->toBe('Choose Claude Code or Codex.')
+        ->and($problem(['agent' => 'gpt']))->toBe('Choose Claude Code, Codex or OpenCode.')
         ->and($problem(['repo' => 'not a repo']))->toBe('Enter the repository, as owner/name.')
         ->and($problem(['repo' => '', 'pull_request' => true]))->toBe('Choose a repository for the pull request.')
         ->and($problem(['repo' => '', 'pull_request' => false]))->toBeNull()

@@ -11,6 +11,10 @@ return [
 
     'sign_ups' => env('SERVEROS_SIGN_UPS', 'closed'),
 
+    // The Agents page (coding agents on your own machines). A preview: off
+    // unless SERVEROS_AGENTS is set.
+    'agents' => (bool) env('SERVEROS_AGENTS', false),
+
     // Self-hosted behind a Cloudflare Tunnel (SERVEROS_TUNNEL=cloudflare):
     // cloudflared hands the panel plain HTTP from inside the server, so the
     // visitor's address comes from Cloudflare's headers.

@@ -16,6 +16,7 @@ use Illuminate\Support\Str;
  * @property string $name
  * @property string|null $description
  * @property bool $enabled
+ * @property bool $internal
  * @property string $trigger
  * @property array{nodes: list<array<string, mixed>>, edges: list<array<string, mixed>>} $graph
  * @property string|null $webhook_hash
@@ -41,6 +42,7 @@ class Workflow extends Model
     {
         return [
             'enabled' => 'boolean',
+            'internal' => 'boolean',
             'graph' => WorkflowGraph::class,
             'webhook_token' => 'encrypted',
             'next_run_at' => 'datetime',

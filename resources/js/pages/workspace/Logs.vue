@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useSelfHosted } from '@/composables/useSelfHosted';
 import { trans } from 'laravel-vue-i18n';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import { ArrowDown, ArrowLeft, Check, ChevronDown, Search } from '@lucide/vue';
 import {
     SolarScrollText as ScrollText,
@@ -62,6 +62,10 @@ type Filters = {
 };
 
 const selfHosted = useSelfHosted();
+
+// With a machine picked, an agent can start from its recent logs.
+const agentsPage = usePage<{ agentsPreview?: boolean }>();
+const agentsPreview = computed(() => agentsPage.props.agentsPreview === true);
 const props = defineProps<{
     workspace: Workspace;
     machines: { id: number; name: string }[];
@@ -718,6 +722,13 @@ watch(live, (on) => {
         </template>
 
         <template v-if="machines.length > 0" #actions>
+            <a
+                v-if="agentsPreview && filters.machine !== null"
+                :href="`/agents?from=logs:${filters.machine}${filters.service ? ':' + filters.service : ''}`"
+                class="ds-raised-button cursor-pointer text-[13px]!"
+            >
+                {{ $t('Fix with an agent') }}
+            </a>
             <label
                 class="ds-raised-button w-full cursor-text focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-(--ds-ring) sm:w-72"
             >

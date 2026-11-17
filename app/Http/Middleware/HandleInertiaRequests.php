@@ -127,6 +127,7 @@ class HandleInertiaRequests extends Middleware
             'locale' => app()->getLocale(),
             'locales' => config('app.locales'),
             'githubApp' => GitHubApp::enabled(),
+            'agentsPreview' => (bool) config('serveros.agents'),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'staff' => fn () => [
                 'admin' => $request->user()?->can('viewAdmin') === true || StaffTwoFactor::missing($request->user()),
