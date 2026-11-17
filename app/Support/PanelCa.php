@@ -15,12 +15,15 @@ final class PanelCa
         return filled(config('daemon.panel_ca'));
     }
 
-    /** The CA, or null when there isn't one (or it isn't written yet). */
+    /** The CA's certificates, never anything else in the file, or null when there isn't one (or it isn't written yet). */
     public static function pem(): ?string
     {
         $path = config('daemon.panel_ca');
-        $pem = is_string($path) && is_file($path) && is_readable($path) ? file_get_contents($path) : false;
+        $file = is_string($path) && is_file($path) && is_readable($path) ? file_get_contents($path) : false;
+        if (! is_string($file) || preg_match_all('/-----BEGIN CERTIFICATE-----\r?\n[A-Za-z0-9+\/=\r\n]+-----END CERTIFICATE-----/', $file, $blocks) === 0) {
+            return null;
+        }
 
-        return is_string($pem) && str_contains($pem, '-----BEGIN CERTIFICATE-----') ? $pem : null;
+        return implode("\n", $blocks[0])."\n";
     }
 }

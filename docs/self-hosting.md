@@ -184,6 +184,8 @@ The panel still needs a name, since workspaces open on names under it. Either:
 
 Connect machines from Machines › Connect machine as usual. The command is longer: it downloads the panel's CA and stops unless it matches the SHA-256 in the command. From then on that CA is the only one trusted for your panel, by the install and by the daemon, which keeps it in `/etc/serveros/panel-ca.crt`.
 
+Keep the `caddy-data` volume. If it's reset, Caddy makes a new CA, and machines connected before stop getting daemon updates until you connect them again.
+
 Browsers warn about the panel's certificate until you trust its CA. Download it from `https://192-168-1-20.sslip.io/panel-ca.crt` (Firefox offers to trust it straight away) and add it to your computer's trusted certificates.
 
 The script adds this to `/opt/serveros/.env`:

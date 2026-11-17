@@ -34,3 +34,13 @@ test('a key is never written through a link planted where it goes', function () 
     expect(file_exists($this->dir.'/stolen.key'))->toBeFalse()
         ->and(file_exists($this->dir.'/ca.crt'))->toBeFalse();
 });
+
+test('the gateway’s certificate names an IP address as an IP entry and a hostname as a DNS one', function (string $host, string $entry) {
+    $this->artisan('daemon:ca', ['action' => 'init'])->assertSuccessful();
+    $this->artisan('daemon:ca', ['action' => 'issue-server', '--host' => $host, '--out' => $this->dir.'/gateway'])->assertSuccessful();
+
+    expect(openssl_x509_parse((string) file_get_contents($this->dir.'/gateway/gateway.crt'))['extensions']['subjectAltName'])->toBe($entry);
+})->with([
+    'an address' => ['192.168.1.20', 'IP Address:192.168.1.20'],
+    'a hostname' => ['gateway.serveros.test', 'DNS:gateway.serveros.test'],
+]);

@@ -116,6 +116,7 @@ final class CreateJoinCommand
 
         return 'curl -fsSLk -o serveros-panel-ca.crt '.escapeshellarg(rtrim($panel, '/').'/panel-ca.crt')
             .' && echo '.escapeshellarg($hash.'  serveros-panel-ca.crt').' | sha256sum -c'
-            .' && curl -fsSL --cacert serveros-panel-ca.crt '.$installer.' | sudo bash -s -- '.$args.' --panel-ca-sha256='.$hash;
+            .' && curl -fsSL --cacert serveros-panel-ca.crt '.$installer.' | sudo bash -s -- '.$args.' --panel-ca-sha256='.$hash
+            .' && rm -f serveros-panel-ca.crt';
     }
 }

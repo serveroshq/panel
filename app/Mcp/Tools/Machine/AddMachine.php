@@ -35,7 +35,7 @@ final class AddMachine extends Tool
         return 'Starts connecting a new machine (Linux, with root access) to this workspace. Returns a one-line install command to run on that machine as root: it installs the ServerOS daemon, which enrols the machine here. The command works once, within 15 minutes (or expiresInMinutes, up to 1440, for a server that is still being provisioned), and holds a secret: give it to the person to run (or run it there only if they ask you to), and don’t store or share it elsewhere. '
             .'Give policy (a machine policy’s id or name, from list_machine_policies) to choose what the machine collects and sends from its first start: whether services are discovered, logs are sent, IPs are masked and the daemon updates itself. Without one it follows its group’s policy, else the workspace’s default. Give group (a machine group’s id or name) to put it in that group as it joins, and provider, region, tier and labels ({"customer": "acme"}) to tag it as it joins; policies can apply by those. '
             .'Then call get_machine_connection_status with the enrolmentId to see it arrive (waiting → enrolled → connected → discovered). Refused when the workspace has reached its plan’s machine limit (machines waiting to connect count, until their command expires). '
-            .'Also returns the bare token, for provisioning scripts that run the installer themselves: curl -fsSL '.config('daemon.install_url').' | sudo bash -s -- --token=TOKEN.';
+            .'Also returns the bare token, for provisioning scripts that run the installer themselves: '.CreateJoinCommand::command('TOKEN');
     }
 
     public function inputSchema(): array
