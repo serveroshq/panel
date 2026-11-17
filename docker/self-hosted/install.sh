@@ -73,6 +73,34 @@ IMAGE="${IMAGE_NAME}:${VERSION}"
 [ "$(id -u)" -eq 0 ] || fail "run it as root (with sudo)."
 [ "$(uname -s)" = "Linux" ] || fail "ServerOS self-hosting runs on Linux."
 
+# Docker installed via snap runs confined and cannot read outside /home (e.g. /opt/serveros).
+docker_bin="$(command -v docker 2>/dev/null || true)"
+docker_target="$(readlink -f "$docker_bin" 2>/dev/null || true)"
+is_docker_snap=0
+case "$docker_bin" in
+    /snap/*) is_docker_snap=1 ;;
+esac
+case "$docker_target" in
+    /snap/*|*/snap|*/snapd) is_docker_snap=1 ;;
+esac
+if [ "$is_docker_snap" = 1 ]; then
+    abs_dir="$(realpath -m -- "$DIR")"
+    user_example="${SUDO_USER:-username}"
+    [ "$user_example" != "root" ] || user_example="username"
+    case "$abs_dir" in
+        /home/*)
+            case "$abs_dir" in
+                */.*|*/.*/*)
+                    fail "Docker was installed as a snap, which cannot access hidden directories in /home due to snap confinement. Use a non-hidden path like --dir=/home/$user_example/serveros, or install Docker from https://get.docker.com."
+                    ;;
+            esac
+            ;;
+        *)
+            fail "Docker was installed as a snap, which cannot access $DIR due to snap confinement. Install Docker from https://get.docker.com (or https://docs.docker.com/engine/install/), or run with --dir=/home/$user_example/serveros."
+            ;;
+    esac
+fi
+
 ask() {
     # ask VAR "Question": from the terminal, even when piped from curl.
     local answer=""

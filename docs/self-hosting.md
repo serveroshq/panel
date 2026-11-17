@@ -364,6 +364,7 @@ serveros-panel restart
 - **The browser says the certificate is wrong, or the page won't load.** Check both DNS records point at the server, and that ports 80 and 443 are open: Let's Encrypt checks the name from the internet before it gives a certificate. `serveros-panel logs web` says what it tried.
 - **Machines won't connect.** Port 8443 must be open, and `serveros-panel logs gateway` should show the gateway listening. The install command only works for 15 minutes: make a new one if it's older.
 - **Emails don't arrive.** See [Email](#email); until it's set up, they're only in the log.
+- **"no configuration file provided: not found" when starting ServerOS.** If Docker was installed as a snap (`snap install docker`), snap confinement prevents Docker Compose from reading files in `/opt/serveros`. Either uninstall the snap and install Docker from [Docker's repository](https://get.docker.com) (or `apt`), or install ServerOS into a non-hidden directory under your home folder with `--dir=/home/username/serveros`.
 
 ## Trying it on your own computer
 

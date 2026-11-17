@@ -78,7 +78,10 @@ const tabs = computed(() =>
 );
 
 const section = computed(
-    () => tabs.value.find((tab) => tab.active)?.label ?? null,
+    () =>
+        tabs.value.find((tab) => tab.active)?.label ??
+        items.value.find((item) => item.active)?.label ??
+        null,
 );
 
 const inSidebar = computed(() => (sidebar ? 'lg:hidden' : ''));

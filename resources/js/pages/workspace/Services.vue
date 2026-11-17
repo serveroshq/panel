@@ -25,6 +25,9 @@ import type {
     StatusFilter,
     WorkspaceService,
 } from '@/components/machines/serviceFilters';
+import BuildingServiceRow from '@/components/machines/BuildingServiceRow.vue';
+import { buildingServices } from '@/components/machines/buildingServices';
+import type { DeployJob } from '@/components/machines/buildingServices';
 import {
     passes,
     serviceColumnsWithMachine,
@@ -63,6 +66,7 @@ type MachineSummary = {
     name: string;
     connection: string;
     scanned: boolean;
+    scannedAt: number | null;
 };
 
 const props = defineProps<{
@@ -72,6 +76,7 @@ const props = defineProps<{
     machines: MachineSummary[];
     templates: ServiceTemplate[];
     deployEnabled: boolean;
+    deploys: (DeployJob & { machineId: number })[];
 }>();
 
 const page = usePage<{ workspaceAccess: WorkspaceAccess | null }>();
@@ -191,6 +196,33 @@ const visible = computed(() => {
         );
 });
 
+const building = computed(() => {
+    const needle = search.value.trim().toLowerCase();
+
+    return props.machines
+        .filter(
+            (m) => machineFilter.value === null || m.id === machineFilter.value,
+        )
+        .flatMap((machine) =>
+            buildingServices(
+                props.deploys.filter((job) => job.machineId === machine.id),
+                props.services.filter((s) => s.machine.id === machine.id),
+                machine.scannedAt,
+            ).map((entry) => ({ ...entry, machine })),
+        )
+        .filter(
+            (entry) =>
+                !needle ||
+                `${entry.name} ${entry.machine.name}`
+                    .toLowerCase()
+                    .includes(needle),
+        );
+});
+
+function openDeployLog(machineId: number, jobId: string): void {
+    router.visit(`/machines/${machineId}?job=${encodeURIComponent(jobId)}`);
+}
+
 type Row =
     | { id: string; service: WorkspaceService }
     | {
@@ -289,8 +321,10 @@ function statsOf(services: WorkspaceService[]): Record<string, ServiceStat> {
     );
 }
 
+const reloadOnly = ['services', 'groups', 'machines', 'deploys'];
+
 function refresh(): void {
-    router.reload({ only: ['services', 'groups', 'machines'] });
+    router.reload({ only: reloadOnly });
 }
 
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -302,11 +336,14 @@ function poll(): void {
         () =>
             whenVisible(() =>
                 router.reload({
-                    only: ['services', 'groups', 'machines'],
+                    only: reloadOnly,
                     onFinish: poll,
                 }),
             ),
-        waitingForScan.value ? 5000 : 15000,
+        waitingForScan.value ||
+            building.value.some((entry) => entry.state !== 'failed')
+            ? 5000
+            : 15000,
     );
 }
 
@@ -594,7 +631,7 @@ const focusRing =
             </div>
 
             <div
-                v-if="services.length === 0"
+                v-if="services.length === 0 && building.length === 0"
                 class="ds-tile flex flex-col items-center px-6 py-20 text-center"
             >
                 <div class="ds-icon-chip" aria-hidden="true">
@@ -655,6 +692,19 @@ const focusRing =
                 </div>
 
                 <div
+                    v-for="entry in building"
+                    :key="`building-${entry.jobId}`"
+                    class="border-b border-(--ds-divider) last:border-b-0"
+                    role="rowgroup"
+                >
+                    <BuildingServiceRow
+                        :entry="entry"
+                        :machine-name="entry.machine.name"
+                        @open="openDeployLog(entry.machine.id, entry.jobId)"
+                    />
+                </div>
+
+                <div
                     v-for="row in rows"
                     :key="row.id"
                     class="border-b border-(--ds-divider) last:border-b-0"
@@ -699,7 +749,7 @@ const focusRing =
                 </div>
 
                 <p
-                    v-if="visible.length === 0"
+                    v-if="visible.length === 0 && building.length === 0"
                     class="px-4 py-8 text-center text-[13px]/5 text-(--ds-text-muted)"
                 >
                     {{ $t('No services match these filters.') }}

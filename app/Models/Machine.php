@@ -33,6 +33,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string|null $uid
  * @property string|null $certificate_serial
  * @property string|null $daemon_version
+ * @property string|null $proxy caddy, nginx, apache, traefik or none: what serves its app domains
  * @property CarbonImmutable|null $last_seen_at
  * @property CarbonImmutable|null $connected_at when the daemon last said hello (connected)
  * @property CarbonImmutable|null $disconnected_at
@@ -75,6 +76,9 @@ use Illuminate\Support\Facades\Storage;
 #[Fillable(['name', 'ip_address', 'provider', 'environment', 'services_count', 'memory_used_mb', 'cpu_percent', 'last_backup_at'])]
 class Machine extends Model
 {
+    /** The reverse proxies a deploy can pick, by name, with how people write them. */
+    public const PROXIES = ['caddy' => 'Caddy', 'nginx' => 'nginx', 'apache' => 'Apache', 'traefik' => 'Traefik'];
+
     /** @use HasFactory<MachineFactory> */
     use HasFactory;
 

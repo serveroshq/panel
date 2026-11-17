@@ -30,6 +30,12 @@ declare module '@inertiajs/core' {
             feedbackUrl: string | null;
             promo: { code: string; offer: string } | null;
             cloudCredit?: string | null;
+            workspaceNotice?: {
+                text: string;
+                action: string;
+                href: string;
+                image?: string | null;
+            } | null;
             upgrade?: { href: string; label: string } | null;
             auth: Auth;
             workspaces: WorkspaceSummary[];

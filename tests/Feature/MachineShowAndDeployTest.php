@@ -89,8 +89,42 @@ test('offline machines cannot deploy and bad repository or commit values are rej
     $this->actingAs($workspace->owner)->postJson(machineUrl($workspace, $machine).'/deploy', $payload)->assertStatus(409);
     $machine->forceFill(['last_seen_at' => now()])->save();
     $this->actingAs($workspace->owner)->postJson(machineUrl($workspace, $machine).'/deploy', array_replace($payload, ['repo' => 'https://user:pass@example.com/repo.git']))->assertUnprocessable();
-    $this->actingAs($workspace->owner)->postJson(machineUrl($workspace, $machine).'/deploy', array_replace($payload, ['commit' => 'main']))->assertUnprocessable();
+    $this->actingAs($workspace->owner)->postJson(machineUrl($workspace, $machine).'/deploy', array_replace($payload, ['commit' => 'not a ref!']))->assertUnprocessable();
     Http::assertNothingSent();
+});
+
+test('a deploy without a commit takes the default branch’s latest, and a branch takes its own', function () {
+    config()->set('daemon.commands_enabled', true);
+    config()->set('daemon.gateway_internal_url', 'http://127.0.0.1:8090');
+    config()->set('daemon.gateway_secret', 'test-gateway-secret');
+    config()->set('services.github.token', null);
+    Http::fake([
+        '127.0.0.1:8090/*' => Http::response(['queued' => true], 202),
+        'api.github.com/repos/example/my-app' => Http::response(['default_branch' => 'main']),
+        'api.github.com/repos/example/my-app/commits/main' => Http::response(['sha' => str_repeat('B', 40)]),
+        'api.github.com/repos/example/my-app/commits/release%2F2' => Http::response(['sha' => str_repeat('c', 40)]),
+    ]);
+    $workspace = Workspace::factory()->create();
+    $machine = Machine::factory()->for($workspace)->create();
+    $machine->forceFill(['uid' => (string) Str::uuid(), 'last_seen_at' => now()])->save();
+    $url = machineUrl($workspace, $machine).'/deploy';
+    $payload = ['service' => 'my-app', 'repo' => 'https://github.com/example/my-app.git', 'port' => 8080, 'health_path' => '/'];
+    $sentCommit = fn () => collect(Http::recorded())->map(fn ($pair) => $pair[0])
+        ->filter(fn ($request) => str_ends_with($request->url(), '/commands'))->last()['command']['job']['commit'];
+
+    $this->actingAs($workspace->owner)->postJson($url, $payload)->assertAccepted()->assertJsonPath('commit', str_repeat('b', 40));
+    expect($sentCommit())->toBe(str_repeat('b', 40));
+
+    $this->actingAs($workspace->owner)->postJson($url, [...$payload, 'commit' => 'release/2'])->assertAccepted()->assertJsonPath('commit', str_repeat('c', 40));
+    expect($sentCommit())->toBe(str_repeat('c', 40));
+
+    $this->actingAs($workspace->owner)->postJson($url, [...$payload, 'commit' => 'gone'])
+        ->assertUnprocessable()->assertJsonValidationErrors(['commit']);
+
+    $sent = count(Http::recorded());
+    $this->actingAs($workspace->owner)->postJson($url, [...$payload, 'wildcard' => true])
+        ->assertUnprocessable()->assertJsonValidationErrors(['wildcard']);
+    expect(Http::recorded())->toHaveCount($sent);
 });
 
 test('a removed service leaves the inventory at once, with the rest of its Compose project', function () {

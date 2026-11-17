@@ -65,6 +65,7 @@ type DeployResult = {
     tunnel: string | null;
     port: number;
     notes: string | null;
+    commit?: string | null;
 };
 
 const props = defineProps<{
@@ -458,6 +459,8 @@ const form = ref({
     compose_file: '',
     domain: '',
     wildcard: false,
+    proxy: '',
+    https: true,
     env: {} as Record<string, string | boolean>,
     extra_env: '',
 });
@@ -478,6 +481,52 @@ const taken = ref<{ services: string[]; ports: number[] }>({
     services: [],
     ports: [],
 });
+
+type Proxy = 'caddy' | 'nginx' | 'apache' | 'traefik';
+
+const proxyNames: Record<Proxy, string> = {
+    caddy: 'Caddy',
+    nginx: 'nginx',
+    apache: 'Apache',
+    traefik: 'Traefik',
+};
+const machineProxy = ref<string | null>(null);
+const canChooseProxy = ref(false);
+const canChooseHttps = ref(false);
+const deployedProxy = ref<Proxy>('caddy');
+
+const currentProxy = computed<Proxy>(() =>
+    machineProxy.value && machineProxy.value in proxyNames
+        ? (machineProxy.value as Proxy)
+        : 'caddy',
+);
+const chosenProxy = computed<Proxy>(() =>
+    form.value.proxy in proxyNames
+        ? (form.value.proxy as Proxy)
+        : currentProxy.value,
+);
+const proxyOptions = computed<SelectMenuOption<Proxy>[]>(() => [
+    {
+        value: 'caddy',
+        label: 'Caddy',
+        hint: trans('HTTPS on its own, wildcard subdomains too'),
+    },
+    {
+        value: 'nginx',
+        label: 'nginx',
+        hint: trans('HTTPS from Let’s Encrypt, through certbot'),
+    },
+    {
+        value: 'apache',
+        label: 'Apache',
+        hint: trans('HTTPS from Let’s Encrypt, through certbot'),
+    },
+    {
+        value: 'traefik',
+        label: 'Traefik',
+        hint: trans('HTTPS on its own'),
+    },
+]);
 const suggested = ref<{ service: string; port: string | number } | null>(null);
 
 function freeName(base: string): string {
@@ -518,7 +567,17 @@ async function loadTaken(): Promise<void> {
             return;
         }
 
-        taken.value = await response.json();
+        const body = (await response.json()) as {
+            services: string[];
+            ports: number[];
+            proxy?: string | null;
+            canChooseProxy?: boolean;
+            canChooseHttps?: boolean;
+        };
+        taken.value = { services: body.services, ports: body.ports };
+        machineProxy.value = body.proxy ?? null;
+        canChooseProxy.value = Boolean(body.canChooseProxy);
+        canChooseHttps.value = Boolean(body.canChooseHttps);
     } catch {
         return;
     }
@@ -605,6 +664,8 @@ function choose(
         compose_file: template.compose ?? '',
         domain: '',
         wildcard: false,
+        proxy: '',
+        https: true,
         env: Object.fromEntries(
             template.env.map((field) => [
                 field.key,
@@ -729,6 +790,9 @@ async function deploy(): Promise<void> {
 
     submitting.value = true;
     errors.value = {};
+    deployedProxy.value = canChooseProxy.value
+        ? chosenProxy.value
+        : currentProxy.value;
 
     const env = Object.fromEntries(
         Object.entries(form.value.env).map(([key, value]) => [
@@ -767,6 +831,17 @@ async function deploy(): Promise<void> {
                 wildcard: Boolean(
                     template.web && form.value.domain && form.value.wildcard,
                 ),
+                proxy:
+                    template.web &&
+                    form.value.domain &&
+                    canChooseProxy.value &&
+                    chosenProxy.value !== currentProxy.value
+                        ? chosenProxy.value
+                        : null,
+                https:
+                    template.web && form.value.domain && canChooseHttps.value
+                        ? form.value.https
+                        : null,
                 env,
                 extra_env: form.value.extra_env || null,
             }),
@@ -1647,17 +1722,21 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                 :class="labelClass"
                                             >
                                                 {{
-                                                    ' ' + $t('Commit SHA') + ' '
+                                                    ' ' +
+                                                    $t(
+                                                        'Branch, tag or commit',
+                                                    ) +
+                                                    ' '
                                                 }}
                                             </label>
                                             <Input
                                                 id="deploy-commit"
                                                 v-model.trim="form.commit"
-                                                required
-                                                pattern="[a-fA-F0-9]{40}"
-                                                maxlength="40"
+                                                maxlength="255"
                                                 :placeholder="
-                                                    $t('40-character commit')
+                                                    $t(
+                                                        'Latest commit on the default branch',
+                                                    )
                                                 "
                                                 class="font-ui-mono"
                                             />
@@ -1915,6 +1994,79 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                             </div>
                                         </template>
                                     </div>
+                                    <div
+                                        v-if="form.domain && canChooseProxy"
+                                        class="mt-1 flex flex-col gap-1.5"
+                                    >
+                                        <label
+                                            for="deploy-proxy"
+                                            :class="labelClass"
+                                        >
+                                            {{ $t('Reverse proxy') }}
+                                        </label>
+                                        <SelectMenu
+                                            id="deploy-proxy"
+                                            :model-value="chosenProxy"
+                                            :options="proxyOptions"
+                                            class="h-8 rounded-md border border-input bg-transparent pr-2.5 pl-3 text-[13px]/4 text-(--ds-text) shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                                            @update:model-value="
+                                                (value) => (form.proxy = value)
+                                            "
+                                        />
+                                        <p
+                                            v-if="chosenProxy !== currentProxy"
+                                            class="text-xs/4 text-(--ds-text-faint)"
+                                        >
+                                            {{
+                                                $t(
+                                                    'This machine uses :from now. Deploying moves every site on it to :to and stops :from, since only one of them can use ports 80 and 443.',
+                                                    {
+                                                        from: proxyNames[
+                                                            currentProxy
+                                                        ],
+                                                        to: proxyNames[
+                                                            chosenProxy
+                                                        ],
+                                                    },
+                                                )
+                                            }}
+                                        </p>
+                                        <InputError
+                                            :message="errorFor('proxy')"
+                                        />
+                                    </div>
+                                    <label
+                                        v-if="form.domain && canChooseHttps"
+                                        class="mt-1 flex cursor-pointer items-start gap-2.5 text-[13px]/5 text-(--ds-text-secondary) select-none"
+                                    >
+                                        <TickBox
+                                            v-model="form.https"
+                                            class="mt-0.5"
+                                        />
+                                        <span class="flex flex-col gap-0.5">
+                                            <span class="text-(--ds-text)">{{
+                                                $t('Serve over HTTPS')
+                                            }}</span>
+                                            <span
+                                                class="text-xs/4 text-(--ds-text-faint)"
+                                                >{{
+                                                    form.https
+                                                        ? $t(
+                                                              ':proxy gets a certificate and sends HTTP to HTTPS, as soon as the domain points here.',
+                                                              {
+                                                                  proxy: proxyNames[
+                                                                      chosenProxy
+                                                                  ],
+                                                              },
+                                                          )
+                                                        : $t(
+                                                              'Plain HTTP, no certificate. For when a CDN or proxy in front does HTTPS.',
+                                                          )
+                                                }}</span
+                                            >
+                                        </span>
+                                    </label>
+                                    <InputError :message="errorFor('https')" />
                                     <label
                                         v-if="form.domain"
                                         class="mt-1 flex cursor-pointer items-start gap-2.5 text-[13px]/5 text-(--ds-text-secondary) select-none"
@@ -1931,7 +2083,11 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                 class="text-xs/4 text-(--ds-text-faint)"
                                                 >{{
                                                     $t(
-                                                        'Every subdomain, like tenant.:domain, is served by this app and gets its own certificate the first time it’s visited. No DNS provider needed.',
+                                                        chosenProxy ===
+                                                            'caddy' &&
+                                                            form.https
+                                                            ? 'Every subdomain, like tenant.:domain, is served by this app and gets its own certificate the first time it’s visited. No DNS provider needed.'
+                                                            : 'Every subdomain, like tenant.:domain, is served by this app over plain HTTP: a certificate for every subdomain needs Caddy.',
                                                         {
                                                             domain:
                                                                 bareDomain(
@@ -2173,9 +2329,21 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                         <p class="text-sm font-medium">
                                             {{
                                                 ' ' +
-                                                $t('Deploying :service', {
-                                                    service: form.service,
-                                                })
+                                                (result.commit
+                                                    ? $t(
+                                                          'Deploying :service at :commit',
+                                                          {
+                                                              service:
+                                                                  form.service,
+                                                              commit: result.commit.slice(
+                                                                  0,
+                                                                  7,
+                                                              ),
+                                                          },
+                                                      )
+                                                    : $t('Deploying :service', {
+                                                          service: form.service,
+                                                      }))
                                             }}
                                         </p>
                                         <p
@@ -2294,7 +2462,12 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                     />
                                     {{
                                         $t(
-                                            'Caddy on the machine gets the certificate and redirects HTTP to HTTPS, as soon as the domain points here.',
+                                            ':proxy on the machine gets the certificate and redirects HTTP to HTTPS, as soon as the domain points here.',
+                                            {
+                                                proxy: proxyNames[
+                                                    deployedProxy
+                                                ],
+                                            },
                                         ) + ' '
                                     }}
                                 </p>

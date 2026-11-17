@@ -109,6 +109,8 @@ $extensions->addSharedProps(fn (Request $request) => [
 
 They come after the panel's own shared props, so they never move or replace one. Give a closure as a value to work it out only when it's sent.
 
+One shared prop the panel reads itself: `workspaceNotice` (`{text, action, href, image?}` or null; `image` is a background URL). When a package sends one, the bar at the top of the workspace shows it, in the brand colour with a link out, ahead of any billing notice.
+
 ## What a token can be for: OAuth audiences
 
 The panel's MCP OAuth server issues tokens for a workspace's MCP server (`App\Support\Mcp\WorkspaceAudience`). A package with its own MCP server adds an audience, a subclass of `App\Support\Mcp\OAuthAudience`:
