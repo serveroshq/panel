@@ -3,6 +3,7 @@ import { useHttp } from '@inertiajs/vue3';
 import type { ComputedRef, Ref } from 'vue';
 import { computed, ref } from 'vue';
 import { qrCode, recoveryCodes, secretKey } from '@/routes/two-factor';
+import { errorMessage } from '@/lib/errors';
 
 export type UseTwoFactorAuthReturn = {
     qrCodeSvg: Ref<string | null>;
@@ -39,8 +40,10 @@ export const useTwoFactorAuth = (): UseTwoFactorAuthReturn => {
             };
 
             qrCodeSvg.value = svg;
-        } catch {
-            errors.value.push(trans('Failed to fetch QR code'));
+        } catch (cause) {
+            errors.value.push(
+                errorMessage(cause, trans('Couldn’t load the QR code.')),
+            );
             qrCodeSvg.value = null;
         }
     };
@@ -52,8 +55,10 @@ export const useTwoFactorAuth = (): UseTwoFactorAuthReturn => {
             };
 
             manualSetupKey.value = key;
-        } catch {
-            errors.value.push(trans('Failed to fetch a setup key'));
+        } catch (cause) {
+            errors.value.push(
+                errorMessage(cause, trans('Couldn’t load the setup key.')),
+            );
             manualSetupKey.value = null;
         }
     };
@@ -80,8 +85,10 @@ export const useTwoFactorAuth = (): UseTwoFactorAuthReturn => {
             recoveryCodesList.value = (await http.submit(
                 recoveryCodes(),
             )) as string[];
-        } catch {
-            errors.value.push(trans('Failed to fetch recovery codes'));
+        } catch (cause) {
+            errors.value.push(
+                errorMessage(cause, trans('Couldn’t load the recovery codes.')),
+            );
             recoveryCodesList.value = [];
         }
     };

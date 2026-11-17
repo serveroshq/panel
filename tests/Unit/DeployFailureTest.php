@@ -1,6 +1,13 @@
 <?php
 
+use App\Models\DaemonJob;
+use App\Models\Machine;
 use App\Support\Deploys\DeployFailure;
+use App\Support\Workflows\WorkflowEngine;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Psr7\Request;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\Client\ConnectionException;
 
 function causeOf(string $phase, string $message, array $tail = [], bool $timedOut = false): ?string
 {
@@ -83,3 +90,47 @@ test('missing Docker or its plugins offers to install them', function () {
         ->toBe(['docker-buildx', 'docker-compose-v2'])
         ->and(DeployFailure::fromError('build', 'docker build exited 1', ['no space left on device']))->not->toHaveKey('install');
 });
+
+test('other kinds of job get a cause and a fix for common failures too', function (string $state, string $message, array $log, ?string $expected) {
+    $job = (new DaemonJob)->forceFill(['kind' => 'update_machine', 'state' => $state, 'error' => ['message' => $message], 'log' => $log]);
+
+    expect(DeployFailure::explain($job)['cause'] ?? null)->toBe($expected);
+})->with([
+    'disk' => ['failed', 'apt-get exited 100', ['E: Write error - write (28: No space left on device)'], 'The machine ran out of disk space.'],
+    'apt lock' => ['failed', 'apt-get exited 100', ['E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 1234 (unattended-upgr)'], 'Another install or update is already running on the machine, so the package manager is locked.'],
+    'no package' => ['failed', 'E: Unable to locate package nginx-full', [], 'The machine’s package list doesn’t have that package.'],
+    'port' => ['failed', 'listen tcp :8080: bind: address already in use', [], 'The port is already taken by something else on this machine.'],
+    'dns' => ['failed', 'Temporary failure in name resolution', [], 'The machine couldn’t reach the internet.'],
+    'timeout' => ['timed_out', '', [], 'It took too long and was stopped.'],
+    'unknown' => ['failed', 'exit 1', [], null],
+    'still running' => ['running', 'No space left on device', [], null],
+]);
+
+test('a console command’s own output isn’t explained as a machine problem', function () {
+    $job = (new DaemonJob)->forceFill(['kind' => 'service_exec', 'state' => 'failed', 'error' => ['message' => 'exited 1'], 'log' => ['curl: (6) Could not resolve host: nope']]);
+
+    expect(DeployFailure::explain($job))->toBeNull();
+});
+
+test('a workflow step that fails says why, without leaking database or HTTP client details', function () {
+    $failure = Closure::bind(fn (Throwable $e): string => WorkflowEngine::failure($e), null, WorkflowEngine::class);
+
+    expect($failure(new RuntimeException('Whoever last saved this workflow can no longer manage machines.')))->toBe('Whoever last saved this workflow can no longer manage machines.')
+        ->and($failure(new PDOException('SQLSTATE[42S02]: Base table or view not found: workflows')))->not->toContain('SQLSTATE')
+        ->and($failure(new ConnectException('cURL error 6 for https://hooks.example.com/secret-token', new Request('POST', 'https://hooks.example.com/secret-token'))))->not->toContain('secret-token')
+        ->and($failure(new ConnectionException('cURL error 7 for https://hooks.example.com/secret-token')))->toContain('Couldn’t connect')
+        ->and($failure(new LogicException('internal')))->toContain('It’s been logged')
+        ->and($failure(new UnexpectedValueException('read error on connection to 10.0.0.5:6379')))->not->toContain('10.0.0.5')
+        ->and($failure(new class('read error on connection to 10.0.0.5:6379') extends RuntimeException {}))->not->toContain('10.0.0.5')
+        ->and($failure((new ModelNotFoundException)->setModel(Machine::class, [5])))->toContain('was deleted')->not->toContain('App\\Models');
+});
+
+test('the most telling line of a failure’s output is picked out', function (array $lines, ?string $expected) {
+    expect(DeployFailure::keyLine($lines))->toBe($expected);
+})->with([
+    'apt' => [['Reading package lists...', 'Building dependency tree...', 'E: Unable to locate package nginx-full', 'W: some warning'], 'E: Unable to locate package nginx-full'],
+    'colours stripped' => [["\e[31merror: permission denied\e[0m", 'done'], 'error: permission denied'],
+    'nothing telling' => [['step 1', 'step 2', ''], 'step 2'],
+    'empty' => [[], null],
+    'not text' => [[['nested'], 42], null],
+]);

@@ -40,6 +40,8 @@ final class DeployRequest
             'health_path' => ['required', 'string', 'max:200', 'regex:/^\/[\x21-\x7e]*$/'],
             'domain' => ['nullable', 'string', 'max:253', 'regex:'.self::DOMAIN_PATTERN],
             'wildcard' => ['sometimes', 'boolean'],
+            'proxy' => ['nullable', 'string', Rule::in(array_keys(Machine::PROXIES))],
+            'https' => ['sometimes', 'nullable', 'boolean'],
         ];
     }
 
@@ -54,11 +56,15 @@ final class DeployRequest
             'health_path' => ['nullable', 'string', 'max:200', 'regex:/^\/[\x21-\x7e]*$/'],
             'domain' => ['nullable', 'string', 'max:253', 'regex:'.self::DOMAIN_PATTERN],
             'wildcard' => ['sometimes', 'boolean'],
+            'proxy' => ['nullable', 'string', Rule::in(array_keys(Machine::PROXIES))],
+            'https' => ['sometimes', 'nullable', 'boolean'],
             'env' => ['nullable', 'array'],
             'env.*' => ['nullable', 'string', 'max:2000'],
             'extra_env' => ['nullable', 'string', 'max:10000'],
             'php' => ['nullable', 'string', Rule::in(RepositoryDetector::PHP_VERSIONS)],
-            'compose_file' => [$template->composeFromRepo() ? 'nullable' : 'prohibited', 'string', 'max:200', 'regex:'.self::COMPOSE_FILE_PATTERN],
+            // Nullable either way: the dialog sends null for templates that don't
+            // use it, and prohibited still turns down an actual path.
+            'compose_file' => ['nullable', ...($template->composeFromRepo() ? [] : ['prohibited']), 'string', 'max:200', 'regex:'.self::COMPOSE_FILE_PATTERN],
         ];
     }
 
@@ -108,6 +114,60 @@ final class DeployRequest
         if (! DaemonJobQueue::canWildcard($machine)) {
             throw ValidationException::withMessages([$field => 'This machine’s daemon is too old for wildcard subdomains. It updates itself, or run “sudo serverosd update” on the server.']);
         }
+    }
+
+    /**
+     * The proxy a deploy asks for, when it has a domain for one to serve
+     * and isn't the one the machine already uses. Null keeps it as it is.
+     */
+    public static function proxy(Machine $machine, ?string $domain, ?string $proxy): ?string
+    {
+        if (blank($domain) || blank($proxy) || $proxy === ($machine->proxy ?? 'caddy')) {
+            return null;
+        }
+        if (! DaemonJobQueue::canChooseProxy($machine)) {
+            throw ValidationException::withMessages(['proxy' => $machine->name.'’s daemon is too old to switch reverse proxy. It updates itself, or run “sudo serverosd update” on the server.']);
+        }
+
+        return $proxy;
+    }
+
+    /**
+     * @param  array<string, mixed>  $job
+     * @return array<string, mixed>
+     */
+    public static function withProxy(array $job, ?string $proxy): array
+    {
+        return $proxy === null ? $job : [...$job, 'proxy' => $proxy];
+    }
+
+    /**
+     * Whether a deploy with a domain serves it over HTTPS, when it says.
+     * Null leaves it to the daemon: what the app had, HTTPS for a new one.
+     */
+    public static function https(Machine $machine, ?string $domain, mixed $https): ?bool
+    {
+        if (blank($domain) || $https === null) {
+            return null;
+        }
+        if (! DaemonJobQueue::canChooseHttps($machine)) {
+            if (! $https) {
+                throw ValidationException::withMessages(['https' => $machine->name.'’s daemon is too old to serve a domain without HTTPS. It updates itself, or run “sudo serverosd update” on the server.']);
+            }
+
+            return null;
+        }
+
+        return (bool) $https;
+    }
+
+    /**
+     * @param  array<string, mixed>  $job
+     * @return array<string, mixed>
+     */
+    public static function withHttps(array $job, ?bool $https): array
+    {
+        return $https === null ? $job : [...$job, 'https' => $https];
     }
 
     public static function assertPublicRepo(string $repo): void

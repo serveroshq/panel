@@ -23,6 +23,7 @@ use App\Support\ScheduledTasks;
 use App\Support\ServiceTemplates\ServiceTemplateCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -89,7 +90,7 @@ class MachineController extends Controller
             ],
             'jobs' => DaemonJob::query()
                 ->where('machine_id', $machine->id)
-                ->whereNotIn('kind', ['discover', ...FileJobs::KINDS])
+                ->whereNotIn('kind', ['discover', 'database_query', ...FileJobs::KINDS])
                 ->latest()
                 ->limit(20)
                 ->get()
@@ -106,8 +107,8 @@ class MachineController extends Controller
                         'progress' => $job->progress,
                         'log' => $hidden ? [] : ($job->log ?? []),
                         'result' => $hidden ? null : $job->result,
-                        'error' => $job->error,
-                        'explanation' => DeployFailure::explain($job),
+                        'error' => $hidden && is_array($job->error) ? Arr::except($job->error, ['output_tail']) : $job->error,
+                        'explanation' => $hidden ? null : DeployFailure::explain($job),
                         'createdAt' => $job->created_at?->toIso8601String(),
                         'updatedAt' => $job->updated_at?->toIso8601String(),
                         'retryable' => $job->isRetryable(),

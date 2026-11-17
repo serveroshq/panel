@@ -13,7 +13,8 @@ class PushDaemonUpdate extends Command
 
     public function handle(DaemonUpdates $updates): int
     {
-        $result = $updates->push($this->option('arch') ?: null);
+        $arch = $this->option('arch');
+        $result = $updates->push(is_string($arch) && $arch !== '' ? $arch : null);
 
         $this->components->info(count($result['offered']).' machines offered the update'.($result['offered'] === [] ? '.' : ': '.implode(', ', $result['offered'])));
         foreach ($result['failed'] as $machine => $reason) {

@@ -127,6 +127,7 @@ final class TemplateGuide
             $about = match (true) {
                 (bool) preg_match('/^\{(random|base64):\d+\}$/', $default) => 'A random value is made for you.',
                 $default === '{url}' => 'The address it\'s reached at, from the domain you add.',
+                $default === '{host}' => 'The address it\'s reached at without https://, from the domain you add.',
                 $default !== '' => "Starts as {$default}.",
                 (bool) ($field['required'] ?? false) => 'Required.',
                 default => 'Optional.',
@@ -267,6 +268,8 @@ final class TemplateGuide
                 $lines[] = "{$field['key']}=";
             } elseif ($default === '{url}') {
                 $lines[] = "{$field['key']}=https://{$this->template->slug}.example.com";
+            } elseif ($default === '{host}') {
+                $lines[] = "{$field['key']}={$this->template->slug}.example.com";
             } else {
                 if ($default === '') {
                     $lines[] = '# '.rtrim($field['label'].(filled($field['hint'] ?? null) ? ': '.$field['hint'] : ''), '.');

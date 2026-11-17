@@ -233,7 +233,7 @@ watch(
             <Sheet v-model:open="mobileOpen">
                 <SheetContent
                     side="left"
-                    class="w-64 gap-0 border-(--ds-border) bg-(--ds-frame) p-0 font-ui text-(--ds-text)"
+                    class="w-64 gap-0 border-(--ds-border) bg-(--ds-frame) px-0 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] font-ui text-(--ds-text) [&>button]:hidden"
                 >
                     <SheetTitle class="sr-only">{{
                         $t('Navigation')
@@ -246,6 +246,8 @@ watch(
                         }}
                     </SheetDescription>
                     <WorkspaceSidebar
+                        closable
+                        @close="mobileOpen = false"
                         @search="openSearch"
                         @assistant="mobileOpen = false"
                         @whats-new="mobileOpen = false"

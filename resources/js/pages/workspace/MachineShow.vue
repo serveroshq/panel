@@ -64,7 +64,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { bytes, statusGroup } from '@/components/machines/serviceFormat';
 import ServicesTable from '@/components/machines/ServicesTable.vue';
-import type { BuildingService } from '@/components/machines/ServicesTable.vue';
+import { buildingServices as findBuilding } from '@/components/machines/buildingServices';
+import type { BuildingService } from '@/components/machines/buildingServices';
 import Sparkline from '@/components/machines/Sparkline.vue';
 import TimeSeriesChart from '@/components/machines/TimeSeriesChart.vue';
 import type {
@@ -92,6 +93,7 @@ import type { Component } from 'vue';
 import { jobStatus } from '@/lib/jobStatus';
 import type { Tone } from '@/lib/jobStatus';
 import type { Workspace, WorkspaceAccess } from '@/types';
+import { describe, errorMessage, jobReason } from '@/lib/errors';
 
 const upgrade = useUpgradeLink();
 
@@ -191,58 +193,13 @@ const listedServices = computed(() =>
         (service) => !removingKeys.value.has(service.key),
     ),
 );
-const buildingServices = computed<BuildingService[]>(() => {
-    const inScan = new Set<string>();
-    for (const service of props.machine.inventory?.services ?? []) {
-        const project = service.details?.compose_project;
-        if (project?.startsWith('serveros-')) {
-            inScan.add(project.slice('serveros-'.length));
-        }
-        if (service.app) {
-            inScan.add(service.app);
-        }
-    }
-    const scannedAt = (props.machine.inventory?.scanned_at ?? 0) * 1000;
-    const seen = new Set<string>();
-    const rows: BuildingService[] = [];
-
-    for (const job of props.jobs) {
-        if (job.kind !== 'deploy' || !job.service || seen.has(job.service)) {
-            continue;
-        }
-        seen.add(job.service);
-        const created = new Date(job.createdAt ?? 0).getTime();
-        const moving = ['queued', 'accepted', 'running'].includes(job.state);
-        const recent = Date.now() - created < 10 * 60_000;
-        if (inScan.has(job.service) || (!moving && !recent)) {
-            continue;
-        }
-
-        let state: BuildingService['state'];
-        if (job.state === 'queued' || job.state === 'accepted') {
-            state = 'queued';
-        } else if (job.state === 'running') {
-            state = 'building';
-        } else if (job.state === 'succeeded') {
-            if (scannedAt > created + 60_000) continue;
-            state = 'starting';
-        } else if (['failed', 'timed_out'].includes(job.state)) {
-            state = 'failed';
-        } else {
-            continue;
-        }
-
-        rows.push({
-            jobId: job.id,
-            name: job.service,
-            state,
-            phase: job.phase,
-            progress: job.progress,
-        });
-    }
-
-    return rows;
-});
+const buildingServices = computed<BuildingService[]>(() =>
+    findBuilding(
+        props.jobs,
+        props.machine.inventory?.services ?? [],
+        props.machine.inventory?.scanned_at,
+    ),
+);
 const removeInFlight = computed(() =>
     props.jobs.some(
         (job) =>
@@ -269,6 +226,18 @@ const canDeploy = computed(
     () =>
         canManage.value && props.deployEnabled && online.value && hasPlan.value,
 );
+// Why Deploy service is disabled, for its tooltip. The plan has its own
+// message with a link to Billing.
+const deployBlocked = computed<string | null>(() => {
+    if (!hasPlan.value) return 'plan';
+    if (!canManage.value)
+        return trans('You need permission to manage machines to deploy here.');
+    if (!props.deployEnabled)
+        return trans('Deploys aren’t set up on this panel yet.');
+    if (!online.value) return trans('The machine is offline.');
+
+    return null;
+});
 const tab = usePathTab(`/machines/${props.machine.id}`, [
     'services',
     'scheduled',
@@ -429,7 +398,7 @@ function jobIcon(job: DaemonJob): Component {
 }
 
 function jobDetail(job: DaemonJob): string {
-    if (job.error) return job.explanation?.cause ?? job.error.message ?? '';
+    if (job.error) return job.explanation?.cause ?? jobReason(job.error, '');
     if (job.state === 'succeeded' && job.result?.container) {
         return trans('Container: :container · port :port', {
             container: String(job.result.container ?? ''),
@@ -581,9 +550,9 @@ async function refreshNow(): Promise<void> {
         const json = await response.json().catch(() => ({}));
         note = response.ok
             ? (json.note ?? null)
-            : trans('Couldn’t ask for a scan.');
-    } catch {
-        note = trans('Couldn’t ask for a scan.');
+            : describe(response.status, json);
+    } catch (cause) {
+        note = errorMessage(cause);
     }
 
     if (note) {
@@ -862,11 +831,11 @@ function usage(mount: string): { percent: number; free: number } | null {
             </DropdownMenu>
 
             <TooltipProvider :delay-duration="100">
-                <Tooltip :disabled="hasPlan">
+                <Tooltip :disabled="deployBlocked === null">
                     <TooltipTrigger as-child>
                         <span
                             class="inline-flex"
-                            :tabindex="hasPlan ? undefined : 0"
+                            :tabindex="deployBlocked === null ? undefined : 0"
                         >
                             <button
                                 type="button"
@@ -887,14 +856,17 @@ function usage(mount: string): { percent: number; free: number } | null {
                         align="end"
                         class="max-w-64 px-3 py-2 text-left text-[13px]/5"
                     >
-                        {{
+                        <template v-if="deployBlocked !== 'plan'">{{
+                            deployBlocked
+                        }}</template>
+                        <template v-else>{{
                             ' ' +
                             $t(
                                 'Your plan has ended, so deploys are paused. Everything already running keeps running.',
                             )
-                        }}
+                        }}</template>
                         <Link
-                            v-if="upgrade"
+                            v-if="deployBlocked === 'plan' && upgrade"
                             :href="upgrade.href"
                             class="mt-1 block font-semibold underline underline-offset-2"
                             >{{ $t('Resubscribe in Billing') }}</Link

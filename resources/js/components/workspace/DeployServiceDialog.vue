@@ -26,6 +26,7 @@ import TickBox from '@/components/workspace/TickBox.vue';
 import { useStepFrame } from '@/composables/useStepFrame';
 import { useZipUpload } from '@/composables/useZipUpload';
 import { toast } from '@/lib/toast';
+import { describe, errorMessage } from '@/lib/errors';
 
 export type TemplateField = {
     key: string;
@@ -64,6 +65,7 @@ type DeployResult = {
     tunnel: string | null;
     port: number;
     notes: string | null;
+    commit?: string | null;
 };
 
 const props = defineProps<{
@@ -138,6 +140,107 @@ const customTemplate = computed(
         ) ?? null,
 );
 
+type Repository = {
+    name: string;
+    url: string;
+    private: boolean;
+    branch: string;
+};
+
+// The connected GitHub accounts' repositories, offered under Your own code.
+const github = ref<{
+    connected: boolean;
+    repositories: Repository[];
+} | null>(null);
+// Kept with the repository they belong to, so the menu never offers another
+// repository's branches (after Try another, an upload, or a slow answer).
+const branches = ref<{ repo: string; names: string[] } | null>(null);
+
+const repositoryMatches = computed(() => {
+    const term = query.value.trim().toLowerCase();
+
+    if (!github.value || term.includes('://')) {
+        return [];
+    }
+
+    return github.value.repositories
+        .filter((repository) => repository.name.toLowerCase().includes(term))
+        .slice(0, 8);
+});
+
+const branchOptions = computed<SelectMenuOption<string>[]>(() => {
+    const found = detection.value;
+
+    if (!found || found.upload || branches.value?.repo !== found.repo) {
+        return [];
+    }
+
+    const names =
+        !found.branch || branches.value.names.includes(found.branch)
+            ? branches.value.names
+            : [found.branch, ...branches.value.names];
+
+    return names.map((name) => ({ value: name, label: name }));
+});
+
+async function loadRepositories(): Promise<void> {
+    if (github.value || !page.props.githubApp) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/github/repositories', {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
+        });
+
+        if (response.ok) {
+            github.value = await response.json();
+        }
+    } catch {}
+}
+
+function pickRepository(repository: Repository): void {
+    query.value = repository.url;
+    void detect();
+}
+
+async function loadBranches(found: Detection): Promise<void> {
+    const match = found.upload
+        ? null
+        : found.repo.match(/^https:\/\/github\.com\/([^/]+)\/(.+?)(?:\.git)?$/);
+
+    if (!match) {
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `/github/repositories/${match[1]}/${match[2]}/branches`,
+            {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+            },
+        );
+
+        const names = response.ok ? (await response.json()).branches : null;
+
+        // An answer for a repository that's no longer shown is dropped.
+        if (names && detection.value?.repo === found.repo) {
+            branches.value = { repo: found.repo, names };
+        }
+    } catch {}
+}
+
+function switchBranch(branch: string): void {
+    if (!detection.value || branch === detection.value.branch) {
+        return;
+    }
+
+    query.value = `${detection.value.repo.replace(/\.git$/, '')}/tree/${branch}`;
+    void detect();
+}
+
 async function detect(): Promise<void> {
     const repository = query.value.trim();
 
@@ -163,21 +266,19 @@ async function detect(): Promise<void> {
             },
             body: JSON.stringify({ repository }),
         });
-        const body = await response.json();
+        const body = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            detectError.value =
-                body.errors?.repository?.[0] ??
-                body.message ??
-                trans('Couldn’t check that repository.');
+            detectError.value = describe(response.status, body);
 
             return;
         }
 
         detection.value = body as Detection;
         customSlug.value = body.template ?? '';
-    } catch {
-        detectError.value = trans('Couldn’t reach the panel. Try again.');
+        void loadBranches(body as Detection);
+    } catch (cause) {
+        detectError.value = errorMessage(cause);
     } finally {
         detecting.value = false;
     }
@@ -288,6 +389,10 @@ const grouped = computed(() => {
 watch([query, category], () => (activeIndex.value = 0));
 
 watch(category, (next, previous) => {
+    if (next === 'Custom') {
+        void loadRepositories();
+    }
+
     if (next === 'Custom' || previous === 'Custom') {
         query.value = '';
         detection.value = null;
@@ -354,6 +459,8 @@ const form = ref({
     compose_file: '',
     domain: '',
     wildcard: false,
+    proxy: '',
+    https: true,
     env: {} as Record<string, string | boolean>,
     extra_env: '',
 });
@@ -374,6 +481,52 @@ const taken = ref<{ services: string[]; ports: number[] }>({
     services: [],
     ports: [],
 });
+
+type Proxy = 'caddy' | 'nginx' | 'apache' | 'traefik';
+
+const proxyNames: Record<Proxy, string> = {
+    caddy: 'Caddy',
+    nginx: 'nginx',
+    apache: 'Apache',
+    traefik: 'Traefik',
+};
+const machineProxy = ref<string | null>(null);
+const canChooseProxy = ref(false);
+const canChooseHttps = ref(false);
+const deployedProxy = ref<Proxy>('caddy');
+
+const currentProxy = computed<Proxy>(() =>
+    machineProxy.value && machineProxy.value in proxyNames
+        ? (machineProxy.value as Proxy)
+        : 'caddy',
+);
+const chosenProxy = computed<Proxy>(() =>
+    form.value.proxy in proxyNames
+        ? (form.value.proxy as Proxy)
+        : currentProxy.value,
+);
+const proxyOptions = computed<SelectMenuOption<Proxy>[]>(() => [
+    {
+        value: 'caddy',
+        label: 'Caddy',
+        hint: trans('HTTPS on its own, wildcard subdomains too'),
+    },
+    {
+        value: 'nginx',
+        label: 'nginx',
+        hint: trans('HTTPS from Let’s Encrypt, through certbot'),
+    },
+    {
+        value: 'apache',
+        label: 'Apache',
+        hint: trans('HTTPS from Let’s Encrypt, through certbot'),
+    },
+    {
+        value: 'traefik',
+        label: 'Traefik',
+        hint: trans('HTTPS on its own'),
+    },
+]);
 const suggested = ref<{ service: string; port: string | number } | null>(null);
 
 function freeName(base: string): string {
@@ -414,7 +567,17 @@ async function loadTaken(): Promise<void> {
             return;
         }
 
-        taken.value = await response.json();
+        const body = (await response.json()) as {
+            services: string[];
+            ports: number[];
+            proxy?: string | null;
+            canChooseProxy?: boolean;
+            canChooseHttps?: boolean;
+        };
+        taken.value = { services: body.services, ports: body.ports };
+        machineProxy.value = body.proxy ?? null;
+        canChooseProxy.value = Boolean(body.canChooseProxy);
+        canChooseHttps.value = Boolean(body.canChooseHttps);
     } catch {
         return;
     }
@@ -501,6 +664,8 @@ function choose(
         compose_file: template.compose ?? '',
         domain: '',
         wildcard: false,
+        proxy: '',
+        https: true,
         env: Object.fromEntries(
             template.env.map((field) => [
                 field.key,
@@ -625,6 +790,9 @@ async function deploy(): Promise<void> {
 
     submitting.value = true;
     errors.value = {};
+    deployedProxy.value = canChooseProxy.value
+        ? chosenProxy.value
+        : currentProxy.value;
 
     const env = Object.fromEntries(
         Object.entries(form.value.env).map(([key, value]) => [
@@ -663,11 +831,22 @@ async function deploy(): Promise<void> {
                 wildcard: Boolean(
                     template.web && form.value.domain && form.value.wildcard,
                 ),
+                proxy:
+                    template.web &&
+                    form.value.domain &&
+                    canChooseProxy.value &&
+                    chosenProxy.value !== currentProxy.value
+                        ? chosenProxy.value
+                        : null,
+                https:
+                    template.web && form.value.domain && canChooseHttps.value
+                        ? form.value.https
+                        : null,
                 env,
                 extra_env: form.value.extra_env || null,
             }),
         });
-        const body = await response.json();
+        const body = await response.json().catch(() => ({}));
 
         if (response.status === 422 && body.errors) {
             errors.value = Object.fromEntries(
@@ -680,9 +859,7 @@ async function deploy(): Promise<void> {
         }
 
         if (!response.ok) {
-            errors.value = {
-                form: body.error ?? trans('Couldn’t queue the deployment.'),
-            };
+            errors.value = { form: describe(response.status, body) };
 
             return;
         }
@@ -690,8 +867,8 @@ async function deploy(): Promise<void> {
         result.value = body as DeployResult;
         step.value = 'done';
         emit('deployed', result.value);
-    } catch {
-        errors.value = { form: trans('Couldn’t reach the panel. Try again.') };
+    } catch (cause) {
+        errors.value = { form: errorMessage(cause) };
     } finally {
         submitting.value = false;
     }
@@ -945,6 +1122,29 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                 }}
                                             </p>
 
+                                            <div
+                                                v-if="branchOptions.length > 1"
+                                                class="flex flex-col gap-1.5"
+                                            >
+                                                <label
+                                                    for="custom-branch"
+                                                    :class="labelClass"
+                                                >
+                                                    {{ $t('Branch') }}
+                                                </label>
+                                                <SelectMenu
+                                                    id="custom-branch"
+                                                    :model-value="
+                                                        detection.branch
+                                                    "
+                                                    :options="branchOptions"
+                                                    class="h-8 rounded-md border border-input bg-transparent pr-2.5 pl-3 text-[13px]/4 text-(--ds-text) shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                                                    @update:model-value="
+                                                        switchBranch
+                                                    "
+                                                />
+                                            </div>
+
                                             <div class="flex flex-col gap-1.5">
                                                 <label
                                                     for="custom-setup"
@@ -1014,7 +1214,11 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                         'Paste a GitHub repository above',
                                                     )
                                                 }}<template
-                                                    v-if="page.props.githubApp"
+                                                    v-if="
+                                                        page.props.githubApp &&
+                                                        github?.connected !==
+                                                            false
+                                                    "
                                                 >
                                                     {{
                                                         ' ' +
@@ -1037,6 +1241,57 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                     )
                                                 "
                                             />
+                                            <div
+                                                v-else-if="
+                                                    repositoryMatches.length
+                                                "
+                                                class="flex flex-col gap-0.5"
+                                            >
+                                                <p :class="labelClass">
+                                                    {{
+                                                        $t('Your repositories')
+                                                    }}
+                                                </p>
+                                                <button
+                                                    v-for="repository in repositoryMatches"
+                                                    :key="repository.name"
+                                                    type="button"
+                                                    class="flex h-8 cursor-pointer items-center justify-between gap-3 rounded-[7px] px-2.5 text-left text-[13px] text-(--ds-text) hover:bg-(--ds-hover) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ds-ring)"
+                                                    @click="
+                                                        pickRepository(
+                                                            repository,
+                                                        )
+                                                    "
+                                                >
+                                                    <span
+                                                        class="truncate font-ui-mono"
+                                                        >{{
+                                                            repository.name
+                                                        }}</span
+                                                    >
+                                                    <span
+                                                        v-if="
+                                                            repository.private
+                                                        "
+                                                        class="shrink-0 rounded-full border border-(--ds-border-strong) px-2 py-px text-[11px]/4 font-medium text-(--ds-text-secondary)"
+                                                        >{{
+                                                            $t('Private')
+                                                        }}</span
+                                                    >
+                                                </button>
+                                            </div>
+                                            <a
+                                                v-else-if="
+                                                    github && !github.connected
+                                                "
+                                                href="/settings/github/connect"
+                                                class="text-[13px]/5 font-medium text-[#3B7BFF] hover:underline"
+                                                >{{
+                                                    $t(
+                                                        'Connect GitHub to pick from your repositories, private ones too',
+                                                    )
+                                                }}</a
+                                            >
 
                                             <label
                                                 class="flex cursor-pointer flex-col items-center gap-1.5 rounded-[10px] border border-dashed px-4 py-5 text-center transition-colors"
@@ -1467,17 +1722,21 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                 :class="labelClass"
                                             >
                                                 {{
-                                                    ' ' + $t('Commit SHA') + ' '
+                                                    ' ' +
+                                                    $t(
+                                                        'Branch, tag or commit',
+                                                    ) +
+                                                    ' '
                                                 }}
                                             </label>
                                             <Input
                                                 id="deploy-commit"
                                                 v-model.trim="form.commit"
-                                                required
-                                                pattern="[a-fA-F0-9]{40}"
-                                                maxlength="40"
+                                                maxlength="255"
                                                 :placeholder="
-                                                    $t('40-character commit')
+                                                    $t(
+                                                        'Latest commit on the default branch',
+                                                    )
                                                 "
                                                 class="font-ui-mono"
                                             />
@@ -1735,6 +1994,79 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                             </div>
                                         </template>
                                     </div>
+                                    <div
+                                        v-if="form.domain && canChooseProxy"
+                                        class="mt-1 flex flex-col gap-1.5"
+                                    >
+                                        <label
+                                            for="deploy-proxy"
+                                            :class="labelClass"
+                                        >
+                                            {{ $t('Reverse proxy') }}
+                                        </label>
+                                        <SelectMenu
+                                            id="deploy-proxy"
+                                            :model-value="chosenProxy"
+                                            :options="proxyOptions"
+                                            class="h-8 rounded-md border border-input bg-transparent pr-2.5 pl-3 text-[13px]/4 text-(--ds-text) shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                                            @update:model-value="
+                                                (value) => (form.proxy = value)
+                                            "
+                                        />
+                                        <p
+                                            v-if="chosenProxy !== currentProxy"
+                                            class="text-xs/4 text-(--ds-text-faint)"
+                                        >
+                                            {{
+                                                $t(
+                                                    'This machine uses :from now. Deploying moves every site on it to :to and stops :from, since only one of them can use ports 80 and 443.',
+                                                    {
+                                                        from: proxyNames[
+                                                            currentProxy
+                                                        ],
+                                                        to: proxyNames[
+                                                            chosenProxy
+                                                        ],
+                                                    },
+                                                )
+                                            }}
+                                        </p>
+                                        <InputError
+                                            :message="errorFor('proxy')"
+                                        />
+                                    </div>
+                                    <label
+                                        v-if="form.domain && canChooseHttps"
+                                        class="mt-1 flex cursor-pointer items-start gap-2.5 text-[13px]/5 text-(--ds-text-secondary) select-none"
+                                    >
+                                        <TickBox
+                                            v-model="form.https"
+                                            class="mt-0.5"
+                                        />
+                                        <span class="flex flex-col gap-0.5">
+                                            <span class="text-(--ds-text)">{{
+                                                $t('Serve over HTTPS')
+                                            }}</span>
+                                            <span
+                                                class="text-xs/4 text-(--ds-text-faint)"
+                                                >{{
+                                                    form.https
+                                                        ? $t(
+                                                              ':proxy gets a certificate and sends HTTP to HTTPS, as soon as the domain points here.',
+                                                              {
+                                                                  proxy: proxyNames[
+                                                                      chosenProxy
+                                                                  ],
+                                                              },
+                                                          )
+                                                        : $t(
+                                                              'Plain HTTP, no certificate. For when a CDN or proxy in front does HTTPS.',
+                                                          )
+                                                }}</span
+                                            >
+                                        </span>
+                                    </label>
+                                    <InputError :message="errorFor('https')" />
                                     <label
                                         v-if="form.domain"
                                         class="mt-1 flex cursor-pointer items-start gap-2.5 text-[13px]/5 text-(--ds-text-secondary) select-none"
@@ -1751,7 +2083,11 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                 class="text-xs/4 text-(--ds-text-faint)"
                                                 >{{
                                                     $t(
-                                                        'Every subdomain, like tenant.:domain, is served by this app and gets its own certificate the first time it’s visited. No DNS provider needed.',
+                                                        chosenProxy ===
+                                                            'caddy' &&
+                                                            form.https
+                                                            ? 'Every subdomain, like tenant.:domain, is served by this app and gets its own certificate the first time it’s visited. No DNS provider needed.'
+                                                            : 'Every subdomain, like tenant.:domain, is served by this app over plain HTTP: a certificate for every subdomain needs Caddy.',
                                                         {
                                                             domain:
                                                                 bareDomain(
@@ -1993,9 +2329,21 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                         <p class="text-sm font-medium">
                                             {{
                                                 ' ' +
-                                                $t('Deploying :service', {
-                                                    service: form.service,
-                                                })
+                                                (result.commit
+                                                    ? $t(
+                                                          'Deploying :service at :commit',
+                                                          {
+                                                              service:
+                                                                  form.service,
+                                                              commit: result.commit.slice(
+                                                                  0,
+                                                                  7,
+                                                              ),
+                                                          },
+                                                      )
+                                                    : $t('Deploying :service', {
+                                                          service: form.service,
+                                                      }))
                                             }}
                                         </p>
                                         <p
@@ -2114,7 +2462,12 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                     />
                                     {{
                                         $t(
-                                            'Caddy on the machine gets the certificate and redirects HTTP to HTTPS, as soon as the domain points here.',
+                                            ':proxy on the machine gets the certificate and redirects HTTP to HTTPS, as soon as the domain points here.',
+                                            {
+                                                proxy: proxyNames[
+                                                    deployedProxy
+                                                ],
+                                            },
                                         ) + ' '
                                     }}
                                 </p>

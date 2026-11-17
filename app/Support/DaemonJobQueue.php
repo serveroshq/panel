@@ -18,9 +18,11 @@ use RuntimeException;
 
 class DaemonJobQueue
 {
-    public const array NEEDS_PLAN = ['deploy', 'release', 'rollback', 'service_exec', 'service_clone'];
+    public const DEPLOY_TIMEOUT_SECS = 1800;
 
-    private const array READS = ['service_logs', 'service_inspect', 'discover', 'file_list', 'file_read', 'package_updates', 'disk_usage'];
+    public const array NEEDS_PLAN = ['deploy', 'release', 'rollback', 'service_exec', 'service_clone', 'database_query'];
+
+    private const array READS = ['database_query', 'service_logs', 'service_inspect', 'discover', 'file_list', 'file_read', 'package_updates', 'disk_usage'];
 
     public function __construct(private readonly DaemonGatewayClient $gateway) {}
 
@@ -47,9 +49,11 @@ class DaemonJobQueue
             return null;
         }
 
-        return $kind === 'service_exec'
-            ? 'The console needs a plan. Choose one in Billing to run commands again.'
-            : 'Deploys need a plan. Choose one in Billing to deploy again. Everything that’s already running keeps running.';
+        return match ($kind) {
+            'service_exec' => 'The console needs a plan. Choose one in Billing to run commands again.',
+            'database_query' => 'The Database tab needs a plan. Choose one in Billing to run queries again.',
+            default => 'Deploys need a plan. Choose one in Billing to deploy again. Everything that’s already running keeps running.',
+        };
     }
 
     /**
@@ -63,7 +67,7 @@ class DaemonJobQueue
         $database = $job['snapshot_before'] ? AppDatabase::for($machine, (string) $job['service'], (array) ($job['env'] ?? [])) : null;
         $job['snapshot_also'] = $database === null ? [] : [$database['key']];
 
-        $record = $this->queue($machine, $user, 'deploy', $job, $job['service'], 1800);
+        $record = $this->queue($machine, $user, 'deploy', $job, $job['service'], self::DEPLOY_TIMEOUT_SECS);
         event(new DeployQueued($machine, $record, (array) ($job['domains'] ?? [])));
 
         return $record;
@@ -72,10 +76,11 @@ class DaemonJobQueue
     /**
      * @param  array<string, mixed>  $job
      * @param  array{kind: string, job: array<string, mixed>, service: string|null}|null  $then
+     * @param  array<string, mixed>  $meta  what the activity log keeps instead of the job itself
      *
      * @throws RuntimeException
      */
-    public function queue(Machine $machine, User $user, string $kind, array $job, ?string $service, int $timeoutSecs = 300, ?array $then = null): DaemonJob
+    public function queue(Machine $machine, User $user, string $kind, array $job, ?string $service, int $timeoutSecs = 300, ?array $then = null, array $meta = []): DaemonJob
     {
         if (($reason = self::needsPlan($machine, $kind)) !== null) {
             throw new RuntimeException($reason);
@@ -104,7 +109,7 @@ class DaemonJobQueue
         ]);
 
         $this->send($machine, $record, $command);
-        $this->recordActivity($machine, $user, $kind, $job, $service);
+        $this->recordActivity($machine, $user, $kind, $job, $service, $meta);
 
         return $record;
     }
@@ -144,6 +149,8 @@ class DaemonJobQueue
             'rollback' => 'service.rollback',
             'service_action' => in_array($job['action'] ?? null, ['start', 'stop', 'restart', 'reload'], true) ? 'service.'.$job['action'] : null,
             'service_exec' => 'console.command',
+            // A query is audited by what it asked; a listing of tables isn't.
+            'database_query' => $meta === [] ? null : 'console.command',
             'adopt' => 'service.adopt',
             'service_remove' => 'service.remove',
             'service_repair' => 'service.repair',
@@ -377,6 +384,11 @@ class DaemonJobQueue
         return self::atLeast($machine, (string) config('daemon.package_add_since'));
     }
 
+    public static function canQueryHostDatabases(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.host_database_since'));
+    }
+
     public function rescan(Machine $machine, User $user): ?DaemonJob
     {
         if ($this->unavailable($machine) !== null) {
@@ -396,6 +408,16 @@ class DaemonJobQueue
         } catch (RuntimeException) {
             return null;
         }
+    }
+
+    public static function canChooseProxy(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.proxy_choice_since'));
+    }
+
+    public static function canChooseHttps(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.https_choice_since'));
     }
 
     public static function canWildcard(Machine $machine): bool

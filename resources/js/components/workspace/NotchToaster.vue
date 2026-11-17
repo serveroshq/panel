@@ -105,7 +105,7 @@ onBeforeUnmount(() => {
 
 <template>
     <div
-        class="pointer-events-none fixed inset-x-0 top-0 z-[100] flex justify-center"
+        class="notch-dock pointer-events-none fixed inset-x-0 top-0 z-[100] flex justify-center"
     >
         <Transition name="notch" @after-enter="observe">
             <div
@@ -286,6 +286,30 @@ onBeforeUnmount(() => {
     opacity: 0;
     filter: blur(4px);
     translate: 0 4px;
+}
+
+/* On a phone the notch would sit over the header and tabs: toasts come up
+   from the bottom as a pill instead, clear of the home indicator. */
+@media (max-width: 639px) {
+    .notch-dock {
+        top: auto;
+        bottom: 0;
+        padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    }
+
+    .notch {
+        border-radius: 20px;
+    }
+
+    .notch::before,
+    .notch::after {
+        display: none;
+    }
+
+    .notch-enter-from,
+    .notch-leave-to {
+        translate: 0 calc(100% + 40px);
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {

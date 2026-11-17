@@ -280,6 +280,30 @@ test('a job an MCP call queues carries the call, to the daemon and back to the c
         ->and($sent)->toMatchArray(['kind' => 'user', 'via' => 'mcp', 'tool' => 'restart_service', 'call' => $call->call_id]);
 });
 
+test('a failed console command’s output stays hidden too', function () {
+    [$workspace, $machine, $url] = serviceMachine();
+    $viewer = User::factory()->create();
+    $workspace->members()->attach($viewer, ['role' => WorkspaceRole::Viewer->value]);
+    DaemonJob::query()->create([
+        'id' => (string) Str::uuid(), 'machine_id' => $machine->id, 'user_id' => $workspace->owner_id, 'kind' => 'service_exec', 'service' => 'docker:abc123def456', 'state' => 'failed',
+        'command' => ['job' => ['type' => 'service_exec', 'service' => 'docker:abc123def456', 'command' => 'cat .env']],
+        'log' => [], 'error' => ['phase' => 'exec', 'message' => 'exited 1', 'output_tail' => ['SECRET=hunter2', 'error: no space left on device']],
+    ]);
+    $machinePage = 'https://'.$workspace->host().'/machines/'.$machine->id;
+
+    foreach ([$machinePage, $url.'docker:abc123def456'] as $page) {
+        $this->actingAs($viewer)->get($page)
+            ->assertDontSee('hunter2')
+            ->assertInertia(fn (Assert $p) => $p->where('jobs.0.error.message', 'exited 1')->missing('jobs.0.error.output_tail'));
+
+        $this->actingAs($workspace->owner)->get($page)
+            ->assertInertia(fn (Assert $p) => $p->where('jobs.0.error.output_tail.0', 'SECRET=hunter2'));
+    }
+
+    $this->actingAs($workspace->owner)->get($machinePage)
+        ->assertInertia(fn (Assert $p) => $p->where('jobs.0.explanation', null));
+});
+
 test('console commands and their output reach only people who manage machines', function () {
     [$workspace, $machine, $url] = serviceMachine();
     $viewer = User::factory()->create();

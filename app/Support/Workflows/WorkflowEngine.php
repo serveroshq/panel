@@ -27,6 +27,9 @@ use App\Support\Monitors\MonitorAlerts;
 use App\Support\Monitors\MonitorRunner;
 use App\Support\Projects\Environments;
 use App\Support\Projects\ProjectData;
+use Illuminate\Database\RecordsNotFoundException;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -119,7 +122,7 @@ class WorkflowEngine
                     $result = $this->execute($run, $node);
                 } catch (Throwable $e) {
                     report($e);
-                    $result = ['state' => 'failed', 'message' => 'Something went wrong running this step.'];
+                    $result = ['state' => 'failed', 'message' => self::failure($e)];
                 }
                 $this->settle($run, $node, $result);
             }
@@ -585,11 +588,11 @@ class WorkflowEngine
             $result = $url === null
                 ? ['state' => 'succeeded', 'phase' => null, 'message' => "The agent didn’t change any code, so there’s no pull request{$by}"]
                 : ['state' => 'succeeded', 'phase' => null, 'pr' => $url, 'message' => "Opened {$url}{$by}"];
-        } catch (RuntimeException $e) {
-            $result = ['state' => 'failed', 'phase' => null, 'message' => $e->getMessage()];
         } catch (Throwable $e) {
-            report($e);
-            $result = ['state' => 'failed', 'phase' => null, 'message' => 'Something went wrong opening the pull request.'];
+            if (! self::readable($e)) {
+                report($e);
+            }
+            $result = ['state' => 'failed', 'phase' => null, 'message' => self::failure($e, 'Something went wrong opening the pull request. It’s been logged; run the workflow again.')];
         }
 
         DB::transaction(function () use ($run, $node, $nodeId, $result) {
@@ -1128,5 +1131,21 @@ class WorkflowEngine
         $logs = $run->logs ?? [];
         $logs[] = ['t' => (int) floor(microtime(true) * 1000), 'node' => $node, 'level' => $level, 'message' => $message];
         $run->logs = array_slice($logs, -self::LOG_LIMIT);
+    }
+
+    private static function failure(Throwable $e, string $otherwise = 'Something went wrong running this step. It’s been logged; check the step’s settings and run it again.'): string
+    {
+        return match (true) {
+            $e instanceof RecordsNotFoundException => 'Something this step uses was deleted, like a machine, app or project. Check the step’s settings and run it again.',
+            self::readable($e) => $e->getMessage(),
+            $e instanceof ConnectionException => 'Couldn’t connect: the address didn’t answer or couldn’t be found. Check it and run the workflow again.',
+            $e instanceof RequestException => "The address answered with an error ({$e->response->status()}). Check it and run the workflow again.",
+            default => $otherwise,
+        };
+    }
+
+    private static function readable(Throwable $e): bool
+    {
+        return $e::class === RuntimeException::class && trim($e->getMessage()) !== '';
     }
 }

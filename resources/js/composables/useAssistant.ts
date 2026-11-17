@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/vue3';
 import { trans } from 'laravel-vue-i18n';
 import { computed, nextTick, ref, watch } from 'vue';
+import { errorMessage, reasonIn, statusMessage } from '@/lib/errors';
 
 export type StepState =
     | 'running'
@@ -308,11 +309,10 @@ async function post(url: string, body: Record<string, unknown>): Promise<void> {
             items.value.push({
                 kind: 'error',
                 text:
-                    json.error ??
+                    reasonIn(json) ??
                     (response.status === 429
                         ? trans('That’s a lot of messages. Give it a minute.')
-                        : (json.message ??
-                          trans('Couldn’t get an answer. Try again.'))),
+                        : statusMessage(response.status)),
             });
             return;
         }
@@ -360,7 +360,10 @@ async function post(url: string, body: Record<string, unknown>): Promise<void> {
         if ((cause as Error).name !== 'AbortError') {
             items.value.push({
                 kind: 'error',
-                text: trans('Couldn’t reach Ask AI. Try again.'),
+                text: errorMessage(
+                    cause,
+                    trans('Couldn’t reach Ask AI. Try again.'),
+                ),
             });
         }
     } finally {

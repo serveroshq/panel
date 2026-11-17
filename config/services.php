@@ -14,6 +14,14 @@ return [
 
     'discord' => [
         'changelog_webhook' => env('DISCORD_CHANGELOG_WEBHOOK'),
+        // The public security feed: notable new CVEs (security:cves).
+        'security_webhook' => env('DISCORD_SECURITY_WEBHOOK'),
+    ],
+
+    // NVD's CVE API. Works without a key (5 requests in 30 seconds); a free
+    // key from nvd.nist.gov/developers/request-an-api-key allows 50.
+    'nvd' => [
+        'key' => env('NVD_API_KEY'),
     ],
 
     'groq' => [

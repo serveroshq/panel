@@ -38,6 +38,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { Workspace } from '@/types';
+import { describe, errorMessage } from '@/lib/errors';
 
 type Level = 'error' | 'warn' | 'info' | 'debug';
 
@@ -611,8 +612,7 @@ async function confirmDelete(): Promise<void> {
             message?: string;
         } | null;
         if (!response.ok) {
-            deleteError.value =
-                data?.message ?? trans('Couldn’t delete them. Try again.');
+            deleteError.value = describe(response.status, data);
             return;
         }
 
@@ -629,8 +629,8 @@ async function confirmDelete(): Promise<void> {
             );
         }
         router.reload({ only: ['lines', 'hasOlder', 'histogram'] });
-    } catch {
-        deleteError.value = trans('Couldn’t delete them. Try again.');
+    } catch (cause) {
+        deleteError.value = errorMessage(cause);
     } finally {
         deleteBusy.value = false;
     }

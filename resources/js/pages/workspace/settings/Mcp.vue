@@ -42,6 +42,7 @@ import { MCP_CLIENTS } from '@/lib/mcpClients';
 import { timeAgo } from '@/lib/timeAgo';
 import mcpTerms from '@/routes/mcp-terms';
 import type { McpCallsUsage, Workspace } from '@/types';
+import { describe, errorMessage } from '@/lib/errors';
 
 type Connection = {
     id: number;
@@ -222,8 +223,7 @@ async function createKey(): Promise<void> {
                 Object.entries(body.errors ?? {}).map(([k, v]) => [k, v[0]]),
             );
             if (!body.errors)
-                keyErrors.value.name =
-                    body.message ?? trans('Couldn’t make the key.');
+                keyErrors.value.name = describe(response.status, body);
             if (keyErrors.value.code) codeAsked.value = true;
             keyCode.value = '';
             return;
@@ -233,6 +233,8 @@ async function createKey(): Promise<void> {
         keyStep.value = 'secret';
         withKey.value = true;
         router.reload({ only: ['connections', 'consoleUnlocked'] });
+    } catch (cause) {
+        keyErrors.value = { name: errorMessage(cause) };
     } finally {
         creating.value = false;
     }

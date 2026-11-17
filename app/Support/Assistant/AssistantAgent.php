@@ -6,11 +6,11 @@ use App\Enums\WorkspacePermission;
 use App\Jobs\DiagnoseFix;
 use App\Mcp\McpContext;
 use App\Mcp\McpServer;
-use App\Mcp\Present;
 use App\Mcp\Scopes;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
 use App\Mcp\ToolRegistry;
+use App\Mcp\Tools\Service\ServiceView;
 use App\Mcp\Tools\Service\ServiceWork;
 use App\Models\Activity;
 use App\Models\AgentFix;
@@ -20,6 +20,7 @@ use App\Models\ProjectNode;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Ai\AiProviders;
+use App\Support\Deploys\DeployFailure;
 use App\Support\Extensions\DocsSource;
 use App\Support\Fixes\FixAllowance;
 use App\Support\Projects\ProjectActions;
@@ -307,7 +308,7 @@ class AssistantAgent
             if (! $answered) {
                 $this->chat['messages'][] = ['role' => 'tool', 'id' => $call['id'], 'name' => $call['name'], 'content' => 'Error: something went wrong running this. It may or may not have happened: check before trying again.'];
             }
-            ($this->emit)(['type' => 'result', 'id' => $call['id'], 'ok' => false, 'state' => 'failed', 'summary' => 'Something went wrong']);
+            ($this->emit)(['type' => 'result', 'id' => $call['id'], 'ok' => false, 'state' => 'failed', 'summary' => 'Something went wrong running this. It may or may not have happened: check before trying again.']);
         }
     }
 
@@ -396,6 +397,18 @@ class AssistantAgent
 
         $finished = in_array($job->state, McpContext::FINISHED, true);
         $error = is_array($job->error) ? ($job->error['message'] ?? null) : null;
+        $error = is_string($error) && trim($error) !== '' ? $error : (DeployFailure::explain($job)['cause'] ?? match ($job->state) {
+            'timed_out' => 'it took too long and was stopped',
+            'refused' => 'the machine refused it',
+            'cancelled' => 'it was cancelled',
+            'stale' => 'the machine stopped answering',
+            default => null,
+        });
+        $view = ServiceView::job($this->context, $job, $job->state === 'succeeded' ? 5 : 40);
+        $line = DeployFailure::keyLine((array) ($view['error']['output_tail'] ?? []));
+        if ($line !== null && is_string($error) && ! str_contains($error, $line)) {
+            $error = rtrim($error, '. ').". The machine said: {$line}";
+        }
 
         return [
             'ok' => ! $finished || $job->state === 'succeeded',
@@ -404,7 +417,7 @@ class AssistantAgent
                 $job->state === 'succeeded' => 'Finished',
                 default => Str::limit('Failed'.(is_string($error) ? ': '.$error : ''), 220),
             },
-            'job' => self::withoutNoise(Present::job($job, $job->state === 'succeeded' ? 5 : 40)),
+            'job' => self::withoutNoise($view),
         ];
     }
 

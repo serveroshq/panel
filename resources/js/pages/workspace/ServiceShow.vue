@@ -37,6 +37,7 @@ import { toast } from '@/lib/toast';
 import InputError from '@/components/InputError.vue';
 import AppVariablesDialog from '@/components/machines/AppVariablesDialog.vue';
 import CloneServiceDialog from '@/components/machines/CloneServiceDialog.vue';
+import DatabaseBrowser from '@/components/machines/DatabaseBrowser.vue';
 import FileBrowser from '@/components/machines/FileBrowser.vue';
 import type { FilePlace } from '@/components/machines/FileBrowser.vue';
 import JobStatusBadge from '@/components/machines/JobStatusBadge.vue';
@@ -81,6 +82,14 @@ import { useZipUpload } from '@/composables/useZipUpload';
 import { timeAgo } from '@/lib/timeAgo';
 import { edit as securityEdit } from '@/routes/security';
 import type { Workspace, WorkspaceAccess } from '@/types';
+import {
+    describe,
+    errorMessage,
+    jobReason,
+    networkMessage,
+    reasonIn,
+    responseError,
+} from '@/lib/errors';
 
 const upgrade = useUpgradeLink();
 
@@ -111,6 +120,7 @@ const props = defineProps<{
     stats: ServiceStat | null;
     removable: boolean;
     inspect: { available: boolean } | null;
+    database: { engine: 'postgres' | 'mysql' } | null;
     clone: { unavailable: string | null; name: string; port: number } | null;
     links: string[];
     range: string;
@@ -232,11 +242,20 @@ const tab = usePathTab(serviceUrl.value, [
     'logs',
     'console',
     'files',
+    'database',
     'details',
 ] as const);
 
 const tabs = computed(() =>
-    (['overview', 'logs', 'files', 'details'] as const).map((value) => ({
+    (
+        [
+            'overview',
+            'logs',
+            'files',
+            ...(props.database ? (['database'] as const) : []),
+            'details',
+        ] as const
+    ).map((value) => ({
         value,
         label: value[0].toUpperCase() + value.slice(1),
         current: tab.value === value,
@@ -383,7 +402,7 @@ async function act(
         const body = await response.json().catch(() => ({}));
 
         if (!response.ok && response.status !== 422) {
-            toast.error(body.error ?? trans('That didn’t work.'));
+            toast.error(describe(response.status, body));
         }
 
         if (response.ok) {
@@ -391,8 +410,8 @@ async function act(
         }
 
         return { ok: response.ok, body };
-    } catch {
-        toast.error(trans('Couldn’t reach the panel.'));
+    } catch (cause) {
+        toast.error(errorMessage(cause));
 
         return { ok: false, body: {} };
     } finally {
@@ -501,11 +520,13 @@ watch(
             }
         } else {
             toast.error(
-                pendingJob.value?.error?.message ??
+                jobReason(
+                    pendingJob.value?.error,
                     trans('Couldn’t :action :displayName.', {
                         action: String(current.action),
                         displayName: String(displayName.value),
                     }),
+                ),
                 { id: current.toast },
             );
         }
@@ -640,7 +661,9 @@ async function saveDatabase(value: string): Promise<void> {
         },
     ).catch(() => null);
     if (!response?.ok) {
-        toast.error(trans('Couldn’t save that.'));
+        toast.error(
+            response ? await responseError(response) : networkMessage(),
+        );
     }
     router.reload({ only: ['app'] });
 }
@@ -662,7 +685,9 @@ async function saveSnapshotBefore(on: boolean): Promise<void> {
     ).catch(() => null);
     if (!response?.ok) {
         snapshotBefore.value = !on;
-        toast.error(trans('Couldn’t save that.'));
+        toast.error(
+            response ? await responseError(response) : networkMessage(),
+        );
     }
 }
 
@@ -779,10 +804,10 @@ async function shipVersion(file: File | undefined) {
         toast.success(trans('Building the new version…'));
         router.visit(`/machines/${props.machine.id}?job=${json.jobId}`);
     } catch (cause) {
-        zip.error.value =
-            cause instanceof Error
-                ? cause.message
-                : trans('Couldn’t start the deploy.');
+        zip.error.value = errorMessage(
+            cause,
+            trans('Couldn’t start the deploy.'),
+        );
     } finally {
         shipping.value = false;
         if (zipInput.value) zipInput.value.value = '';
@@ -886,10 +911,10 @@ async function moveDomain() {
         );
         router.visit(`/machines/${props.machine.id}?job=${json.jobId}`);
     } catch (cause) {
-        moveError.value =
-            cause instanceof Error
-                ? cause.message
-                : trans('Couldn’t change the domain.');
+        moveError.value = errorMessage(
+            cause,
+            trans('Couldn’t change the domain.'),
+        );
     } finally {
         moveBusy.value = false;
     }
@@ -1032,10 +1057,7 @@ async function unlock(): Promise<void> {
         const body = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            unlockError.value =
-                body.errors?.code?.[0] ??
-                body.error ??
-                trans('Couldn’t unlock.');
+            unlockError.value = describe(response.status, body);
             unlockCode.value = '';
 
             return;
@@ -1046,6 +1068,8 @@ async function unlock(): Promise<void> {
             only: ['consoleLock'],
             onFinish: () => nextTick(() => consoleInput.value?.focus()),
         });
+    } catch (cause) {
+        unlockError.value = errorMessage(cause);
     } finally {
         unlocking.value = false;
     }
@@ -1147,13 +1171,7 @@ async function remove(): Promise<void> {
         );
         router.visit(`/machines/${props.machine.id}`);
     } else {
-        removeError.value =
-            (body.errors as Record<string, string[]> | undefined)
-                ?.confirm?.[0] ??
-            (body.errors as Record<string, string[]> | undefined)
-                ?.delete_adopted_volumes?.[0] ??
-            (body.error as string | undefined) ??
-            trans('Couldn’t remove it.');
+        removeError.value = reasonIn(body) ?? trans('Couldn’t remove it.');
     }
 }
 
@@ -2012,7 +2030,7 @@ const focusRing =
                     {{ ' ' + $t('Fetching logs…') + ' ' }}
                 </p>
                 <p v-else-if="logsJob.error" class="px-4 text-(--ds-red)">
-                    {{ logsJob.error.message }}
+                    {{ jobReason(logsJob.error, $t('That didn’t finish.')) }}
                 </p>
                 <p
                     v-else-if="logs.length === 0"
@@ -2049,6 +2067,15 @@ const focusRing =
                           'ServerOS can open the files of services it deployed or adopted. Adopt this service to browse its files here.',
                       )
             "
+        />
+
+        <DatabaseBrowser
+            v-else-if="tab === 'database' && database"
+            :machine-id="machine.id ?? 0"
+            :service-key="service.app ? `app:${service.app}` : service.key"
+            :engine="database.engine"
+            :console-lock="consoleLock"
+            :available="canManage && commandsEnabled && online"
         />
 
         <div v-else class="flex flex-col gap-5">
@@ -2969,7 +2996,13 @@ const focusRing =
                                         {{ line }}
                                     </div>
                                     <p v-if="job.error" class="text-(--ds-red)">
-                                        {{ job.error.message }}
+                                        {{
+                                            jobReason(
+                                                job.error,
+                                                $t('That didn’t finish.'),
+                                                false,
+                                            )
+                                        }}
                                     </p>
                                 </div>
                             </div>

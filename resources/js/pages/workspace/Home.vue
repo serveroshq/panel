@@ -559,13 +559,40 @@ const focusRing =
         </template>
 
         <template #tabs>
-            <SegmentedTabs :label="$t('Workspace')" :tabs="tabs" />
+            <div class="flex items-center gap-2">
+                <SegmentedTabs
+                    class="min-w-0"
+                    :label="$t('Workspace')"
+                    :tabs="tabs"
+                />
+                <button
+                    type="button"
+                    class="ds-raised-button ml-auto size-[34px]! shrink-0 cursor-pointer justify-center p-0! sm:hidden!"
+                    :class="focusRing"
+                    :aria-label="$t('Copy :url', { url: String(url) })"
+                    :title="$t('Copy URL')"
+                    @click="copyUrl"
+                >
+                    <Check
+                        v-if="copied"
+                        key="check"
+                        class="mi-pop size-3.5 shrink-0 text-(--ds-green)"
+                        :stroke-width="2.25"
+                    />
+                    <Copy
+                        v-else
+                        key="copy"
+                        class="mi-copy size-3.5 shrink-0 opacity-60"
+                        :stroke-width="1.75"
+                    />
+                </button>
+            </div>
         </template>
 
         <template #actions>
             <button
                 type="button"
-                class="ds-raised-button max-w-64 cursor-pointer"
+                class="ds-raised-button max-w-64 min-w-0 cursor-pointer max-sm:hidden!"
                 :class="focusRing"
                 :aria-label="$t('Copy :url', { url: String(url) })"
                 :title="$t('Copy URL')"
@@ -814,7 +841,9 @@ const focusRing =
                     </div>
                 </dl>
                 <div class="px-5 pt-4 pb-3">
-                    <div class="flex items-center justify-between gap-3">
+                    <div
+                        class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2"
+                    >
                         <p
                             class="font-ui-mono text-[10.5px]/4 tracking-[0.08em] text-(--ds-text-faint) uppercase"
                         >
@@ -834,7 +863,7 @@ const focusRing =
                                 v-for="range in cpuRanges"
                                 :key="range.key"
                                 type="button"
-                                class="cursor-pointer rounded-[6px] px-2 py-1 transition-colors"
+                                class="relative cursor-pointer rounded-[6px] px-2 py-1 transition-colors max-sm:min-w-11 max-sm:after:absolute max-sm:after:inset-x-0 max-sm:after:-inset-y-2.5"
                                 :class="[
                                     range.key === stats.cpuRange
                                         ? 'bg-(--ds-active) text-(--ds-text)'
@@ -870,7 +899,10 @@ const focusRing =
                 </div>
             </section>
 
-            <div v-if="hasMachines" class="grid items-start gap-5">
+            <div
+                v-if="hasMachines"
+                class="grid grid-cols-[minmax(0,1fr)] items-start gap-5"
+            >
                 <section class="ds-tray" aria-labelledby="list-heading">
                     <div class="ds-tray-head">
                         <h2
@@ -888,7 +920,7 @@ const focusRing =
                         >
                         <Link
                             :href="machinesHref.url"
-                            class="group ml-auto flex shrink-0 items-center gap-1 rounded-md hover:text-(--ds-text)"
+                            class="group relative ml-auto flex shrink-0 items-center gap-1 rounded-md after:absolute after:-inset-x-2 after:-inset-y-3 hover:text-(--ds-text)"
                             :class="focusRing"
                         >
                             {{ $t('All machines') }}
@@ -900,7 +932,7 @@ const focusRing =
                     </div>
                     <div class="ds-tile overflow-x-auto">
                         <table
-                            class="w-full min-w-[720px] border-collapse text-left text-[13px]/5"
+                            class="w-full border-collapse text-left text-[13px]/5 sm:min-w-[720px]"
                         >
                             <thead>
                                 <tr
@@ -910,17 +942,17 @@ const focusRing =
                                         {{ $t('Machine') }}
                                     </th>
                                     <th
-                                        class="border-l border-(--ds-divider) px-3 font-normal"
+                                        class="border-l border-(--ds-divider) px-3 font-normal max-sm:hidden"
                                     >
                                         {{ $t('Provider') }}
                                     </th>
                                     <th
-                                        class="w-40 border-l border-(--ds-divider) px-3 font-normal"
+                                        class="border-l border-(--ds-divider) px-3 font-normal max-sm:text-right sm:w-40"
                                     >
                                         {{ $t('CPU') }}
                                     </th>
                                     <th
-                                        class="w-40 border-l border-(--ds-divider) px-3 font-normal"
+                                        class="w-40 border-l border-(--ds-divider) px-3 font-normal max-sm:hidden"
                                     >
                                         {{ $t('Disk') }}
                                     </th>
@@ -930,12 +962,12 @@ const focusRing =
                                         {{ $t('Memory') }}
                                     </th>
                                     <th
-                                        class="w-20 border-l border-(--ds-divider) px-3 text-right font-normal"
+                                        class="w-20 border-l border-(--ds-divider) px-3 text-right font-normal max-sm:hidden"
                                     >
                                         {{ $t('Services') }}
                                     </th>
                                     <th
-                                        class="w-28 border-l border-(--ds-divider) pr-4 pl-3 text-right font-normal"
+                                        class="w-28 border-l border-(--ds-divider) pr-4 pl-3 text-right font-normal max-sm:hidden"
                                     >
                                         {{ $t('Backup') }}
                                     </th>
@@ -964,7 +996,9 @@ const focusRing =
                                     :key="machine.id ?? machine.name"
                                     class="group/row relative border-t border-(--ds-divider) transition-colors hover:bg-(--ds-row-hover)"
                                 >
-                                    <td class="py-2.5 pr-3 pl-4">
+                                    <td
+                                        class="py-2.5 pr-3 pl-4 max-sm:w-full max-sm:max-w-0 max-sm:py-3"
+                                    >
                                         <component
                                             :is="machine.id ? Link : 'div'"
                                             :href="
@@ -990,13 +1024,13 @@ const focusRing =
                                                 >{{ machine.name }}</span
                                             >
                                             <span
-                                                class="truncate font-ui-mono text-[11.5px] text-(--ds-text-faint)"
+                                                class="truncate font-ui-mono text-[11.5px] text-(--ds-text-faint) max-sm:hidden"
                                                 >{{ machine.ip }}</span
                                             >
                                         </component>
                                     </td>
                                     <td
-                                        class="border-l border-(--ds-divider) px-3"
+                                        class="border-l border-(--ds-divider) px-3 max-sm:hidden"
                                     >
                                         <ProviderName
                                             :name="machine.provider"
@@ -1007,12 +1041,13 @@ const focusRing =
                                         class="border-l border-(--ds-divider) px-3"
                                     >
                                         <span
-                                            class="flex items-center gap-2.5 font-ui-mono text-[12px] tabular-nums"
+                                            class="flex items-center gap-2.5 font-ui-mono text-[12px] tabular-nums max-sm:justify-end"
                                         >
                                             <DotMeter
                                                 :value="machine.cpu"
                                                 :warn-at="BUSY_CPU"
                                                 :dots="12"
+                                                class="max-sm:hidden"
                                             />
                                             <span
                                                 class="w-9 text-right"
@@ -1026,7 +1061,7 @@ const focusRing =
                                         </span>
                                     </td>
                                     <td
-                                        class="border-l border-(--ds-divider) px-3"
+                                        class="border-l border-(--ds-divider) px-3 max-sm:hidden"
                                     >
                                         <span
                                             v-if="
@@ -1066,12 +1101,12 @@ const focusRing =
                                         {{ machine.memory }}
                                     </td>
                                     <td
-                                        class="border-l border-(--ds-divider) px-3 text-right font-ui-mono text-[12px] whitespace-nowrap text-(--ds-text-secondary) tabular-nums"
+                                        class="border-l border-(--ds-divider) px-3 text-right font-ui-mono text-[12px] whitespace-nowrap text-(--ds-text-secondary) tabular-nums max-sm:hidden"
                                     >
                                         {{ machine.services }}
                                     </td>
                                     <td
-                                        class="border-l border-(--ds-divider) pr-4 pl-3 text-right font-ui-mono text-[12px] whitespace-nowrap text-(--ds-text-muted)"
+                                        class="border-l border-(--ds-divider) pr-4 pl-3 text-right font-ui-mono text-[12px] whitespace-nowrap text-(--ds-text-muted) max-sm:hidden"
                                     >
                                         {{ machine.lastBackup }}
                                     </td>
@@ -1082,7 +1117,7 @@ const focusRing =
                 </section>
 
                 <aside
-                    class="grid items-start gap-5 md:grid-cols-2"
+                    class="grid grid-cols-[minmax(0,1fr)] items-start gap-5 md:grid-cols-2"
                     :aria-label="$t('Shortcuts')"
                 >
                     <section class="ds-tray" aria-labelledby="mix-heading">
@@ -1177,7 +1212,7 @@ const focusRing =
                             >
                                 <Link
                                     :href="action.href"
-                                    class="group flex h-9 items-center gap-2.5 px-3.5 text-[13px]/5 text-(--ds-text-secondary) transition-colors hover:bg-(--ds-row-hover) hover:text-(--ds-text)"
+                                    class="group flex h-11 items-center gap-2.5 px-3.5 text-[13px]/5 text-(--ds-text-secondary) transition-colors hover:bg-(--ds-row-hover) hover:text-(--ds-text) sm:h-9"
                                     :class="focusRing"
                                 >
                                     <component
@@ -1195,7 +1230,7 @@ const focusRing =
                             <li>
                                 <button
                                     type="button"
-                                    class="flex h-9 w-full cursor-pointer items-center gap-2.5 px-3.5 text-[13px]/5 text-(--ds-text-secondary) transition-colors hover:bg-(--ds-row-hover) hover:text-(--ds-text)"
+                                    class="flex h-11 w-full cursor-pointer items-center gap-2.5 px-3.5 text-[13px]/5 text-(--ds-text-secondary) transition-colors hover:bg-(--ds-row-hover) hover:text-(--ds-text) sm:h-9"
                                     :class="focusRing"
                                     aria-controls="assistant-panel"
                                     :aria-expanded="assistant.open.value"
@@ -1207,7 +1242,7 @@ const focusRing =
                                     />
                                     {{ $t('Ask AI') }}
                                     <kbd
-                                        class="ml-auto font-ui-mono text-[11px] text-(--ds-text-faint)"
+                                        class="ml-auto font-ui-mono text-[11px] text-(--ds-text-faint) pointer-coarse:hidden"
                                         >⌘J</kbd
                                     >
                                 </button>

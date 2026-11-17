@@ -12,6 +12,7 @@ use App\Models\StatusPage;
 use App\Support\Backups\BackupRunner;
 use App\Support\DaemonFacts;
 use App\Support\DaemonJobQueue;
+use App\Support\Databases\DatabaseConsole;
 use App\Support\Deploys\ServiceLabels;
 use App\Support\Files\FileJobs;
 use App\Support\Fixes\FixRunner;
@@ -67,6 +68,7 @@ class DaemonGatewayController extends Controller
             'hello.logs' => ['nullable', 'boolean'],
             'hello.updates_automatic' => ['nullable', 'boolean'],
             'hello.pinned_version' => ['nullable', 'string', 'max:40'],
+            'hello.proxy' => ['nullable', 'string', 'in:caddy,nginx,apache,traefik,none'],
         ]);
         $machine = Machine::query()->where('certificate_serial', $data['serial'])->where('uid', $data['hello']['machine_id'])->first();
         if ($machine === null) {
@@ -87,6 +89,7 @@ class DaemonGatewayController extends Controller
             'connected_at' => now(),
             'disconnected_at' => null,
             ...(isset($data['hello']['log_skip']) ? ['log_skip' => LogSkipRules::fromDaemon($data['hello']['log_skip'])] : []),
+            ...(isset($data['hello']['proxy']) ? ['proxy' => $data['hello']['proxy']] : []),
         ])->save();
 
         if (is_string($versionBefore) && $versionBefore !== $machine->daemon_version) {
@@ -218,6 +221,10 @@ class DaemonGatewayController extends Controller
                         break;
                     }
                     $lines = is_array($payload['log'] ?? null) ? array_values(array_filter($payload['log'], 'is_string')) : [];
+                    if ($job->kind === 'database_query' && $lines !== []) {
+                        // The database's rows, and the query itself: kept encrypted until read.
+                        $lines = [DatabaseConsole::seal($lines)];
+                    }
                     $log = array_slice([...($job->log ?? []), ...$lines], -500);
                     $job->forceFill([
                         'state' => $state,
@@ -263,6 +270,10 @@ class DaemonGatewayController extends Controller
                             $changes['inventory'] = $this->withoutService($inventory, $job->service);
                             $changes['services_count'] = ServiceLabels::shownCount($machine, $changes['inventory']['services'] ?? []);
                         }
+                    }
+
+                    if ($state === 'succeeded' && $job->kind === 'deploy' && array_key_exists($payload['result']['proxy'] ?? '', Machine::PROXIES)) {
+                        $changes['proxy'] = $payload['result']['proxy'];
                     }
 
                     if ($state === 'succeeded' && $job->kind === 'firewall_rule' && is_array($payload['result']['firewall'] ?? null)) {

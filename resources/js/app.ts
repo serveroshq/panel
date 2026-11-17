@@ -14,9 +14,11 @@ import ViewingAsFrame from '@/layouts/ViewingAsFrame.vue';
 import WorkspaceLayout from '@/layouts/WorkspaceLayout.vue';
 import WorkspaceSettingsLayout from '@/layouts/workspace/WorkspaceSettingsLayout.vue';
 import { initializeCelebrate } from '@/lib/celebrate';
+import { errorMessage, isNetworkError } from '@/lib/errors';
 import { initErrorTracking } from '@/lib/errorTracking';
 import { initializeFlashToast } from '@/lib/flashToast';
 import { resolvePanelPage } from '@/lib/pages';
+import { toast } from '@/lib/toast';
 
 const appName = import.meta.env.VITE_APP_NAME || 'ServerOS';
 
@@ -87,6 +89,11 @@ initializeTheme();
 initializeFlashToast();
 
 initializeCelebrate();
+
+router.on('networkError', (event) => {
+    if (isNetworkError(event.detail.error))
+        toast.error(errorMessage(event.detail.error), { id: 'network' });
+});
 
 initAnalytics('panel');
 router.on('navigate', (event) => {

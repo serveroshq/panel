@@ -286,7 +286,7 @@ const focusRing =
                     <button
                         v-if="canManage && planAllows"
                         type="button"
-                        class="ml-auto"
+                        class="ml-auto max-sm:grow"
                         :class="appButtonClasses('primary')"
                         @click="picking = true"
                     >

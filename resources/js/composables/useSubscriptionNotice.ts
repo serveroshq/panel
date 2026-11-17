@@ -8,10 +8,12 @@ export type SubscriptionNotice = {
     text: string;
     action: string;
     choose: string | null;
-    tone: 'calm' | 'urgent';
+    tone: 'calm' | 'urgent' | 'brand';
     dismissible: boolean;
     promo: { code: string; offer: string } | null;
     href?: string;
+    external?: boolean;
+    image?: string | null;
     dismiss?: () => void;
 };
 
@@ -73,6 +75,21 @@ export function useSubscriptionNotice(): ComputedRef<SubscriptionNotice | null> 
     const promo = computed(() => page.props.promo ?? null);
 
     return computed(() => {
+        const notice = page.props.workspaceNotice;
+        if (notice) {
+            return {
+                text: notice.text,
+                action: notice.action,
+                choose: null,
+                tone: 'brand',
+                dismissible: false,
+                promo: null,
+                href: notice.href,
+                external: true,
+                image: notice.image ?? null,
+            };
+        }
+
         if (page.component === 'workspace/Billing') {
             return null;
         }

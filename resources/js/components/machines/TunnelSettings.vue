@@ -8,6 +8,7 @@ import AppButton from '@/components/workspace/AppButton.vue';
 import { appButtonClasses } from '@/lib/appButton';
 import { SolarCopy as Copy } from '@/lib/solarIcons';
 import { toast } from '@/lib/toast';
+import { describe, errorMessage, jobReason } from '@/lib/errors';
 
 export type TunnelSettingsProps = {
     supported: boolean;
@@ -70,18 +71,13 @@ async function send(action: 'up' | 'down'): Promise<void> {
         });
         const body = await response.json().catch(() => ({}));
         if (response.status !== 202) {
-            throw new Error(
-                body.errors?.token?.[0] ??
-                    body.error ??
-                    body.message ??
-                    trans('That didn’t work. Try again.'),
-            );
+            throw new Error(describe(response.status, body));
         }
         await follow(body.jobId, action);
         token.value = '';
         editing.value = false;
     } catch (e) {
-        error.value = e instanceof Error ? e.message : String(e);
+        error.value = errorMessage(e);
     } finally {
         busy.value = null;
     }
@@ -131,10 +127,12 @@ function follow(jobId: string, action: 'up' | 'down'): Promise<void> {
                 ) {
                     reject(
                         new Error(
-                            job.error?.message ??
+                            jobReason(
+                                job.error,
                                 trans(
                                     'The machine didn’t change the tunnel. Try again.',
                                 ),
+                            ),
                         ),
                     );
 
@@ -166,7 +164,7 @@ onMounted(() => {
         busy.value = 'up';
         follow(props.tunnel.changing, connected.value ? 'down' : 'up')
             .catch((e) => {
-                error.value = e instanceof Error ? e.message : String(e);
+                error.value = errorMessage(e);
             })
             .finally(() => {
                 busy.value = null;

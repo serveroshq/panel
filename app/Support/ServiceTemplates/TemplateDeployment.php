@@ -41,7 +41,7 @@ final class TemplateDeployment
 
         $domain = $this->domain();
         $this->url = $domain !== null
-            ? "https://{$domain}"
+            ? (($input['https'] ?? true) ? 'https://' : 'http://').$domain
             : $machine->localAddress($this->port) ?? 'http://'.($machine->ip_address ?: 'localhost').':'.$this->port;
 
         $this->resolveEnv();
@@ -231,6 +231,10 @@ final class TemplateDeployment
         }
         if ($default === '{url}') {
             return $this->url;
+        }
+        // {host}: the same address without the scheme, for apps that want a host name.
+        if ($default === '{host}') {
+            return (string) preg_replace('#^https?://#', '', $this->url);
         }
         // {jwt:role:KEY}: a long-lived HS256 token for role, signed with the value of the earlier field KEY.
         if (preg_match('/^\{jwt:([a-z_]+):([A-Z0-9_]+)\}$/', $default, $m) && ($this->env[$m[2]] ?? '') !== '') {

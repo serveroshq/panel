@@ -7,6 +7,7 @@ import {
 } from '@/lib/solarIcons';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import AppButton from '@/components/workspace/AppButton.vue';
+import { errorMessage, failIfBad, jobReason } from '@/lib/errors';
 
 const props = defineProps<{
     machineId: number;
@@ -71,17 +72,11 @@ async function start(): Promise<void> {
                 headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrf() },
             },
         );
+        await failIfBad(response);
         const json = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw new Error(
-                json.error ??
-                    json.message ??
-                    trans('That didn’t work. Try again.'),
-            );
-        }
         follow((json as Scan).jobId);
     } catch (e) {
-        problem.value = (e as Error).message;
+        problem.value = errorMessage(e);
         scanning.value = false;
     }
 }
@@ -109,8 +104,10 @@ function follow(jobId: string): void {
                             ? trans(
                                   'The machine stopped answering. Check it’s online and try again.',
                               )
-                            : (status.error?.message ??
-                              trans('The scan didn’t finish. Try again.'));
+                            : jobReason(
+                                  status.error,
+                                  trans('The scan didn’t finish. Try again.'),
+                              );
                 }
                 return;
             }

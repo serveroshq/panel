@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link, router, usePage } from '@inertiajs/vue3';
 import { trans } from 'laravel-vue-i18n';
-import { PanelLeft, PinOff, Search } from '@lucide/vue';
+import { PanelLeft, PinOff, Search, X } from '@lucide/vue';
 import {
     computed,
     nextTick,
@@ -26,12 +26,20 @@ import type { Workspace, WorkspaceSummary } from '@/types';
 type Props = {
     collapsed?: boolean;
     collapsible?: boolean;
+    // In the phone menu: a close button beside search, in place of the
+    // sheet's own, which would sit on top of it.
+    closable?: boolean;
 };
 
-const { collapsed = false, collapsible = false } = defineProps<Props>();
+const {
+    collapsed = false,
+    collapsible = false,
+    closable = false,
+} = defineProps<Props>();
 
 const emit = defineEmits<{
     toggle: [];
+    close: [];
     search: [];
     assistant: [];
     whatsNew: [];
@@ -307,6 +315,16 @@ const rowClass =
             >
                 <PanelLeft class="mi-panel size-4" :stroke-width="1.6" />
             </button>
+            <button
+                v-if="closable"
+                type="button"
+                class="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[8px] text-(--ds-text-muted) transition-colors duration-150 hover:bg-(--ds-hover) hover:text-(--ds-text)"
+                :class="focusRing"
+                :aria-label="$t('Close navigation')"
+                @click="emit('close')"
+            >
+                <X class="mi-close size-4" :stroke-width="1.75" />
+            </button>
         </div>
 
         <div v-else class="flex h-8 shrink-0 items-center justify-center">
@@ -448,7 +466,7 @@ const rowClass =
                                             $t(row.label)
                                         }}</span>
                                         <kbd
-                                            class="ml-auto font-ui text-[11px]/3.5 text-(--ds-text-faint)"
+                                            class="ml-auto font-ui text-[11px]/3.5 text-(--ds-text-faint) pointer-coarse:hidden"
                                             >⌘J</kbd
                                         >
                                     </template>

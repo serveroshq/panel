@@ -1,11 +1,17 @@
 <?php
 
+use App\Mcp\ToolError;
+use App\Mcp\Tools\Deploy\RefResolver;
 use App\Models\AppInstall;
 use App\Models\Machine;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Monitors\HostResolver;
 use App\Support\ServiceTemplates\ServiceTemplate;
 use App\Support\ServiceTemplates\ServiceTemplateCatalog;
+use GuzzleHttp\Exception\ResponseException;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Http\Client\Request as GatewayRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -37,10 +43,10 @@ function sentJob(): array
     return json_decode($command->body(), true)['command']['job'];
 }
 
-test('the catalog has four hundred and forty-eight valid templates and every compose variable is provided', function () {
+test('the catalog has four hundred and forty-nine valid templates and every compose variable is provided', function () {
     $templates = app(ServiceTemplateCatalog::class)->all();
 
-    expect($templates)->toHaveCount(448);
+    expect($templates)->toHaveCount(449);
 
     foreach ($templates as $template) {
         expect(in_array($template->category, ServiceTemplate::CATEGORIES, true))->toBeTrue();
@@ -61,7 +67,8 @@ test('the catalog has four hundred and forty-eight valid templates and every com
         }
 
         preg_match_all('/\$\{([A-Z0-9_]+)\}/', $template->files['compose.yaml'], $m);
-        $provided = [...array_column($template->env, 'key'), 'PORT', 'DOCKER_BRIDGE'];
+        // Compose fills the project name in, so a template can key its names off it.
+        $provided = [...array_column($template->env, 'key'), 'PORT', 'DOCKER_BRIDGE', 'COMPOSE_PROJECT_NAME'];
 
         expect($template->files['compose.yaml'])->not->toContain('172.17.0.1', "{$template->slug} hardcodes Docker's bridge");
 
@@ -114,6 +121,48 @@ test('Supabase gets its anon and service role keys signed with the JWT secret it
         ->and($claims($env['ANON_KEY']))->toMatchArray(['role' => 'anon', 'iss' => 'supabase'])
         ->and($claims($env['SERVICE_ROLE_KEY']))->toMatchArray(['role' => 'service_role'])
         ->and($claims($env['ANON_KEY'])['exp'])->toBeGreaterThan(now()->addYears(9)->timestamp);
+});
+
+test('Appwrite gets its console and API on the domain, with its own keys and health check', function () {
+    [$workspace, , $url] = templateMachine();
+
+    $this->actingAs($workspace->owner)->postJson($url, [
+        'template' => 'appwrite',
+        'service' => 'appwrite',
+        'domain' => 'appwrite.example.com',
+    ])->assertAccepted();
+
+    $job = sentJob();
+
+    $compose = $job['files']['compose.yaml'];
+
+    expect($job['compose_file'])->toBe('compose.yaml')
+        ->and($job['domains'])->toBe(['appwrite.example.com'])
+        ->and($job['health']['path'])->toBe('/v1/health/version')
+        ->and($job['env']['_APP_DOMAIN'])->toBe('appwrite.example.com')
+        ->and(strlen($job['env']['_APP_OPENSSL_KEY_V1']))->toBe(32)
+        ->and(strlen($job['env']['_APP_EXECUTOR_SECRET']))->toBe(48)
+        ->and($job['env']['_APP_DB_PASS'])->not->toBe($job['env']['_APP_DB_ROOT_PASS'])
+        ->and($compose)->toContain('traefik.http.routers.appwrite_console')
+        ->and($compose)->toContain('127.0.0.1:${PORT}:80')
+        // The executor looks its own container up by hostname, so the name has to
+        // match it. The port, not the project name, keeps it under 63 bytes.
+        ->and($compose)->toContain("container_name: exc1-\${PORT}\n    hostname: exc1-\${PORT}")
+        // Every fixed name is keyed off the project, so a second stack on the machine is separate.
+        ->and($compose)->toContain('traefik.constraint-label-stack=${COMPOSE_PROJECT_NAME}')
+        ->and($compose)->toContain('traefik.docker.network=${COMPOSE_PROJECT_NAME}_appwrite')
+        ->and($compose)->toContain('name: ${COMPOSE_PROJECT_NAME}_runtimes')
+        ->and($compose)->toContain('name: ${COMPOSE_PROJECT_NAME}_builds')
+        ->and($compose)->not->toContain('traefik.constraint-label-stack=appwrite')
+        // Abuse protection is Appwrite's rate limiting on auth, so it stays on.
+        ->and($compose)->toContain('_APP_OPTIONS_ABUSE: enabled')
+        // The panel's wildcard reaches one level under the domain, so functions
+        // and sites sit at <id>.<domain> and not a level deeper.
+        ->and($compose)->toContain('_APP_DOMAIN_FUNCTIONS: ${_APP_DOMAIN}')
+        ->and($compose)->toContain('Host(`*.${_APP_DOMAIN}`)')
+        // Build sidecars run on the runtimes network, so both the API and the
+        // orchestrator they upload their artifacts to have to answer there.
+        ->and(substr_count($compose, '      - runtimes'))->toBeGreaterThanOrEqual(2);
 });
 
 test('an install from the app installer is recorded with its app, for the admin Stats', function () {
@@ -282,13 +331,59 @@ test('public build variables reach the build, secrets stay at runtime only', fun
         ->and($job['env']['DATABASE_URL'])->toBe('postgres://secret@db/app');
 });
 
-test('app templates need a repository and commit, and game servers need the EULA accepted', function () {
+test('an app template without a commit deploys the default branch’s latest, a branch takes its own, and it says which', function () {
+    [$workspace, , $url] = templateMachine();
+    config()->set('services.github.token', null);
+    Http::fake([
+        'api.github.com/repos/example/shop' => Http::response(['default_branch' => 'main']),
+        'api.github.com/repos/example/shop/commits/main' => Http::response(['sha' => str_repeat('d', 40)]),
+        'api.github.com/repos/example/shop/commits/develop' => Http::response(['sha' => str_repeat('e', 40)]),
+    ]);
+    $payload = ['template' => 'laravel', 'service' => 'shop', 'repo' => 'https://github.com/example/shop.git'];
+
+    $this->actingAs($workspace->owner)->postJson($url, $payload)->assertAccepted()->assertJsonPath('commit', str_repeat('d', 40));
+    expect(sentJob()['commit'])->toBe(str_repeat('d', 40));
+
+    $this->actingAs($workspace->owner)->postJson($url, [...$payload, 'service' => 'shop-develop', 'commit' => 'develop'])
+        ->assertAccepted()->assertJsonPath('commit', str_repeat('e', 40));
+    expect(collect(Http::recorded())->map(fn ($pair) => $pair[0])->filter(fn ($request) => str_ends_with($request->url(), '/commands'))->last()['command']['job']['commit'])
+        ->toBe(str_repeat('e', 40));
+});
+
+test('refs from other Git hosts stop at 8 MB, whatever the status', function () {
+    app()->instance(HostResolver::class, new class extends HostResolver
+    {
+        public function resolve(string $host): array
+        {
+            return ['93.184.215.14'];
+        }
+    });
+    // Like curl, the cap aborts the download once the response has started.
+    $status = 200;
+    Http::fake(function ($request, array $options) use (&$status) {
+        try {
+            $options['progress'](9 * 1024 * 1024, 1024, 0, 0);
+        } catch (Throwable $e) {
+            return Create::rejectionFor(new ResponseException('aborted', $request->toPsrRequest(), new Psr7Response($status), $e));
+        }
+
+        return Http::response('');
+    });
+
+    foreach ([200, 404] as $status) {
+        expect(fn () => app(RefResolver::class)->resolve('https://git.example.org/acme/app.git', 'main'))
+            ->toThrow(ToolError::class, 'too many branches and tags');
+    }
+});
+
+test('app templates need a repository, and game servers need the EULA accepted', function () {
     [$workspace, , $url] = templateMachine();
     $owner = $workspace->owner;
 
     $this->actingAs($owner)->postJson($url, ['template' => 'laravel', 'service' => 'shop'])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['repo', 'commit']);
+        ->assertJsonValidationErrors(['repo'])
+        ->assertJsonMissingValidationErrors(['commit']);
 
     $this->actingAs($owner)->postJson($url, ['template' => 'minecraft-java', 'service' => 'survival'])
         ->assertUnprocessable()
@@ -383,7 +478,37 @@ test('the deploy dialog learns which names and ports are taken, so a second data
 
     $this->actingAs($workspace->owner)->getJson($url.'/taken')
         ->assertOk()
-        ->assertExactJson(['services' => ['postgres', 'shop'], 'ports' => [80, 5432]]);
+        ->assertExactJson(['services' => ['postgres', 'shop'], 'ports' => [80, 5432], 'proxy' => null, 'canChooseProxy' => false, 'canChooseHttps' => false]);
 
     $this->actingAs(User::factory()->create())->getJson($url.'/taken')->assertForbidden();
+});
+
+test('the deploy dialog can install a template that ships its own Compose file, sending the fields it leaves empty as null', function () {
+    [$workspace, , $url] = templateMachine();
+
+    // What DeployServiceDialog posts for Excalidraw: every field the
+    // template doesn't use comes through as null, not missing.
+    $this->actingAs($workspace->owner)->postJson($url, [
+        'template' => 'excalidraw',
+        'service' => 'excalidraw',
+        'port' => 8085,
+        'repo' => null,
+        'commit' => null,
+        'health_path' => null,
+        'compose_file' => null,
+        'domain' => null,
+        'proxy' => null,
+    ])->assertAccepted();
+
+    expect(sentJob()['compose_file'])->toBe('compose.yaml');
+});
+
+test('a template that doesn\'t run a Compose file from the repository still turns down a compose_file', function () {
+    [$workspace, , $url] = templateMachine();
+
+    $this->actingAs($workspace->owner)->postJson($url, [
+        'template' => 'excalidraw',
+        'service' => 'excalidraw',
+        'compose_file' => 'docker/compose.yaml',
+    ])->assertUnprocessable()->assertJsonValidationErrors('compose_file');
 });

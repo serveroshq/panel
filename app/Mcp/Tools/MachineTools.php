@@ -24,6 +24,7 @@ use App\Mcp\Tools\Machine\ListMachineGroups;
 use App\Mcp\Tools\Machine\ListMachinePolicies;
 use App\Mcp\Tools\Machine\ListMachines;
 use App\Mcp\Tools\Machine\ListPackageUpdates;
+use App\Mcp\Tools\Machine\ListVulnerabilities;
 use App\Mcp\Tools\Machine\OpenPort;
 use App\Mcp\Tools\Machine\RebootMachine;
 use App\Mcp\Tools\Machine\RemoveMachine;
@@ -60,6 +61,7 @@ final class MachineTools implements ToolGroup
             InstallUpdates::class,
             InstallPackages::class,
             ListPackageUpdates::class,
+            ListVulnerabilities::class,
             CreatePackageRollout::class,
             GetPackageRollout::class,
             RebootMachine::class,

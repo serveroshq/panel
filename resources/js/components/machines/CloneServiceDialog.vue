@@ -11,6 +11,7 @@ import {
 import { Input } from '@/components/ui/input';
 import AppButton from '@/components/workspace/AppButton.vue';
 import SubmitButton from '@/components/workspace/SubmitButton.vue';
+import { describe, errorMessage } from '@/lib/errors';
 
 const open = defineModel<boolean>('open', { required: true });
 const props = defineProps<{
@@ -80,14 +81,14 @@ async function submit(): Promise<void> {
         }
         if (!response.ok) {
             errors.value = {
-                name: body.error ?? trans('That didn’t work. Try again.'),
+                name: describe(response.status, body),
             };
             return;
         }
         emit('started', String(body.jobId), name.value.trim());
         open.value = false;
-    } catch {
-        errors.value = { name: trans('That didn’t work. Try again.') };
+    } catch (cause) {
+        errors.value = { name: errorMessage(cause) };
     } finally {
         processing.value = false;
     }

@@ -13,6 +13,7 @@ import CheckLines from './CheckLines.vue';
 import StepHeading from './StepHeading.vue';
 import { stepUrl } from './types';
 import type { MailProps } from './types';
+import { errorMessage } from '@/lib/errors';
 
 const props = defineProps<{ mail: MailProps; docker: boolean }>();
 
@@ -38,7 +39,7 @@ async function sendTest(): Promise<void> {
             { status: result.ok ? 'ok' : 'fail', text: result.message },
         ];
     } catch (error) {
-        sent.value = [{ status: 'fail', text: (error as Error).message }];
+        sent.value = [{ status: 'fail', text: errorMessage(error) }];
     } finally {
         sending.value = false;
     }

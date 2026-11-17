@@ -5,6 +5,7 @@ import { SolarCopy as Copy, SolarRotateCw as RotateCw } from '@/lib/solarIcons';
 import { computed, ref } from 'vue';
 import { toast } from '@/lib/toast';
 import AppButton from '@/components/workspace/AppButton.vue';
+import { jobReason } from '@/lib/errors';
 
 const props = defineProps<{
     job: {
@@ -33,7 +34,7 @@ const inspect = computed<Json | null>(() => {
 });
 const failed = computed(() =>
     props.job && ['failed', 'stale', 'cancelled'].includes(props.job.state)
-        ? (props.job.error?.message ?? trans('Couldn’t read it.'))
+        ? jobReason(props.job.error, trans('Couldn’t read it.'))
         : null,
 );
 

@@ -12,6 +12,7 @@ import {
 } from '@/lib/solarIcons';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { toast } from '@/lib/toast';
+import { errorMessage, failIfBad } from '@/lib/errors';
 import {
     Dialog,
     DialogContent,
@@ -92,19 +93,24 @@ const madeHere = ref(false);
 const options = ref<Options | null>(null);
 const policyId = ref<number | null>(null);
 const groupId = ref<number | null>(null);
+const optionsError = ref('');
 
 async function loadOptions(force = false): Promise<void> {
     if (options.value && !force) return;
+    optionsError.value = '';
     try {
-        const response = await fetch('/machines/connect/options', {
-            credentials: 'same-origin',
-            headers: { Accept: 'application/json' },
-            cache: 'no-store',
-        });
-        if (!response.ok) return;
+        const response = await failIfBad(
+            await fetch('/machines/connect/options', {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+                cache: 'no-store',
+            }),
+        );
         options.value = (await response.json()) as Options;
         policyId.value ??= options.value.defaultPolicyId;
-    } catch {}
+    } catch (cause) {
+        optionsError.value = errorMessage(cause);
+    }
 }
 
 const view = ref<'pick' | 'policy' | 'group'>('pick');
@@ -184,21 +190,12 @@ async function create(
             },
             body: JSON.stringify(body),
         });
-        if (!response.ok) {
-            const result = await response.json().catch(() => ({}));
-            formError.value =
-                Object.values(
-                    (result.errors ?? {}) as Record<string, string[]>,
-                )[0]?.[0] ??
-                result.message ??
-                trans('Something went wrong. Try again.');
-            return;
-        }
+        await failIfBad(response);
         await loadOptions(true);
         if (options.value) pick(options.value, String(body.name).trim());
         view.value = 'pick';
-    } catch {
-        formError.value = trans('Something went wrong. Try again.');
+    } catch (cause) {
+        formError.value = errorMessage(cause);
     } finally {
         saving.value = false;
     }
@@ -366,20 +363,17 @@ async function makeCommand(): Promise<void> {
                     : { replace: madeHere.value },
             ),
         });
+        await failIfBad(response);
         const result = await response.json();
-        if (!response.ok)
-            throw new Error(
-                result.error ?? trans('Could not create an install command.'),
-            );
         command.value = result.command;
         enrolmentId.value = result.enrolmentId;
         madeHere.value = true;
         timer = setInterval(poll, 4000);
     } catch (cause) {
-        error.value =
-            cause instanceof Error
-                ? cause.message
-                : trans('Could not create an install command.');
+        error.value = errorMessage(
+            cause,
+            trans('Could not create an install command.'),
+        );
     } finally {
         loading.value = false;
     }
@@ -480,8 +474,16 @@ defineExpose({ connect: createCommand });
                 v-if="mode === 'advanced' && !command && !loading && !error"
                 class="flex flex-col gap-4"
             >
+                <div v-if="!options && optionsError" class="space-y-3">
+                    <p role="alert" class="text-sm text-(--ds-red)">
+                        {{ optionsError }}
+                    </p>
+                    <AppButton size="sm" @click="loadOptions(true)">{{
+                        $t('Try again')
+                    }}</AppButton>
+                </div>
                 <p
-                    v-if="!options"
+                    v-else-if="!options"
                     class="flex items-center gap-2 text-sm text-(--ds-text-secondary)"
                 >
                     <RefreshCw class="size-4 animate-spin" />
