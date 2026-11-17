@@ -14,7 +14,7 @@ import ViewingAsFrame from '@/layouts/ViewingAsFrame.vue';
 import WorkspaceLayout from '@/layouts/WorkspaceLayout.vue';
 import WorkspaceSettingsLayout from '@/layouts/workspace/WorkspaceSettingsLayout.vue';
 import { initializeCelebrate } from '@/lib/celebrate';
-import { errorMessage } from '@/lib/errors';
+import { errorMessage, isNetworkError } from '@/lib/errors';
 import { initErrorTracking } from '@/lib/errorTracking';
 import { initializeFlashToast } from '@/lib/flashToast';
 import { resolvePanelPage } from '@/lib/pages';
@@ -91,8 +91,8 @@ initializeFlashToast();
 initializeCelebrate();
 
 router.on('networkError', (event) => {
-    event.preventDefault();
-    toast.error(errorMessage(event.detail.error), { id: 'network' });
+    if (isNetworkError(event.detail.error))
+        toast.error(errorMessage(event.detail.error), { id: 'network' });
 });
 
 initAnalytics('panel');

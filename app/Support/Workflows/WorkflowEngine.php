@@ -27,7 +27,6 @@ use App\Support\Monitors\MonitorAlerts;
 use App\Support\Monitors\MonitorRunner;
 use App\Support\Projects\Environments;
 use App\Support\Projects\ProjectData;
-use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Database\RecordsNotFoundException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -36,7 +35,6 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\RateLimiter;
-use PDOException;
 use RuntimeException;
 use Throwable;
 
@@ -1148,10 +1146,6 @@ class WorkflowEngine
 
     private static function readable(Throwable $e): bool
     {
-        return $e instanceof RuntimeException
-            && ! $e instanceof PDOException
-            && ! $e instanceof GuzzleException
-            && ! $e instanceof RecordsNotFoundException
-            && trim($e->getMessage()) !== '';
+        return $e::class === RuntimeException::class && trim($e->getMessage()) !== '';
     }
 }

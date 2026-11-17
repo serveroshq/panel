@@ -6,11 +6,11 @@ use App\Enums\WorkspacePermission;
 use App\Jobs\DiagnoseFix;
 use App\Mcp\McpContext;
 use App\Mcp\McpServer;
-use App\Mcp\Present;
 use App\Mcp\Scopes;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
 use App\Mcp\ToolRegistry;
+use App\Mcp\Tools\Service\ServiceView;
 use App\Mcp\Tools\Service\ServiceWork;
 use App\Models\Activity;
 use App\Models\AgentFix;
@@ -404,7 +404,8 @@ class AssistantAgent
             'stale' => 'the machine stopped answering',
             default => null,
         });
-        $line = DeployFailure::keyLine((array) ($job->error['output_tail'] ?? []));
+        $view = ServiceView::job($this->context, $job, $job->state === 'succeeded' ? 5 : 40);
+        $line = DeployFailure::keyLine((array) ($view['error']['output_tail'] ?? []));
         if ($line !== null && is_string($error) && ! str_contains($error, $line)) {
             $error = rtrim($error, '. ').". The machine said: {$line}";
         }
@@ -416,7 +417,7 @@ class AssistantAgent
                 $job->state === 'succeeded' => 'Finished',
                 default => Str::limit('Failed'.(is_string($error) ? ': '.$error : ''), 220),
             },
-            'job' => self::withoutNoise(Present::job($job, $job->state === 'succeeded' ? 5 : 40)),
+            'job' => self::withoutNoise($view),
         ];
     }
 

@@ -120,6 +120,8 @@ test('a workflow step that fails says why, without leaking database or HTTP clie
         ->and($failure(new ConnectException('cURL error 6 for https://hooks.example.com/secret-token', new Request('POST', 'https://hooks.example.com/secret-token'))))->not->toContain('secret-token')
         ->and($failure(new ConnectionException('cURL error 7 for https://hooks.example.com/secret-token')))->toContain('Couldn’t connect')
         ->and($failure(new LogicException('internal')))->toContain('It’s been logged')
+        ->and($failure(new UnexpectedValueException('read error on connection to 10.0.0.5:6379')))->not->toContain('10.0.0.5')
+        ->and($failure(new class('read error on connection to 10.0.0.5:6379') extends RuntimeException {}))->not->toContain('10.0.0.5')
         ->and($failure((new ModelNotFoundException)->setModel(Machine::class, [5])))->toContain('was deleted')->not->toContain('App\\Models');
 });
 
