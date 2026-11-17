@@ -153,15 +153,9 @@ const groupOptions = computed<PickerOption<number | null>[]>(() => [
     })),
 ]);
 
-const packageLine = computed(() => {
-    const names = props.packages.map((p) => p.name);
-    return names.length > 4
-        ? trans(':names and :count more', {
-              names: names.slice(0, 3).join(', '),
-              count: String(names.length - 3),
-          })
-        : names.join(', ');
-});
+const packageLine = computed(() =>
+    props.packages.map((p) => p.name).join(', '),
+);
 
 const ready = computed(
     () =>
@@ -274,7 +268,9 @@ const label = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
         >
             <DialogHeader>
                 <DialogTitle>{{ $t('Roll out updates') }}</DialogTitle>
-                <DialogDescription class="truncate font-ui-mono text-xs/5">
+                <DialogDescription
+                    class="max-h-20 overflow-y-auto font-ui-mono text-xs/5 break-words"
+                >
                     {{ packageLine }}
                 </DialogDescription>
             </DialogHeader>
