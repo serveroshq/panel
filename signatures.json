@@ -87,6 +87,14 @@
       "pull_request": 95,
       "comment_id": 6927784817,
       "cla_version": "1.0"
+    },
+    {
+      "id": 79200553,
+      "login": "lin327",
+      "signed_at": "2026-11-17T15:09:56Z",
+      "pull_request": 103,
+      "comment_id": 6952014860,
+      "cla_version": "1.0"
     }
   ]
 }
