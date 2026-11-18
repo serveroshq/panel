@@ -11,6 +11,10 @@
 #   3. installs it to /usr/local/bin/serverosd
 #   4. runs `serverosd enrol`, which does the rest and prints each step
 #
+# On a panel with its own certificate (like on a home network), the command
+# from the panel adds --panel-ca-sha256: the panel's CA has to match it, and
+# is then the only one trusted for the panel, here and by the daemon.
+#
 # It does not touch any service, package, firewall rule, or file outside
 # /usr/local/bin, /etc/serveros, /var/lib/serveros, /var/log/serveros and
 # the serverosd systemd unit. Remove everything with `serverosd uninstall`.
@@ -26,6 +30,7 @@ RELEASES="${SERVEROS_RELEASES:-__SERVEROS_RELEASES_URL__}"
 RELEASE_KEY="__SERVEROS_RELEASE_PUBKEY__"
 VERSION="${SERVEROS_VERSION:-latest}"
 TOKEN=""
+PANEL_CA_SHA256=""
 BIN=/usr/local/bin/serverosd
 
 for arg in "$@"; do
@@ -34,8 +39,9 @@ for arg in "$@"; do
     --panel=*) PANEL="${arg#--panel=}" ;;
     --releases=*) RELEASES="${arg#--releases=}" ;;
     --version=*) VERSION="${arg#--version=}" ;;
+    --panel-ca-sha256=*) PANEL_CA_SHA256="${arg#--panel-ca-sha256=}" ;;
     --help|-h)
-      sed -n '2,16p' "$0"; exit 0 ;;
+      sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
@@ -79,6 +85,21 @@ say "version:  $VERSION"
 say "download: $URL"
 echo
 
+# A panel on its own certificate: its CA has to match the command's
+# fingerprint, and is then the only one trusted for the panel.
+PANEL_CA=""
+if [ -n "$PANEL_CA_SHA256" ]; then
+  printf '%s' "$PANEL_CA_SHA256" | grep -Eq '^[0-9a-f]{64}$' \
+    || fail "--panel-ca-sha256 isn't a SHA-256 fingerprint. Copy the full command from the panel again."
+  PANEL_CA="$TMP/panel-ca.crt"
+  curl -fsSLk --retry 3 -o "$PANEL_CA" "$PANEL/panel-ca.crt" \
+    || fail "could not download the panel's certificate from $PANEL/panel-ca.crt."
+  CA_SHA256="$(sha256sum "$PANEL_CA" | awk '{print $1}')"
+  [ "$CA_SHA256" = "$PANEL_CA_SHA256" ] \
+    || fail "the panel's certificate doesn't match the install command (expected $PANEL_CA_SHA256, got $CA_SHA256). Copy the command from the panel again. If it still doesn't match, something between this machine and the panel is changing its traffic. Nothing was installed."
+  say "panel certificate verified"
+fi
+
 curl -fsSL --retry 3 -o "$TMP/$ASSET" "$URL" \
   || fail "could not download $URL. Check outbound HTTPS (port 443) and DNS on this machine."
 curl -fsSL --retry 3 -o "$TMP/SHA256SUMS" "$RELEASES/${VERSION}/SHA256SUMS" \
@@ -91,7 +112,7 @@ ACTUAL="$(sha256sum "$TMP/$ASSET" | awk '{print $1}')"
 say "checksum verified"
 
 if [ -n "$RELEASE_KEY" ]; then
-  SIGNATURE="$(curl -fsSL "$PANEL/api/daemon/releases/latest?arch=${ARCH}&version=${VERSION//+/%2B}" 2>/dev/null \
+  SIGNATURE="$(curl -fsSL ${PANEL_CA:+--cacert "$PANEL_CA"} "$PANEL/api/daemon/releases/latest?arch=${ARCH}&version=${VERSION//+/%2B}" 2>/dev/null \
     | sed -n 's/.*"signature":"\([^"]*\)".*/\1/p' | tr -d '\\' || true)"
   [ -n "$SIGNATURE" ] || fail "no signature published for $ASSET on $PANEL; refusing to install an unverifiable binary."
   printf '%s' "$SIGNATURE" | base64 -d > "$TMP/release.sig" 2>/dev/null || fail "the signature for $ASSET isn't valid base64."
@@ -151,4 +172,4 @@ install -m 0755 "$TMP/$ASSET" "$BIN"
 say "installed $BIN"
 echo
 
-exec "$BIN" enrol --token="$TOKEN" --panel="$PANEL"
+exec "$BIN" enrol --token="$TOKEN" --panel="$PANEL" ${PANEL_CA:+--panel-ca="$PANEL_CA"}

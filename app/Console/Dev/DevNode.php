@@ -2,6 +2,7 @@
 
 namespace App\Console\Dev;
 
+use App\Actions\Machines\CreateJoinCommand;
 use App\Models\DaemonEnrolment;
 use App\Models\Machine;
 use App\Models\Workspace;
@@ -111,13 +112,8 @@ class DevNode extends Command
         ]);
 
         $this->components->info('Installing the daemon.');
-        $install = sprintf(
-            'set -o pipefail; curl -fsSL %s | bash -s -- --token=%s --panel=%s --releases=%s',
-            escapeshellarg((string) config('daemon.install_url')),
-            escapeshellarg($token),
-            escapeshellarg((string) config('daemon.panel_url')),
-            escapeshellarg((string) config('daemon.releases_url')),
-        );
+        // The command Connect machine gives, which pins Herd's CA.
+        $install = 'set -o pipefail; '.CreateJoinCommand::command($token);
         $this->stream(['docker', 'exec', $container, 'bash', '-lc', $install], 'The daemon install failed.');
 
         $this->waitFor('the server to connect', 60, fn () => $enrolment->refresh()->machine_id !== null);

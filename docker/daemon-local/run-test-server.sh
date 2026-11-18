@@ -25,8 +25,8 @@ chmod 0600 "$ROOT/storage/app/private/daemon-local-token"
 docker run --rm --name serveros-daemon-test --platform "linux/$ARCH" \
   --add-host=serveros.test:host-gateway \
   --add-host=gateway.serveros.test:host-gateway \
-  -e SERVEROS_LOCAL_PANEL_CA=/usr/local/share/ca-certificates/herd-ca.crt \
   -e SERVEROS_ENROL_TOKEN="$TOKEN" \
+  -e SERVEROS_PANEL_CA_SHA256="$(shasum -a 256 "$ROOT/docker/test-node/herd-ca.pem" | awk '{print $1}')" \
   -v "$ROOT/docker/test-node/herd-ca.pem:/usr/local/share/ca-certificates/herd-ca.crt:ro" \
   -v "$ROOT/docker/daemon-local/fake-systemctl:/usr/local/bin/systemctl:ro" \
   rust:1-bookworm bash -lc '
@@ -37,6 +37,7 @@ docker run --rm --name serveros-daemon-test --platform "linux/$ARCH" \
     curl -fsSL https://serveros.test/install.sh | bash -s -- \
       --token="$SERVEROS_ENROL_TOKEN" \
       --panel=https://serveros.test \
-      --releases=https://serveros.test/releases/daemon
+      --releases=https://serveros.test/releases/daemon \
+      --panel-ca-sha256="$SERVEROS_PANEL_CA_SHA256"
     exec /usr/local/bin/serverosd run
   '
