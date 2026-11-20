@@ -8,6 +8,7 @@ use App\Mcp\Scopes;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
 use App\Models\DaemonJob;
+use App\Support\Deploys\DeployOnPush;
 
 final class CancelJob extends Tool
 {
@@ -59,10 +60,15 @@ final class CancelJob extends Tool
 
     public static function stopWaiting(DaemonJob $job): void
     {
+        $held = $job->held;
         $job->forceFill([
             'state' => 'cancelled',
-            'error' => ['phase' => 'panel', 'message' => 'Stopped waiting: the daemon never reported back on this job.'],
+            'held' => false,
+            'error' => ['phase' => 'panel', 'message' => $held ? 'Cancelled before it was sent to the machine.' : 'Stopped waiting: the daemon never reported back on this job.'],
             'finished_at' => now(),
         ])->save();
+        if (! $held && in_array($job->kind, ['deploy', 'rollback'], true) && is_string($job->service)) {
+            app(DeployOnPush::class)->release($job->machine, $job->service);
+        }
     }
 }

@@ -11,6 +11,7 @@ use App\Support\Audit\AuditContext;
 use App\Support\Audit\Audited;
 use App\Support\DaemonJobQueue;
 use App\Support\Deploys\AppDatabase;
+use App\Support\Deploys\AppLimits;
 use App\Support\Deploys\AppVersions;
 use App\Support\Deploys\DeployOnPush;
 use App\Support\Deploys\DeployRequest;
@@ -147,6 +148,7 @@ class AppVersionController extends Controller
             'database' => ['sometimes', 'string', Rule::in(['auto', 'none', ...$databases])],
             'deploy_on_push' => ['sometimes', 'boolean'],
             'push_branch' => ['sometimes', 'string', 'max:200', 'regex:'.DeployOnPush::BRANCH_PATTERN],
+            'push_only_newest' => ['sometimes', 'boolean'],
         ], ['database.in' => 'That database isn’t on this machine.', 'push_branch.regex' => 'That isn’t a branch name.']);
 
         if (($data['deploy_on_push'] ?? false) && DeployOnPush::repoName(self::lastDeployOf($machine, $service)?->command['job']['repo'] ?? null) === null) {
@@ -155,7 +157,7 @@ class AppVersionController extends Controller
 
         $settings = $machine->app_settings ?? [];
         $before = $settings[$service] ?? [];
-        $settings[$service] = [...$before, ...array_intersect_key($data, array_flip(['snapshot_before', 'database', 'deploy_on_push', 'push_branch']))];
+        $settings[$service] = [...$before, ...array_intersect_key($data, array_flip(['snapshot_before', 'database', 'deploy_on_push', 'push_branch', 'push_only_newest']))];
         if ($data['deploy_on_push'] ?? false) {
             $settings[$service]['push_user_id'] = $request->user()->id;
         }
@@ -169,6 +171,34 @@ class AppVersionController extends Controller
         }
 
         return response()->json(['snapshotBefore' => $machine->snapshotsBeforeDeploy($service), 'database' => AppDatabase::setting($machine, $service), 'deployOnPush' => DeployOnPush::setting($machine, $service)]);
+    }
+
+    #[Audited]
+    public function limits(Request $request, Workspace $workspace, Machine $machine, string $service, DaemonJobQueue $queue, AppLimits $limits): JsonResponse
+    {
+        Gate::authorize('manageMachines', $workspace);
+        abort_unless($machine->workspace_id === $workspace->id, 404);
+        abort_if(self::lastDeployOf($machine, $service) === null, 404, 'This service wasn’t deployed from code.');
+
+        $changed = $limits->change($machine, $service, ['cpus' => $request->input('cpus'), 'memory_mb' => $request->input('memory_mb')], $request->user(), $queue);
+        if ($changed['job'] === null) {
+            AuditContext::nothingChanged();
+        } else {
+            Activity::record($workspace, 'app.limits', $service, $machine, meta: array_filter($changed['limits'], fn ($value) => $value !== null));
+        }
+
+        return response()->json(['limits' => AppLimits::setting($machine, $service), 'jobId' => $changed['job']?->id]);
+    }
+
+    /** @return array{setting: array{cpus: float|null, memoryMb: int|null}|null, applied: array{cpus: float|null, memoryMb: int|null}|null, unavailable: string|null, max: array{cpus: int|null, memoryMb: int|null}} */
+    public static function limitsProps(Machine $machine, DaemonJob $deploy): array
+    {
+        return [
+            'setting' => AppLimits::setting($machine, (string) $deploy->service),
+            'applied' => AppLimits::applied($deploy),
+            'unavailable' => AppLimits::unavailable($machine, $deploy),
+            'max' => AppLimits::machineMax($machine),
+        ];
     }
 
     /** @return array{setting: string, current: array{name: string, display: string}|null, options: list<array{value: string, label: string}>} */

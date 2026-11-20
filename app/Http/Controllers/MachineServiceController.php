@@ -20,10 +20,12 @@ use App\Support\Deploys\AppVersions;
 use App\Support\Deploys\ContainerNames;
 use App\Support\Deploys\DeployOnPush;
 use App\Support\Deploys\ServiceLabels;
+use App\Support\Deploys\SiteSwitches;
 use App\Support\Files\FileJobs;
 use App\Support\Machines\ServiceClones;
 use App\Support\Projects\AppSettings;
 use App\Support\Projects\Placement;
+use App\Support\Traffic\SiteTraffic;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -114,6 +116,9 @@ class MachineServiceController extends Controller
                 'snapshotBefore' => $machine->snapshotsBeforeDeploy($deploy->service),
                 'deployOnPush' => DeployOnPush::repoName($deploy->command['job']['repo'] ?? null) === null ? null : DeployOnPush::setting($machine, (string) $deploy->service),
                 'database' => AppVersionController::databaseProps($machine, $deploy),
+                'site' => SiteSwitches::props($machine, (string) $deploy->service, (array) ($deploy->command['job']['domains'] ?? [])),
+                'traffic' => SiteTraffic::state($machine, (string) $deploy->service, (array) ($deploy->command['job']['domains'] ?? [])),
+                'limits' => AppVersionController::limitsProps($machine, $deploy),
                 'versions' => array_map(fn (array $v) => [
                     'commit' => $v['commit'],
                     'live' => $v['live'],

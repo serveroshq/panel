@@ -185,7 +185,7 @@ test('get_monitor shows history, incidents and alert state like the monitor page
         ->and($data['incidents'][1]['seconds'])->toBe(300)
         ->and($data['openIncident']['id'])->toBe($open->id)
         ->and($data['certificate']['daysLeft'])->toBeIn([19, 20])
-        ->and($data['alertState'])->toMatchArray(['enabled' => true, 'muted' => false, 'channels' => ['email' => false, 'webhook' => true], 'wouldAlert' => true]);
+        ->and($data['alertState'])->toMatchArray(['enabled' => true, 'muted' => false, 'channels' => ['email' => false, 'webhook' => true, 'telegram' => false], 'wouldAlert' => true]);
 
     expect($result['text'])->not->toContain('secret');
 

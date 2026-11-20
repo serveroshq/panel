@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { trans } from 'laravel-vue-i18n';
 import { useForm } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
 import {
     Dialog,
@@ -16,12 +16,23 @@ import ToggleSwitch from '@/components/workspace/ToggleSwitch.vue';
 import { describe, errorMessage } from '@/lib/errors';
 
 const props = defineProps<{
-    alerts: { email: boolean; webhook: string | null; muted?: string[] };
+    alerts: {
+        email: boolean;
+        webhook: string | null;
+        muted?: string[];
+        telegram?: { chat: string | null; set: boolean };
+    };
 }>();
 
 const open = defineModel<boolean>('open', { default: false });
 
-const form = useForm({ email: true, webhook: '', muted: [] as string[] });
+const form = useForm({
+    email: true,
+    webhook: '',
+    telegram_chat: '',
+    telegram_token: '',
+    muted: [] as string[],
+});
 
 const kinds = [
     {
@@ -70,14 +81,21 @@ function setSends(kind: string, on: boolean): void {
         ? form.muted.filter((k) => k !== kind)
         : [...form.muted, kind];
 }
-const test = ref<{ ok: boolean; message: string } | null>(null);
-const testing = ref(false);
+type Channel = 'webhook' | 'telegram';
+
+const test = ref<{ ok: boolean; message: string; channel: Channel } | null>(
+    null,
+);
+const testing = ref<Channel | null>(null);
+const telegramSaved = computed(() => props.alerts.telegram?.set ?? false);
 
 watch(open, (isOpen) => {
     if (!isOpen) return;
     form.defaults({
         email: props.alerts.email,
         webhook: props.alerts.webhook ?? '',
+        telegram_chat: props.alerts.telegram?.chat ?? '',
+        telegram_token: '',
         muted: [...(props.alerts.muted ?? [])],
     });
     form.reset();
@@ -85,9 +103,17 @@ watch(open, (isOpen) => {
     test.value = null;
 });
 
-async function sendTest(): Promise<void> {
-    testing.value = true;
+async function sendTest(channel: Channel): Promise<void> {
+    testing.value = channel;
     test.value = null;
+    const body =
+        channel === 'telegram'
+            ? {
+                  channel,
+                  telegram_chat: form.telegram_chat,
+                  telegram_token: form.telegram_token || null,
+              }
+            : { channel, webhook: form.webhook };
 
     try {
         const response = await fetch('/monitor-alerts/test', {
@@ -101,19 +127,27 @@ async function sendTest(): Promise<void> {
                         'meta[name="csrf-token"]',
                     )?.content ?? '',
             },
-            body: JSON.stringify({ webhook: form.webhook }),
+            body: JSON.stringify(body),
         });
-        const body = await response.json().catch(() => ({}));
+        const answer = await response.json().catch(() => ({}));
 
         test.value = response.ok
-            ? body.ok
-                ? { ok: true, message: trans('Sent. Check the channel.') }
-                : { ok: false, message: body.error }
-            : { ok: false, message: describe(response.status, body) };
+            ? answer.ok
+                ? {
+                      ok: true,
+                      message: trans('Sent. Check the channel.'),
+                      channel,
+                  }
+                : { ok: false, message: answer.error, channel }
+            : {
+                  ok: false,
+                  message: describe(response.status, answer),
+                  channel,
+              };
     } catch (cause) {
-        test.value = { ok: false, message: errorMessage(cause) };
+        test.value = { ok: false, message: errorMessage(cause), channel };
     } finally {
-        testing.value = false;
+        testing.value = null;
     }
 }
 
@@ -193,10 +227,14 @@ function submit(): void {
                                 @input="test = null"
                             />
                             <AppButton
-                                :disabled="!form.webhook || testing"
-                                @click="sendTest"
+                                :disabled="!form.webhook || testing !== null"
+                                @click="sendTest('webhook')"
                             >
-                                {{ testing ? $t('Sending…') : $t('Send test') }}
+                                {{
+                                    testing === 'webhook'
+                                        ? $t('Sending…')
+                                        : $t('Send test')
+                                }}
                             </AppButton>
                         </div>
                         <span class="text-xs/4 text-(--ds-text-muted)">
@@ -209,7 +247,7 @@ function submit(): void {
                             }}
                         </span>
                         <p
-                            v-if="test"
+                            v-if="test?.channel === 'webhook'"
                             class="text-xs/4"
                             :class="
                                 test.ok
@@ -221,6 +259,83 @@ function submit(): void {
                             {{ test.message }}
                         </p>
                         <InputError :message="form.errors.webhook" />
+                    </div>
+
+                    <div class="flex flex-col gap-1.5">
+                        <label
+                            for="alerts-telegram-chat"
+                            class="text-[13px]/5 font-medium"
+                        >
+                            {{ ' ' + $t('Telegram') + ' ' }}
+                        </label>
+                        <div class="flex gap-2">
+                            <Input
+                                id="alerts-telegram-chat"
+                                v-model="form.telegram_chat"
+                                :placeholder="
+                                    $t('Chat id, like -1001234567890')
+                                "
+                                :aria-label="$t('Telegram chat id')"
+                                autocomplete="off"
+                                spellcheck="false"
+                                class="min-w-0 grow font-ui-mono text-[13px]"
+                                @input="test = null"
+                            />
+                            <AppButton
+                                :disabled="
+                                    !form.telegram_chat ||
+                                    (!form.telegram_token && !telegramSaved) ||
+                                    testing !== null
+                                "
+                                @click="sendTest('telegram')"
+                            >
+                                {{
+                                    testing === 'telegram'
+                                        ? $t('Sending…')
+                                        : $t('Send test')
+                                }}
+                            </AppButton>
+                        </div>
+                        <Input
+                            v-if="form.telegram_chat"
+                            v-model="form.telegram_token"
+                            type="password"
+                            :placeholder="
+                                telegramSaved
+                                    ? $t(
+                                          'Bot token saved. Paste a new one to change it.',
+                                      )
+                                    : $t('Bot token from @BotFather')
+                            "
+                            :aria-label="$t('Telegram bot token')"
+                            autocomplete="off"
+                            spellcheck="false"
+                            class="font-ui-mono text-[13px]"
+                            @input="test = null"
+                        />
+                        <span class="text-xs/4 text-(--ds-text-muted)">
+                            {{
+                                ' ' +
+                                $t(
+                                    'Make a bot with @BotFather and add it to the chat. Leave the chat id empty to stop sending to Telegram.',
+                                ) +
+                                ' '
+                            }}
+                        </span>
+                        <p
+                            v-if="test?.channel === 'telegram'"
+                            class="text-xs/4"
+                            :class="
+                                test.ok
+                                    ? 'text-(--ds-green)'
+                                    : 'text-(--ds-red)'
+                            "
+                            role="status"
+                        >
+                            {{ test.message }}
+                        </p>
+                        <InputError :message="form.errors.telegram_chat" />
+                        <InputError :message="form.errors.telegram_token" />
                     </div>
 
                     <fieldset class="flex flex-col">

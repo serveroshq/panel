@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Events\DeployQueued;
 use App\Models\Activity;
+use App\Models\ContainerRegistry;
 use App\Models\DaemonJob;
 use App\Models\DaemonRelease;
 use App\Models\DeploySource;
@@ -12,6 +13,7 @@ use App\Models\Machine;
 use App\Models\User;
 use App\Support\Audit\AuditContext;
 use App\Support\Deploys\AppDatabase;
+use App\Support\Deploys\AppLimits;
 use App\Support\GitHub\GitHubApp;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -62,16 +64,41 @@ class DaemonJobQueue
      *
      * @throws RuntimeException
      */
-    public function deploy(Machine $machine, User $user, array $job): DaemonJob
+    public function deploy(Machine $machine, User $user, array $job, bool $hold = false, ?string $trigger = null): DaemonJob
     {
+        $job = AppLimits::forJob($machine, $job);
         $job['snapshot_before'] = $machine->snapshotsBeforeDeploy((string) $job['service']);
         $database = $job['snapshot_before'] ? AppDatabase::for($machine, (string) $job['service'], (array) ($job['env'] ?? [])) : null;
         $job['snapshot_also'] = $database === null ? [] : [$database['key']];
 
-        $record = $this->queue($machine, $user, 'deploy', $job, $job['service'], self::DEPLOY_TIMEOUT_SECS);
+        $record = $this->queue($machine, $user, 'deploy', $job, $job['service'], self::DEPLOY_TIMEOUT_SECS, hold: $hold, trigger: $trigger);
         event(new DeployQueued($machine, $record, (array) ($job['domains'] ?? [])));
 
         return $record;
+    }
+
+    /**
+     * Send a job that was held in the panel (a push deploy waiting for the
+     * deploy before it) to its machine now.
+     */
+    public function release(DaemonJob $record): void
+    {
+        if (! $record->held || $record->state !== 'queued' || $record->command === null) {
+            return;
+        }
+        $record->forceFill(['held' => false, 'phase' => null, 'log' => [...($record->log ?? []), 'The deploy before it finished: starting now.']])->save();
+
+        if (($reason = self::needsPlan($record->machine, $record->kind)) !== null) {
+            $record->forceFill(['state' => 'refused', 'error' => ['phase' => 'queue', 'message' => $reason], 'finished_at' => now()])->save();
+
+            return;
+        }
+
+        try {
+            $this->send($record->machine, $record, $record->command);
+        } catch (RuntimeException) {
+            // send() has marked it refused, with why.
+        }
     }
 
     /**
@@ -81,7 +108,7 @@ class DaemonJobQueue
      *
      * @throws RuntimeException
      */
-    public function queue(Machine $machine, User $user, string $kind, array $job, ?string $service, int $timeoutSecs = 300, ?array $then = null, array $meta = []): DaemonJob
+    public function queue(Machine $machine, User $user, string $kind, array $job, ?string $service, int $timeoutSecs = 300, ?array $then = null, array $meta = [], bool $hold = false, ?string $trigger = null): DaemonJob
     {
         if (($reason = self::needsPlan($machine, $kind)) !== null) {
             throw new RuntimeException($reason);
@@ -104,12 +131,17 @@ class DaemonJobQueue
             'command' => $command,
             'service' => $service,
             'state' => 'queued',
-            'log' => [],
+            'phase' => $hold ? 'waiting' : null,
+            'log' => $hold ? ['Waiting for the deploy before it to finish.'] : [],
             'mcp_call_id' => self::callId(),
             'then' => $then,
+            'trigger' => $trigger,
+            'held' => $hold,
         ]);
 
-        $this->send($machine, $record, $command);
+        if (! $hold) {
+            $this->send($machine, $record, $command);
+        }
         $this->recordActivity($machine, $user, $kind, $job, $service, $meta);
 
         return $record;
@@ -319,6 +351,28 @@ class DaemonJobQueue
         return $command;
     }
 
+    // Added as the job is sent, never stored, like the repository token: the
+    // workspace's registry logins, for a deploy that pulls private images.
+    /**
+     * @param  array<string, mixed>  $command
+     * @return array<string, mixed>
+     */
+    private function withRegistryLogins(Machine $machine, array $command): array
+    {
+        if (($command['job']['type'] ?? null) !== 'deploy' || ! self::canUseRegistryLogins($machine)) {
+            return $command;
+        }
+        $logins = $machine->workspace->containerRegistries()->orderBy('host')->get()
+            ->map(fn (ContainerRegistry $registry) => ['host' => $registry->host, 'username' => $registry->username, 'password' => $registry->password])
+            ->values()
+            ->all();
+        if ($logins !== []) {
+            $command['job']['registries'] = $logins;
+        }
+
+        return $command;
+    }
+
     public static function canFetchPrivate(Machine $machine): bool
     {
         return self::atLeast($machine, (string) config('daemon.repo_token_since'));
@@ -348,6 +402,16 @@ class DaemonJobQueue
     public static function canResolveRef(Machine $machine): bool
     {
         return self::atLeast($machine, (string) config('daemon.resolve_ref_since'));
+    }
+
+    public static function canLimitResources(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.resource_limits_since'));
+    }
+
+    public static function canUseRegistryLogins(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.registry_logins_since'));
     }
 
     public static function canComposeFromRepo(Machine $machine): bool
@@ -431,6 +495,16 @@ class DaemonJobQueue
         return self::atLeast($machine, (string) config('daemon.https_choice_since'));
     }
 
+    public static function canSetSiteOptions(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.site_options_since'));
+    }
+
+    public static function canCollectTraffic(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.traffic_since'));
+    }
+
     public static function canWildcard(Machine $machine): bool
     {
         return self::atLeast($machine, (string) config('daemon.wildcard_domains_since'));
@@ -465,7 +539,7 @@ class DaemonJobQueue
     private function send(Machine $machine, DaemonJob $record, array $command): void
     {
         try {
-            $this->gateway->dispatch($machine, $record->id, $this->withRepoToken($machine, self::withMaps($command)));
+            $this->gateway->dispatch($machine, $record->id, $this->withRegistryLogins($machine, $this->withRepoToken($machine, self::withMaps($command))));
         } catch (RuntimeException $e) {
             $record->forceFill([
                 'state' => 'refused',

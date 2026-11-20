@@ -16,7 +16,7 @@ use Throwable;
 
 class MonitorAlerts
 {
-    public function __construct(private readonly HostResolver $resolver) {}
+    public function __construct(private readonly HostResolver $resolver, private readonly TelegramAlerts $telegram) {}
 
     public function down(Monitor $monitor, MonitorIncident $incident): void
     {
@@ -103,12 +103,15 @@ class MonitorAlerts
 
     /**
      * Post to the workspace's webhook, if it has one (Slack reads `text`,
-     * Discord `content`). Failures are logged, never thrown.
+     * Discord `content`), and to its Telegram chat, if it has one. Failures
+     * are logged, never thrown.
      *
      * @param  array<string, mixed>  $extra  more fields for the body
      */
     public function webhook(Workspace $workspace, string $event, string $text, string $url, array $extra = []): void
     {
+        $this->telegram->notify($workspace, $event, $text);
+
         if (! is_string($workspace->alert_webhook_url) || $workspace->alert_webhook_url === '') {
             return;
         }

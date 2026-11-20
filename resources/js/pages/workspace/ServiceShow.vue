@@ -6,6 +6,7 @@ import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { Ellipsis, LoaderCircle, Search, X } from '@lucide/vue';
 import {
     SolarCopyPlus as CopyPlus,
+    SolarCpu as Cpu,
     SolarEye as Eye,
     SolarEyeOff as EyeOff,
     SolarFileText as FileText,
@@ -36,6 +37,10 @@ import {
 } from 'vue';
 import { toast } from '@/lib/toast';
 import InputError from '@/components/InputError.vue';
+import AppSiteDialog from '@/components/machines/AppSiteDialog.vue';
+import type { SiteSwitches } from '@/components/machines/AppSiteDialog.vue';
+import AppLimitsDialog from '@/components/machines/AppLimitsDialog.vue';
+import type { AppLimits } from '@/components/machines/AppLimitsDialog.vue';
 import AppVariablesDialog from '@/components/machines/AppVariablesDialog.vue';
 import CloneServiceDialog from '@/components/machines/CloneServiceDialog.vue';
 import DatabaseBrowser from '@/components/machines/DatabaseBrowser.vue';
@@ -44,6 +49,8 @@ import type { FilePlace } from '@/components/machines/FileBrowser.vue';
 import JobStatusBadge from '@/components/machines/JobStatusBadge.vue';
 import type { Machine } from '@/components/machines/machines';
 import ServiceLogo from '@/components/machines/ServiceLogo.vue';
+import SiteTraffic from '@/components/machines/SiteTraffic.vue';
+import type { SiteTrafficState } from '@/components/machines/SiteTraffic.vue';
 import type {
     Service,
     ServiceStat,
@@ -145,7 +152,13 @@ const props = defineProps<{
         canMove: boolean;
         deployedAt: string | null;
         snapshotBefore: boolean;
-        deployOnPush: { on: boolean; branch: string } | null;
+        deployOnPush: {
+            on: boolean;
+            branch: string;
+            onlyNewest: boolean;
+        } | null;
+        site: SiteSwitches;
+        traffic: SiteTrafficState;
         database: {
             setting: string;
             current: { name: string; display: string } | null;
@@ -153,6 +166,7 @@ const props = defineProps<{
         };
         versions: AppVersion[];
         variables: string[];
+        limits: AppLimits;
     } | null;
 }>();
 
@@ -242,6 +256,7 @@ const actionUrl = computed(
 
 const tab = usePathTab(serviceUrl.value, [
     'overview',
+    'traffic',
     'logs',
     'console',
     'files',
@@ -253,6 +268,7 @@ const tabs = computed(() =>
     (
         [
             'overview',
+            ...(props.app ? (['traffic'] as const) : []),
             'logs',
             'files',
             ...(props.database ? (['database'] as const) : []),
@@ -333,11 +349,47 @@ function uptime(startedAt: number | null | undefined): string {
     return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : m ? `${m}m` : `${s}s`;
 }
 
+const appliedLimits = computed(() => props.app?.limits?.applied ?? null);
 const memLimit = computed(() =>
-    props.stats?.memLimit && props.stats.memLimit < 2 ** 50
-        ? props.stats.memLimit
-        : null,
+    appliedLimits.value?.memoryMb
+        ? appliedLimits.value.memoryMb * 1024 * 1024
+        : props.stats?.memLimit && props.stats.memLimit < 2 ** 50
+          ? props.stats.memLimit
+          : null,
 );
+
+function cpusLabel(cpus: number): string {
+    return cpus === 1
+        ? trans('1 CPU')
+        : trans(':count CPUs', { count: String(cpus) });
+}
+
+function limitsLabel(
+    limits: { cpus: number | null; memoryMb: number | null } | null,
+): string {
+    if (!limits) return trans('No limits');
+
+    return [
+        limits.cpus ? cpusLabel(limits.cpus) : null,
+        limits.memoryMb
+            ? limits.memoryMb >= 1024 && limits.memoryMb % 1024 === 0
+                ? `${limits.memoryMb / 1024} GB`
+                : `${limits.memoryMb} MB`
+            : null,
+    ]
+        .filter(Boolean)
+        .join(', ');
+}
+
+const limitsPending = computed(() => {
+    const limits = props.app?.limits;
+    if (!limits?.setting) return false;
+
+    return (
+        limits.setting.cpus !== (limits.applied?.cpus ?? null) ||
+        limits.setting.memoryMb !== (limits.applied?.memoryMb ?? null)
+    );
+});
 
 const statusTone: Record<string, { dot: string; label: string }> = {
     running: { dot: 'bg-(--ds-green)', label: trans('Running') },
@@ -673,6 +725,7 @@ async function saveDatabase(value: string): Promise<void> {
 
 const deployOnPush = ref(props.app?.deployOnPush?.on ?? false);
 const pushBranch = ref(props.app?.deployOnPush?.branch ?? 'main');
+const pushOnlyNewest = ref(props.app?.deployOnPush?.onlyNewest ?? true);
 const pushBranchError = ref<string | null>(null);
 watch(
     () => props.app?.deployOnPush,
@@ -680,12 +733,14 @@ watch(
         if (!setting) return;
         deployOnPush.value = setting.on;
         pushBranch.value = setting.branch;
+        pushOnlyNewest.value = setting.onlyNewest;
     },
 );
 
 async function savePushSettings(body: {
     deploy_on_push?: boolean;
     push_branch?: string;
+    push_only_newest?: boolean;
 }): Promise<boolean> {
     if (!props.app) return false;
     pushBranchError.value = null;
@@ -720,6 +775,12 @@ async function saveDeployOnPush(on: boolean): Promise<void> {
         push_branch: pushBranch.value.trim() || 'main',
     });
     if (!saved) deployOnPush.value = !on;
+}
+
+async function savePushOnlyNewest(on: boolean): Promise<void> {
+    if (!(await savePushSettings({ push_only_newest: on }))) {
+        pushOnlyNewest.value = !on;
+    }
 }
 
 async function savePushBranch(): Promise<void> {
@@ -834,6 +895,64 @@ function repair() {
 }
 
 const variablesOpen = ref(false);
+const siteOpen = ref(false);
+const siteRows = computed(() => {
+    const site = props.app?.site;
+    if (!site) return [];
+
+    return [
+        {
+            label: trans('Maintenance page'),
+            value: site.maintenance ? trans('Up') : trans('Off'),
+            on: site.maintenance,
+            warn: site.maintenance,
+        },
+        {
+            label: trans('Password'),
+            value: site.password ? (site.user ?? '') : trans('Off'),
+            on: site.password,
+            warn: false,
+        },
+        {
+            label: trans('www redirect'),
+            value:
+                site.wwwRedirect && site.wwwName ? site.wwwName : trans('Off'),
+            on: site.wwwRedirect,
+            warn: false,
+        },
+        {
+            label: trans('Redirects'),
+            value: site.redirects.length
+                ? String(site.redirects.length)
+                : trans('None'),
+            on: site.redirects.length > 0,
+            warn: false,
+        },
+    ];
+});
+const siteApplying = computed(() => {
+    const state = props.app?.site.job?.state;
+
+    return state === 'queued' || state === 'running';
+});
+watch(siteApplying, (now, before) => {
+    if (before && !now) router.reload({ only: ['app'] });
+});
+let sitePoll: ReturnType<typeof setInterval> | null = null;
+watch(
+    siteApplying,
+    (now) => {
+        if (sitePoll) clearInterval(sitePoll);
+        sitePoll = now
+            ? setInterval(() => router.reload({ only: ['app'] }), 3000)
+            : null;
+    },
+    { immediate: true },
+);
+onBeforeUnmount(() => {
+    if (sitePoll) clearInterval(sitePoll);
+});
+const limitsOpen = ref(false);
 
 function variablesSaved(jobId: string | null): void {
     if (jobId && props.machine.id) {
@@ -1748,12 +1867,163 @@ const focusRing =
                         {{ $t('Edit') }}
                     </AppButton>
                 </section>
+
+                <section
+                    v-if="app.domains.length"
+                    class="ds-tile flex flex-col gap-4 px-5 py-4 lg:col-span-2"
+                    :aria-label="$t('Site settings')"
+                >
+                    <div class="flex items-center gap-4">
+                        <span class="ds-icon-chip shrink-0">
+                            <ShieldCheck class="size-4" />
+                        </span>
+                        <div class="flex min-w-0 grow flex-col gap-0.5">
+                            <span class="text-[13px] text-(--ds-text-muted)">{{
+                                $t('Site settings')
+                            }}</span>
+                            <span
+                                v-if="siteApplying"
+                                class="flex items-center gap-1.5 text-xs text-(--ds-text-faint)"
+                            >
+                                <LoaderCircle class="size-3 animate-spin" />
+                                {{ $t('Applying the last change…') }}
+                            </span>
+                            <span
+                                v-else-if="
+                                    app.site.job?.state === 'failed' ||
+                                    app.site.job?.state === 'stale'
+                                "
+                                class="text-xs text-(--ds-red)"
+                                >{{
+                                    $t(
+                                        'The last change didn’t apply: :reason',
+                                        {
+                                            reason:
+                                                app.site.job.error ||
+                                                $t('the machine didn’t answer'),
+                                        },
+                                    )
+                                }}</span
+                            >
+                            <span
+                                v-else-if="!app.site.supported"
+                                class="text-xs text-(--ds-text-faint)"
+                                >{{
+                                    $t(
+                                        'Needs a newer ServerOS daemon on this machine. It updates itself.',
+                                    )
+                                }}</span
+                            >
+                            <span
+                                v-else
+                                class="text-xs text-(--ds-text-faint)"
+                                >{{
+                                    $t(
+                                        'Changes apply in seconds, without a redeploy.',
+                                    )
+                                }}</span
+                            >
+                        </div>
+                        <AppButton
+                            v-if="canManage"
+                            class="shrink-0"
+                            :disabled="
+                                !online || !app.site.supported || siteApplying
+                            "
+                            @click="siteOpen = true"
+                        >
+                            {{ $t('Edit') }}
+                        </AppButton>
+                    </div>
+                    <dl
+                        class="grid grid-cols-2 gap-px overflow-hidden rounded-[8px] border border-(--ds-divider) bg-(--ds-divider) sm:grid-cols-4"
+                    >
+                        <div
+                            v-for="row in siteRows"
+                            :key="row.label"
+                            class="flex min-w-0 flex-col gap-0.5 bg-(--ds-card) px-3 py-2.5"
+                        >
+                            <dt class="text-xs text-(--ds-text-faint)">
+                                {{ row.label }}
+                            </dt>
+                            <dd
+                                class="flex min-w-0 items-center gap-1.5 text-[13px]"
+                                :class="
+                                    row.on
+                                        ? 'font-medium text-(--ds-text)'
+                                        : 'text-(--ds-text-muted)'
+                                "
+                            >
+                                <span
+                                    v-if="row.warn"
+                                    class="size-1.5 shrink-0 rounded-full bg-(--ds-amber)"
+                                    aria-hidden="true"
+                                />
+                                <span class="truncate" :title="row.value">{{
+                                    row.value
+                                }}</span>
+                            </dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <section
+                    class="ds-tile flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center lg:col-span-2"
+                    :aria-label="$t('CPU and memory limits')"
+                >
+                    <span class="ds-icon-chip shrink-0">
+                        <Cpu class="size-4" />
+                    </span>
+                    <div class="flex min-w-0 grow flex-col gap-0.5">
+                        <span class="text-[13px] text-(--ds-text-muted)">{{
+                            $t('CPU and memory limits')
+                        }}</span>
+                        <span class="text-sm font-medium">{{
+                            limitsLabel(app.limits.setting)
+                        }}</span>
+                        <span class="text-xs text-(--ds-text-faint)">{{
+                            app.limits.unavailable
+                                ? app.limits.unavailable
+                                : limitsPending
+                                  ? $t(
+                                        'Not applied yet: it runs without them until it deploys again.',
+                                    )
+                                  : $t(
+                                        'The most it may use. Saving a change deploys it again.',
+                                    )
+                        }}</span>
+                    </div>
+                    <AppButton
+                        v-if="canManage"
+                        class="shrink-0"
+                        :disabled="!online || app.limits.unavailable !== null"
+                        @click="limitsOpen = true"
+                    >
+                        {{ $t('Edit') }}
+                    </AppButton>
+                </section>
             </div>
             <AppVariablesDialog
                 v-if="canManage && app"
                 v-model:open="variablesOpen"
                 :machine-id="machine.id!"
                 :app="app.service"
+                @saved="variablesSaved"
+            />
+            <AppSiteDialog
+                v-if="canManage && app && app.domains.length"
+                v-model:open="siteOpen"
+                :machine-id="machine.id!"
+                :app="app.service"
+                :site="app.site"
+                @saved="router.reload({ only: ['app'] })"
+            />
+            <AppLimitsDialog
+                v-if="canManage && app"
+                v-model:open="limitsOpen"
+                :machine-id="machine.id!"
+                :app="app.service"
+                :limits="app.limits"
                 @saved="variablesSaved"
             />
 
@@ -1830,6 +2100,29 @@ const focusRing =
                                   )
                                 : $t(
                                       'Turn on to deploy every push without a workflow.',
+                                  )
+                        }}</span>
+                    </div>
+                    <div
+                        v-if="app.deployOnPush && deployOnPush"
+                        class="flex w-full flex-wrap items-center gap-2.5 text-[13px] text-(--ds-text-secondary)"
+                    >
+                        <label class="flex items-center gap-2.5">
+                            {{ ' ' + $t('Only build the newest push') }}
+                            <ToggleSwitch
+                                v-model="pushOnlyNewest"
+                                :label="$t('Only build the newest push')"
+                                :disabled="!canManage"
+                                @update:model-value="savePushOnlyNewest"
+                            />
+                        </label>
+                        <span class="text-xs text-(--ds-text-faint)">{{
+                            pushOnlyNewest
+                                ? $t(
+                                      'A push that comes in while it’s deploying waits, and a newer push replaces it.',
+                                  )
+                                : $t(
+                                      'Every push deploys as it comes in, even while another is deploying.',
                                   )
                         }}</span>
                     </div>
@@ -1917,7 +2210,11 @@ const focusRing =
                             : percent(stats.cpu)
                     }}</span>
                     <span class="text-xs text-(--ds-text-faint)">{{
-                        $t('of the whole machine')
+                        appliedLimits?.cpus
+                            ? $t('of the whole machine, limit :value', {
+                                  value: cpusLabel(appliedLimits.cpus),
+                              })
+                            : $t('of the whole machine')
                     }}</span>
                 </li>
                 <li class="ds-tile flex flex-col gap-1 px-5 py-4">
@@ -2166,6 +2463,15 @@ const focusRing =
                           'ServerOS can open the files of services it deployed or adopted. Adopt this service to browse its files here.',
                       )
             "
+        />
+
+        <SiteTraffic
+            v-else-if="tab === 'traffic' && app"
+            :machine-id="machine.id ?? 0"
+            :machine-name="machine.name"
+            :app="app.service"
+            :state="app.traffic"
+            :can-manage="canManage"
         />
 
         <DatabaseBrowser

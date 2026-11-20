@@ -17,6 +17,7 @@ Schedule::call(fn () => Cache::forever(SchedulerHeartbeat::KEY, now()->timestamp
 Schedule::command('backups:run-due')->hourly()->withoutOverlapping();
 Schedule::command('projects:tick')->everyMinute()->withoutOverlapping(5);
 Schedule::command('logs:prune')->hourly()->withoutOverlapping();
+Schedule::command('traffic:roll-up')->everyTenMinutes()->withoutOverlapping(10);
 Schedule::command('logs:flush-buffers')->everyMinute()->withoutOverlapping(5);
 Schedule::command('view-as:close-stale')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('monitors:run')->everyThirtySeconds()->withoutOverlapping(5)->runInBackground();
@@ -36,6 +37,7 @@ Schedule::command('summaries:send')->weeklyOn(1, '07:41')->withoutOverlapping();
 Schedule::command('plans:expire-manual')->hourly()->withoutOverlapping();
 Schedule::command('plans:end-grace')->hourly()->withoutOverlapping();
 Schedule::command('deploy-sources:prune')->hourly()->withoutOverlapping();
+Schedule::command('deploys:release-waiting')->everyMinute()->withoutOverlapping(5);
 
 if (Edition::selfHosted()) {
     Schedule::command('daemon:sync-releases')->hourlyAt(29)->withoutOverlapping();

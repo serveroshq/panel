@@ -12,6 +12,8 @@ import type { DataKind } from '@/components/machines/ClearDataDialog.vue';
 import type { Machine } from '@/components/machines/machines';
 import PolicySends from '@/components/machines/PolicySends.vue';
 import ServiceLogo from '@/components/machines/ServiceLogo.vue';
+import TrafficSettings from '@/components/machines/TrafficSettings.vue';
+import type { TrafficSettingsProps } from '@/components/machines/TrafficSettings.vue';
 import TunnelSettings from '@/components/machines/TunnelSettings.vue';
 import type { TunnelSettingsProps } from '@/components/machines/TunnelSettings.vue';
 import EmbedOptions from '@/components/status/EmbedOptions.vue';
@@ -137,6 +139,7 @@ const props = defineProps<{
         };
     };
     tunnel: TunnelSettingsProps | null;
+    traffic: TrafficSettingsProps;
     planAllows: boolean;
     environments: string[];
     collectedData?: CollectedData;
@@ -1241,6 +1244,14 @@ const serviceColumns =
                     </div>
                 </div>
             </form>
+
+            <TrafficSettings
+                v-if="machine.id"
+                :machine-id="machine.id"
+                :machine-name="machine.name"
+                :traffic="traffic"
+                :can-manage="canManage"
+            />
 
             <TunnelSettings
                 v-if="tunnel && machine.id"

@@ -43,6 +43,26 @@ final class AlertKinds
         return array_values(array_intersect(self::keys(), $muted));
     }
 
+    /**
+     * The alert settings a page shows. The webhook's address only to people
+     * who may change it; the Telegram bot's token never, only that it's set.
+     *
+     * @return array{email: bool, webhook: string|null, webhookSet: bool, telegram: array{chat: string|null, set: bool}, muted: list<string>}
+     */
+    public static function props(Workspace $workspace, bool $manager): array
+    {
+        return [
+            'email' => (bool) ($workspace->alert_email ?? true),
+            'webhook' => $manager ? $workspace->alert_webhook_url : null,
+            'webhookSet' => filled($workspace->alert_webhook_url),
+            'telegram' => [
+                'chat' => $manager ? $workspace->alert_telegram_chat : null,
+                'set' => TelegramAlerts::configured($workspace),
+            ],
+            'muted' => self::muted($workspace),
+        ];
+    }
+
     public static function allows(Workspace $workspace, string $event): bool
     {
         $kind = self::of($event);
