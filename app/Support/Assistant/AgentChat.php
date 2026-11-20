@@ -3,6 +3,7 @@
 namespace App\Support\Assistant;
 
 use App\Support\Ai\AiProviders;
+use App\Support\Ai\CompatibleEndpoint;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -12,8 +13,10 @@ class AgentChat
 {
     private const GROQ_FALLBACK = 'openai/gpt-oss-20b';
 
+    public function __construct(private readonly CompatibleEndpoint $endpoint) {}
+
     /**
-     * @param  array{provider: string, key: string, model: string, own: bool}  $ai
+     * @param  array{provider: string, key: string, model: string, own: bool, url?: string}  $ai
      * @param  list<array<string, mixed>>  $messages
      * @param  list<array{name: string, description: string, schema: array<string, mixed>}>  $tools
      * @return array{text: string, calls: list<array{id: string, name: string, arguments: array<string, mixed>}>, model: string, openai_output?: list<array<string, mixed>>}
@@ -31,6 +34,10 @@ class AgentChat
             $response = match ($ai['provider']) {
                 'anthropic' => $this->anthropic($ai, $system, $messages, $tools, $maxTokens),
                 'openai' => $this->responses($ai, $system, $messages, $tools, $maxTokens),
+                'custom' => $this->endpoint->request((string) ($ai['url'] ?? ''), $ai['key'], 90)->post(
+                    CompatibleEndpoint::url((string) ($ai['url'] ?? ''), 'chat/completions'),
+                    array_filter(self::chatCompletions($ai['model'], $system, $messages, $tools), fn ($v) => $v !== []) + ['temperature' => 0.2, 'max_completion_tokens' => $maxTokens * 2],
+                ),
                 default => $this->groq($ai, $ai['model'], $system, $messages, $tools, $maxTokens),
             };
             if ($ai['provider'] === 'groq' && $response->serverError()) {
@@ -97,11 +104,26 @@ class AgentChat
     }
 
     /**
-     * @param  array{provider: string, key: string, model: string, own: bool}  $ai
+     * @param  array{provider: string, key: string, model: string, own: bool, url?: string}  $ai
      * @param  list<array<string, mixed>>  $messages
      * @param  list<array{name: string, description: string, schema: array<string, mixed>}>  $tools
      */
     private function groq(array $ai, string $model, string $system, array $messages, array $tools, int $maxTokens): Response
+    {
+        $body = self::chatCompletions($model, $system, $messages, $tools);
+        $body += ['temperature' => 0.2, 'max_completion_tokens' => $maxTokens, 'reasoning_effort' => 'low', 'include_reasoning' => false];
+
+        return Http::withToken($ai['key'])->connectTimeout(10)->timeout(90)->post('https://api.groq.com/openai/v1/chat/completions', $body);
+    }
+
+    /**
+     * The Chat Completions body Groq and every OpenAI-compatible API take.
+     *
+     * @param  list<array<string, mixed>>  $messages
+     * @param  list<array{name: string, description: string, schema: array<string, mixed>}>  $tools
+     * @return array<string, mixed>
+     */
+    private static function chatCompletions(string $model, string $system, array $messages, array $tools): array
     {
         $wire = [['role' => 'system', 'content' => $system]];
         foreach ($messages as $m) {
@@ -123,18 +145,15 @@ class AgentChat
             };
         }
 
-        $body = [
+        return [
             'model' => $model,
             'messages' => $wire,
             'tools' => array_map(fn (array $t) => ['type' => 'function', 'function' => ['name' => $t['name'], 'description' => $t['description'], 'parameters' => $t['schema']]], $tools),
         ];
-        $body += ['temperature' => 0.2, 'max_completion_tokens' => $maxTokens, 'reasoning_effort' => 'low', 'include_reasoning' => false];
-
-        return Http::withToken($ai['key'])->connectTimeout(10)->timeout(90)->post('https://api.groq.com/openai/v1/chat/completions', $body);
     }
 
     /**
-     * @param  array{provider: string, key: string, model: string, own: bool}  $ai
+     * @param  array{provider: string, key: string, model: string, own: bool, url?: string}  $ai
      * @param  list<array<string, mixed>>  $messages
      * @param  list<array{name: string, description: string, schema: array<string, mixed>}>  $tools
      */
@@ -214,7 +233,7 @@ class AgentChat
     }
 
     /**
-     * @param  array{provider: string, key: string, model: string, own: bool}  $ai
+     * @param  array{provider: string, key: string, model: string, own: bool, url?: string}  $ai
      * @param  list<array<string, mixed>>  $messages
      * @param  list<array{name: string, description: string, schema: array<string, mixed>}>  $tools
      */

@@ -379,8 +379,8 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
         Route::post('settings/api/keys', [WorkspaceApiController::class, 'store'])->middleware('throttle:20,1')->name('workspace.settings.api.keys.store');
         Route::delete('settings/api/keys/{key}', [WorkspaceApiController::class, 'destroy'])->withoutScopedBindings()->name('workspace.settings.api.keys.destroy');
         Route::get('settings/mcp', [WorkspaceMcpController::class, 'show'])->name('workspace.settings.mcp');
-        Route::put('settings/ai/{provider}', [WorkspaceAiController::class, 'update'])->middleware('throttle:10,1')->whereIn('provider', ['anthropic', 'openai'])->name('workspace.settings.ai.update');
-        Route::delete('settings/ai/{provider}', [WorkspaceAiController::class, 'destroy'])->whereIn('provider', ['anthropic', 'openai'])->name('workspace.settings.ai.destroy');
+        Route::put('settings/ai/{provider}', [WorkspaceAiController::class, 'update'])->middleware('throttle:10,1')->whereIn('provider', ['anthropic', 'openai', 'custom'])->name('workspace.settings.ai.update');
+        Route::delete('settings/ai/{provider}', [WorkspaceAiController::class, 'destroy'])->whereIn('provider', ['anthropic', 'openai', 'custom'])->name('workspace.settings.ai.destroy');
         Route::post('settings/mcp/keys', [WorkspaceMcpController::class, 'store'])->middleware('throttle:20,1')->name('workspace.settings.mcp.keys.store');
         Route::delete('settings/mcp/connections/{token}', [WorkspaceMcpController::class, 'destroy'])->name('workspace.settings.mcp.connections.destroy');
         Route::get('settings/machine-policies', [WorkspaceMachinePolicyController::class, 'show'])->name('workspace.settings.machine-policies');

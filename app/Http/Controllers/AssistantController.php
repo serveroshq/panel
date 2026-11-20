@@ -26,7 +26,7 @@ class AssistantController extends Controller
             'images' => ['nullable', 'array', 'max:'.AssistantAgent::IMAGES_PER_MESSAGE],
             'images.*' => ['string', 'max:'.(int) ceil(AssistantAgent::IMAGE_BYTES * 4 / 3) + 40, 'regex:/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+\/=]+$/'],
             'path' => ['nullable', 'string', 'max:300'],
-            'model' => ['nullable', 'string', 'max:100', 'regex:/^(anthropic|openai):[A-Za-z0-9._:\/\[\]-]{1,80}$/'],
+            'model' => ['nullable', 'string', 'max:100', 'regex:/^(anthropic|openai|custom):[A-Za-z0-9._:\/\[\]-]{1,80}$/'],
         ]);
 
         $user = $request->user();
