@@ -66,6 +66,7 @@ final class ActivityLine
             'machine.firewall' => $set($t(($meta['action'] ?? null) === 'open' ? 'opened port :port on' : 'closed port :port on', ['port' => $meta['port'] ?? '']), null, ($meta['action'] ?? null) === 'open' ? 'warn' : 'neutral'),
             'machine.tunnel' => $set(($meta['action'] ?? null) === 'up' ? 'put a Cloudflare Tunnel on' : 'took the Cloudflare Tunnel off', null, 'warn'),
             'machine.remove' => $set('removed the machine', null, 'bad'),
+            'machine.file' => $set('downloaded the machine file of'),
             'machine.data_clear' => $set(match (array_keys(array_intersect_key($meta, array_flip(['logs', 'metrics', 'services'])))) {
                 ['logs'] => isset($meta['skipped_services'])
                     ? $t((int) $meta['skipped_services'] === 1 ? 'deleted logs from 1 skipped service on' : 'deleted logs from :count skipped services on', ['count' => (string) $meta['skipped_services']])

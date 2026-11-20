@@ -3616,5 +3616,14 @@
     "You’ve been signed out. Reload the page and sign in again.": "Du wurdest abgemeldet. Lade die Seite neu und melde dich wieder an.",
     "The machine said: :line": "Die Maschine meldete: :line",
     "That didn’t work. Try again.": "Das hat nicht geklappt. Versuch es nochmal.",
-    "That was cancelled. Try again.": "Das wurde abgebrochen. Versuch es noch mal."
+    "That was cancelled. Try again.": "Das wurde abgebrochen. Versuch es noch mal.",
+    "Add another machine to this workspace to check a move.": "Füge diesem Workspace eine weitere Maschine hinzu, um einen Umzug zu prüfen.",
+    "Apps aren’t moved for you yet: this check and the machine file show what a move would take.": "Apps werden noch nicht für dich umgezogen: Diese Prüfung und die Maschinendatei zeigen, was ein Umzug braucht.",
+    "Check the move": "Umzug prüfen",
+    "Download machine file": "Maschinendatei herunterladen",
+    "Machine to move to": "Zielmaschine",
+    "Move to another machine": "Auf eine andere Maschine umziehen",
+    "Nothing blocks a move to :to.": "Nichts steht einem Umzug auf :to im Weg.",
+    "The machine file lists the apps ServerOS deployed on :name and their settings, without their values. Check what a move to another machine would take. Nothing is changed on either machine.": "Die Maschinendatei listet die Apps, die ServerOS auf :name deployt hat, und ihre Einstellungen, ohne deren Werte. Prüfe, was ein Umzug auf eine andere Maschine braucht. Auf keiner der beiden Maschinen wird etwas geändert.",
+    "This move can’t start yet.": "Dieser Umzug kann noch nicht starten."
 }
