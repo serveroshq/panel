@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { themeColour } from '@/lib/themeColour';
 import { useUpgradeLink } from '@/composables/useUpgradeLink';
 import { trans } from 'laravel-vue-i18n';
 import DiskUsagePanel from '@/components/machines/DiskUsagePanel.vue';
@@ -38,6 +39,7 @@ import {
     watch,
 } from 'vue';
 import { appButtonClasses } from '@/lib/appButton';
+import { fixed } from '@/lib/formatting';
 import { toast } from '@/lib/toast';
 import type { Machine } from '@/components/machines/machines';
 import FileBrowser from '@/components/machines/FileBrowser.vue';
@@ -64,7 +66,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { bytes, statusGroup } from '@/components/machines/serviceFormat';
 import ServicesTable from '@/components/machines/ServicesTable.vue';
-import type { BuildingService } from '@/components/machines/ServicesTable.vue';
+import { buildingServices as findBuilding } from '@/components/machines/buildingServices';
+import type { BuildingService } from '@/components/machines/buildingServices';
 import Sparkline from '@/components/machines/Sparkline.vue';
 import TimeSeriesChart from '@/components/machines/TimeSeriesChart.vue';
 import type {
@@ -92,12 +95,16 @@ import type { Component } from 'vue';
 import { jobStatus } from '@/lib/jobStatus';
 import type { Tone } from '@/lib/jobStatus';
 import type { Workspace, WorkspaceAccess } from '@/types';
+import { describe, errorMessage, jobReason } from '@/lib/errors';
 
 const upgrade = useUpgradeLink();
 
 const DeployServiceDialog = defineAsyncComponent(
     () => import('@/components/workspace/DeployServiceDialog.vue'),
 );
+
+// ?deploy=coding-agent opens the deploy dialog on that template.
+const deployTemplate = ref<string | null>(null);
 
 type ScheduledTask = {
     command: string;
@@ -191,58 +198,13 @@ const listedServices = computed(() =>
         (service) => !removingKeys.value.has(service.key),
     ),
 );
-const buildingServices = computed<BuildingService[]>(() => {
-    const inScan = new Set<string>();
-    for (const service of props.machine.inventory?.services ?? []) {
-        const project = service.details?.compose_project;
-        if (project?.startsWith('serveros-')) {
-            inScan.add(project.slice('serveros-'.length));
-        }
-        if (service.app) {
-            inScan.add(service.app);
-        }
-    }
-    const scannedAt = (props.machine.inventory?.scanned_at ?? 0) * 1000;
-    const seen = new Set<string>();
-    const rows: BuildingService[] = [];
-
-    for (const job of props.jobs) {
-        if (job.kind !== 'deploy' || !job.service || seen.has(job.service)) {
-            continue;
-        }
-        seen.add(job.service);
-        const created = new Date(job.createdAt ?? 0).getTime();
-        const moving = ['queued', 'accepted', 'running'].includes(job.state);
-        const recent = Date.now() - created < 10 * 60_000;
-        if (inScan.has(job.service) || (!moving && !recent)) {
-            continue;
-        }
-
-        let state: BuildingService['state'];
-        if (job.state === 'queued' || job.state === 'accepted') {
-            state = 'queued';
-        } else if (job.state === 'running') {
-            state = 'building';
-        } else if (job.state === 'succeeded') {
-            if (scannedAt > created + 60_000) continue;
-            state = 'starting';
-        } else if (['failed', 'timed_out'].includes(job.state)) {
-            state = 'failed';
-        } else {
-            continue;
-        }
-
-        rows.push({
-            jobId: job.id,
-            name: job.service,
-            state,
-            phase: job.phase,
-            progress: job.progress,
-        });
-    }
-
-    return rows;
-});
+const buildingServices = computed<BuildingService[]>(() =>
+    findBuilding(
+        props.jobs,
+        props.machine.inventory?.services ?? [],
+        props.machine.inventory?.scanned_at,
+    ),
+);
 const removeInFlight = computed(() =>
     props.jobs.some(
         (job) =>
@@ -441,7 +403,7 @@ function jobIcon(job: DaemonJob): Component {
 }
 
 function jobDetail(job: DaemonJob): string {
-    if (job.error) return job.explanation?.cause ?? job.error.message ?? '';
+    if (job.error) return job.explanation?.cause ?? jobReason(job.error, '');
     if (job.state === 'succeeded' && job.result?.container) {
         return trans('Container: :container · port :port', {
             container: String(job.result.container ?? ''),
@@ -549,7 +511,7 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 function formatBytes(bytes: number | undefined): string {
     if (!bytes || bytes < 0) return trans('Unknown');
-    return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+    return `${fixed(bytes / 1024 ** 3)} GiB`;
 }
 
 function formatDate(timestamp: number | undefined): string {
@@ -593,9 +555,9 @@ async function refreshNow(): Promise<void> {
         const json = await response.json().catch(() => ({}));
         note = response.ok
             ? (json.note ?? null)
-            : trans('Couldn’t ask for a scan.');
-    } catch {
-        note = trans('Couldn’t ask for a scan.');
+            : describe(response.status, json);
+    } catch (cause) {
+        note = errorMessage(cause);
     }
 
     if (note) {
@@ -671,6 +633,8 @@ onMounted(() => {
         new URLSearchParams(window.location.search).has('deploy') &&
         canDeploy.value
     ) {
+        deployTemplate.value =
+            new URLSearchParams(window.location.search).get('deploy') || null;
         showDeploy.value = true;
     }
 
@@ -1170,7 +1134,7 @@ function usage(mount: string): { percent: number; free: number } | null {
                         :series="[
                             {
                                 label: 'CPU',
-                                color: '#60A5FA',
+                                color: themeColour('--ds-chart', '#60A5FA'),
                                 values: history.map((p) => p.cpu),
                                 peaks: history.map((p) => p.cpuMax),
                             },
@@ -1780,6 +1744,7 @@ function usage(mount: string): { percent: number; free: number } | null {
             v-model:open="showDeploy"
             :templates="templates"
             :machine-id="machine.id"
+            :start-with="deployTemplate"
             @deployed="onDeployed"
         />
         <MaintenanceDialog

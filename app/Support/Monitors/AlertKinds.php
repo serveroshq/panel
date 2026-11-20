@@ -14,7 +14,7 @@ final class AlertKinds
         'backups' => ['backup.failed', 'backup.recovered'],
         'monitors' => ['monitor.down', 'monitor.up', 'certificate.expiring'],
         'workflows' => ['workflow.failed'],
-        'updates' => ['daemon.update_waiting', 'daemon.updated'],
+        'updates' => ['daemon.update_waiting'],
         'security' => ['security.vulnerability'],
     ];
 

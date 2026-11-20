@@ -18,6 +18,8 @@ use RuntimeException;
 
 class DaemonJobQueue
 {
+    public const DEPLOY_TIMEOUT_SECS = 1800;
+
     public const array NEEDS_PLAN = ['deploy', 'release', 'rollback', 'service_exec', 'service_clone', 'database_query'];
 
     private const array READS = ['database_query', 'service_logs', 'service_inspect', 'discover', 'file_list', 'file_read', 'package_updates', 'disk_usage'];
@@ -43,7 +45,8 @@ class DaemonJobQueue
 
     public static function needsPlan(Machine $machine, string $kind): ?string
     {
-        if (! in_array($kind, self::NEEDS_PLAN, true) || $machine->workspace->isActive()) {
+        // A package's own machine is paid for by the package (agent time on ServerOS's machines).
+        if (! in_array($kind, self::NEEDS_PLAN, true) || $machine->hosted_by !== null || $machine->workspace->isActive()) {
             return null;
         }
 
@@ -65,7 +68,7 @@ class DaemonJobQueue
         $database = $job['snapshot_before'] ? AppDatabase::for($machine, (string) $job['service'], (array) ($job['env'] ?? [])) : null;
         $job['snapshot_also'] = $database === null ? [] : [$database['key']];
 
-        $record = $this->queue($machine, $user, 'deploy', $job, $job['service'], 1800);
+        $record = $this->queue($machine, $user, 'deploy', $job, $job['service'], self::DEPLOY_TIMEOUT_SECS);
         event(new DeployQueued($machine, $record, (array) ($job['domains'] ?? [])));
 
         return $record;
@@ -337,6 +340,16 @@ class DaemonJobQueue
     }
 
     // From this version a stack runs from a folder that outlives the deploy, so a repository's ./paths keep working.
+    public static function canBuildFromFolder(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.base_dir_since'));
+    }
+
+    public static function canResolveRef(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.resolve_ref_since'));
+    }
+
     public static function canComposeFromRepo(Machine $machine): bool
     {
         return self::atLeast($machine, (string) config('daemon.compose_repo_since'));
@@ -406,6 +419,16 @@ class DaemonJobQueue
         } catch (RuntimeException) {
             return null;
         }
+    }
+
+    public static function canChooseProxy(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.proxy_choice_since'));
+    }
+
+    public static function canChooseHttps(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.https_choice_since'));
     }
 
     public static function canWildcard(Machine $machine): bool

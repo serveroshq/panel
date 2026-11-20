@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Console\Dev\DevAgents;
 use App\Console\Dev\DevDaemon;
 use App\Console\Dev\DevNode;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -16,9 +17,11 @@ use App\Support\Edition;
 use App\Support\Entitlements\Entitlements;
 use App\Support\Entitlements\PlanEntitlements;
 use App\Support\Entitlements\SelfHostedEntitlements;
+use App\Support\Extensions\AgentHosting;
 use App\Support\Extensions\Billing;
 use App\Support\Extensions\DocsSource;
 use App\Support\Extensions\Extensions;
+use App\Support\Extensions\NoAgentHosting;
 use App\Support\Extensions\NoBilling;
 use App\Support\Extensions\NoDocs;
 use App\Support\Extensions\NoPrices;
@@ -68,6 +71,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(StoredGitHubApp::class);
         $this->app->singletonIf(TrialCards::class, NoTrialCards::class);
         $this->app->singletonIf(Billing::class, NoBilling::class);
+        $this->app->singletonIf(AgentHosting::class, NoAgentHosting::class);
         $this->app->singletonIf(DocsSource::class, NoDocs::class);
         $this->app->singletonIf(Prices::class, NoPrices::class);
     }
@@ -84,7 +88,7 @@ class AppServiceProvider extends ServiceProvider
         CommunityLicense::register($this->app->make(Extensions::class));
 
         if ($this->app->isLocal() && $this->app->runningInConsole()) {
-            $this->commands([DevDaemon::class, DevNode::class]);
+            $this->commands([DevAgents::class, DevDaemon::class, DevNode::class]);
         }
 
         Event::listen(Login::class, function (Login $event): void {

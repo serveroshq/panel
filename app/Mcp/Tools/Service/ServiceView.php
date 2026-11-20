@@ -11,6 +11,7 @@ use App\Models\DeploySource;
 use App\Models\Machine;
 use App\Models\ServiceGroup;
 use App\Models\ServiceSample;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -133,6 +134,7 @@ final class ServiceView
         if ($private) {
             $out['log'] = [];
             $out['result'] = null;
+            $out['error'] = is_array($out['error'] ?? null) ? Arr::except($out['error'], ['output_tail']) : ($out['error'] ?? null);
             $out['note'] = 'Console commands and their output are shown only to people who manage machines.';
         }
         if ($job->kind === 'database_query') {

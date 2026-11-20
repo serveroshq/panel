@@ -78,7 +78,7 @@ test('the trial runs on the plan chosen in the welcome flow', function () {
         ->and($workspace->effectivePlan())->toBe(Plan::Business)
         ->and($workspace->machineLimit())->toBe(25)
         ->and($workspace->welcome['interval'])->toBe('annual')
-        ->and(Activity::query()->where('action', 'workspace.trial_plan')->sole()->subject)->toBe('Business');
+        ->and(Activity::query()->where('action', 'workspace.trial_plan')->sole()->subject)->toBe('Scale');
 
     $workspace->forceFill(['trial_ends_at' => now()->subDay()])->save();
     expect($workspace->fresh()->effectivePlan())->toBeNull();

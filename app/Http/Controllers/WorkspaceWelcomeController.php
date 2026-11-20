@@ -57,8 +57,8 @@ class WorkspaceWelcomeController extends Controller
             'plans' => array_map(fn (Plan $plan) => [
                 'key' => $plan->value,
                 'label' => $plan->label(),
-                'monthly' => $this->prices->plan($plan, BillingInterval::Monthly, $currency),
-                'annual' => $this->prices->plan($plan, BillingInterval::Annual, $currency),
+                'monthly' => $this->prices->plan($plan, BillingInterval::Monthly, $currency, $workspace),
+                'annual' => $this->prices->plan($plan, BillingInterval::Annual, $currency, $workspace),
                 'machines' => $plan->machineLimit(),
             ], Plan::cases()),
             'currency' => $currency->value,

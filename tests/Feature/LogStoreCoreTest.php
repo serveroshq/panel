@@ -22,7 +22,7 @@ test('a workspace with its own store reads and writes there, others use ours', f
         ->and(LogStore::entries($ours)->count())->toBe(0);
 });
 
-test('a workspace off Business writes to ours again, daily limit and all, until it’s back', function () {
+test('a workspace off Scale writes to ours again, daily limit and all, until it’s back', function () {
     $workspace = Workspace::factory()->onPlan(Plan::Pro)->create();
     ownLogStore($workspace);
 

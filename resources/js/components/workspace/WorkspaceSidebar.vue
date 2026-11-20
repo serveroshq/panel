@@ -13,6 +13,7 @@ import {
 } from 'vue';
 import type { Component } from 'vue';
 import AccountMenu from '@/components/workspace/AccountMenu.vue';
+import ProductSwitch from '@/components/workspace/ProductSwitch.vue';
 import WorkspaceMenu from '@/components/workspace/WorkspaceMenu.vue';
 import { useWorkspaceNav } from '@/components/workspace/workspaceNav';
 import type { WorkspaceNavItem } from '@/components/workspace/workspaceNav';
@@ -364,6 +365,8 @@ const rowClass =
                 />
             </button>
         </div>
+
+        <ProductSwitch v-if="!collapsed" class="mx-2 mt-3 mb-2" />
 
         <nav
             class="min-h-0 grow overflow-y-auto"

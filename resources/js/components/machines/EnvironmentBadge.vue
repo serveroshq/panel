@@ -54,30 +54,28 @@ const variants: Record<
     },
 };
 
+// In the dashboard, badges take the theme's blue, amber and neutral colours.
 const themedVariants: Record<
     Environment,
-    { badgeClass: string; dotClass: string; textClass: string }
+    { badgeClass: string; dotClass: string; textClass: string; tint: string }
 > = {
     production: {
-        badgeClass:
-            'border-[#C3D5FB] bg-[#EEF4FF] dark:border-[#2F4C80] dark:bg-[#1B2A45]',
-        dotClass:
-            'bg-[#1F5FE0] shadow-[0_0_0_2px_#1F5FE026] dark:bg-[#60A5FA] dark:shadow-[0_0_0_2px_#60A5FA33]',
-        textClass: 'text-[#1A4FBF] dark:text-[#93BBFD]',
+        badgeClass: 'border-(--ds-blue-border) bg-(--ds-blue-bg)',
+        dotClass: 'bg-(--ds-blue)',
+        textClass: 'text-(--ds-blue-strong)',
+        tint: 'var(--ds-blue-strong)',
     },
     staging: {
-        badgeClass:
-            'border-[#F3D58F] bg-[#FEF6E0] dark:border-[#6B5220] dark:bg-[#3A2C12]',
-        dotClass:
-            'bg-[#D97706] shadow-[0_0_0_2px_#D9770626] dark:bg-[#FBBF24] dark:shadow-[0_0_0_2px_#FBBF2433]',
-        textClass: 'text-[#92400E] dark:text-[#FCD34D]',
+        badgeClass: 'border-(--ds-amber-border) bg-(--ds-amber-bg)',
+        dotClass: 'bg-(--ds-amber)',
+        textClass: 'text-(--ds-amber-strong)',
+        tint: 'var(--ds-amber-strong)',
     },
     development: {
-        badgeClass:
-            'border-[#E0E0DC] bg-[#F4F4F2] dark:border-[#3F3F43] dark:bg-[#262628]',
-        dotClass:
-            'bg-[#8E8E88] shadow-[0_0_0_2px_#8E8E8826] dark:bg-[#A1A1AA] dark:shadow-[0_0_0_2px_#A1A1AA2E]',
-        textClass: 'text-[#52524E] dark:text-[#C4C4CC]',
+        badgeClass: 'border-(--ds-border-strong) bg-(--ds-subtle)',
+        dotClass: 'bg-(--ds-text-faint)',
+        textClass: 'text-(--ds-text-secondary)',
+        tint: 'var(--ds-text-secondary)',
     },
 };
 
@@ -88,13 +86,13 @@ const variant = computed(() => {
         return landing;
     }
 
+    const themed = themedVariants[props.environment];
+
     return {
-        ...themedVariants[props.environment],
-        badgeClass: `${themedVariants[props.environment].badgeClass} shadow-[0_1px_2px_rgb(0_0_0/0.05)] dark:[box-shadow:var(--badge-shadow)] dark:[background-image:var(--badge-image)]`,
-        style: {
-            '--badge-shadow': landing.style.boxShadow ?? '',
-            '--badge-image': landing.style.backgroundImage ?? '',
-        },
+        ...themed,
+        dotClass: `${themed.dotClass} shadow-[0_0_0_2px_color-mix(in_srgb,var(--badge-tint)_18%,transparent)]`,
+        badgeClass: `${themed.badgeClass} shadow-[0_1px_2px_rgb(0_0_0/0.05)] dark:shadow-[inset_0_1px_0_color-mix(in_srgb,var(--badge-tint)_22%,transparent),0_1px_2px_rgb(0_0_0/0.5)] dark:bg-[linear-gradient(180deg,rgb(255_255_255/0.04),transparent)]`,
+        style: { '--badge-tint': themed.tint },
     };
 });
 </script>

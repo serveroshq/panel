@@ -373,7 +373,7 @@ test('get_activity reads like the Activity page, and says what came through MCP'
         ->and($entries[0])->toMatchArray(['action' => 'issues.dismiss', 'viaMcp' => true, 'client' => 'Claude Desktop', 'who' => ['id' => $workspace->owner_id, 'name' => 'Ada Lovelace', 'support' => false]])
         ->and($entries[2])->toMatchArray(['who' => null, 'viaMcp' => false, 'client' => null, 'tone' => 'bad', 'machine' => ['id' => $machine->id, 'name' => 'web-1']])
         ->and($entries[3])->toMatchArray(['verb' => 'restarted', 'subject' => 'umami'])
-        ->and($result['data'])->toMatchArray(['hasMore' => false, 'nextCursor' => null, 'keepDays' => 90, 'url' => 'https://'.$workspace->host().'/activity']);
+        ->and($result['data'])->toMatchArray(['hasMore' => false, 'nextCursor' => null, 'keepDays' => Plan::Pro->activityRetentionDays(), 'url' => 'https://'.$workspace->host().'/activity']);
 
     $this->actingAs($workspace->owner)->get('https://'.$workspace->host().'/activity')
         ->assertInertia(fn (Assert $page) => $page

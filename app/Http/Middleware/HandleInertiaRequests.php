@@ -10,6 +10,7 @@ use App\Support\Extensions\Extensions;
 use App\Support\Extensions\MarketingSite;
 use App\Support\GitHub\GitHubApp;
 use App\Support\SetupGuide;
+use App\Support\Theme\DashboardTheme;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Route as Router;
@@ -117,6 +118,11 @@ class HandleInertiaRequests extends Middleware
             'viewingAs' => fn () => Impersonation::active($request) && $request->user()
                 ? ['name' => $request->user()->name, 'email' => $request->user()->email, 'admin' => Impersonation::impersonator($request)?->name]
                 : null,
+            'workspaceTheme' => function () use ($request): ?array {
+                $workspace = self::workspacePage($request);
+
+                return $workspace === null || $request->user() === null ? null : app(DashboardTheme::class)->shared($workspace, $request->user(), $request);
+            },
             'setupGuide' => function () use ($request): ?array {
                 $workspace = $request->route('workspace');
 
@@ -127,6 +133,7 @@ class HandleInertiaRequests extends Middleware
             'locale' => app()->getLocale(),
             'locales' => config('app.locales'),
             'githubApp' => GitHubApp::enabled(),
+            'agentsPreview' => (bool) config('serveros.agents'),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'staff' => fn () => [
                 'admin' => $request->user()?->can('viewAdmin') === true || StaffTwoFactor::missing($request->user()),

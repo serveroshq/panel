@@ -24,6 +24,8 @@ import AppButton from '@/components/workspace/AppButton.vue';
 import SubmitButton from '@/components/workspace/SubmitButton.vue';
 import TickBox from '@/components/workspace/TickBox.vue';
 import { edit as securityEdit } from '@/routes/security';
+import { describe, errorMessage, jobReason } from '@/lib/errors';
+import { fixed } from '@/lib/formatting';
 
 type Result = {
     database: string | null;
@@ -74,7 +76,7 @@ async function call(
     method: 'GET' | 'POST',
     path: string,
     body?: unknown,
-): Promise<{ ok: boolean; body: Record<string, unknown> }> {
+): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
     const response = await fetch(path, {
         method,
         credentials: 'same-origin',
@@ -88,6 +90,7 @@ async function call(
 
     return {
         ok: response.ok,
+        status: response.status,
         body: await response.json().catch(() => ({})),
     };
 }
@@ -105,11 +108,8 @@ async function ask(payload: {
 }): Promise<Result> {
     const sent = await call('POST', base.value, payload);
     if (!sent.ok) {
-        const errors = sent.body.errors as Record<string, string[]> | undefined;
         throw new DatabaseError(
-            (errors && Object.values(errors)[0]?.[0]) ??
-                (sent.body.error as string | undefined) ??
-                trans('That didn’t work.'),
+            describe(sent.status, sent.body),
             sent.body.code as string | undefined,
         );
     }
@@ -124,15 +124,21 @@ async function ask(payload: {
         const status = await call('GET', `${base.value}/${id}`);
         const state = status.body.state as string | undefined;
         if (!status.ok || !state) {
-            throw new DatabaseError(trans('Couldn’t check on it. Try again.'));
+            throw new DatabaseError(
+                status.ok
+                    ? trans('Couldn’t check on it. Try again.')
+                    : describe(status.status, status.body),
+            );
         }
         if (state === 'succeeded' && status.body.result) {
             return status.body.result as Result;
         }
         if (FINISHED.includes(state)) {
             throw new DatabaseError(
-                (status.body.error as { message?: string } | null)?.message ??
+                jobReason(
+                    status.body.error,
                     trans('The machine couldn’t run that.'),
+                ),
             );
         }
     }
@@ -174,19 +180,15 @@ async function unlock(): Promise<void> {
             code: unlockCode.value,
         });
         if (!response.ok) {
-            const errors = response.body.errors as
-                | Record<string, string[]>
-                | undefined;
-            unlockError.value =
-                errors?.code?.[0] ??
-                (response.body.error as string | undefined) ??
-                trans('Couldn’t unlock.');
+            unlockError.value = describe(response.status, response.body);
             unlockCode.value = '';
 
             return;
         }
         unlockCode.value = '';
         router.reload({ only: ['consoleLock'] });
+    } catch (error) {
+        unlockError.value = errorMessage(error);
     } finally {
         unlocking.value = false;
     }
@@ -204,7 +206,7 @@ function failed(error: unknown): string | null {
         return null;
     }
 
-    return error instanceof Error ? error.message : trans('That didn’t work.');
+    return errorMessage(error);
 }
 
 const databases = ref<string[]>([]);
@@ -744,7 +746,7 @@ const field =
                                     }}
                                     <span v-if="tookMs !== null">
                                         ·
-                                        {{ (tookMs / 1000).toFixed(1) }} s</span
+                                        {{ fixed(tookMs / 1000) }} s</span
                                     >
                                 </p>
                                 <AppButton

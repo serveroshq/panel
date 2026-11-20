@@ -2,6 +2,7 @@
 
 use App\Enums\Plan;
 use App\Jobs\DiagnoseFix;
+use App\Models\Activity;
 use App\Models\AgentFix;
 use App\Models\Machine;
 use App\Models\User;
@@ -61,6 +62,26 @@ test('a key the provider refuses isn’t kept; only people who manage settings c
     $workspace->members()->attach($viewer, ['role' => 'viewer']);
     $this->actingAs($viewer)->put(aiUrl($workspace, '/settings/ai/openai'), ['key' => 'sk-proj-'.str_repeat('b', 40)])->assertForbidden();
     $this->actingAs($viewer)->delete(aiUrl($workspace, '/settings/ai/openai'))->assertForbidden();
+});
+
+test('removing a saved key deletes only that key and is logged', function () {
+    $workspace = Workspace::factory()->onPlan(Plan::Pro)->create();
+    $other = Workspace::factory()->onPlan(Plan::Pro)->create();
+    WorkspaceAiKey::query()->create(['workspace_id' => $workspace->id, 'provider' => 'anthropic', 'key' => 'sk-ant-theirs', 'hint' => '…eirs']);
+    $openai = WorkspaceAiKey::query()->create(['workspace_id' => $workspace->id, 'provider' => 'openai', 'key' => 'sk-proj-theirs', 'hint' => '…eirs']);
+    $elsewhere = WorkspaceAiKey::query()->create(['workspace_id' => $other->id, 'provider' => 'anthropic', 'key' => 'sk-ant-other', 'hint' => '…ther']);
+
+    $this->actingAs($workspace->owner)->delete(aiUrl($workspace, '/settings/ai/anthropic'))
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast.message', 'Removed the Anthropic key.');
+
+    expect(WorkspaceAiKey::query()->pluck('id')->sort()->values()->all())->toBe(collect([$openai->id, $elsewhere->id])->sort()->values()->all())
+        ->and(Activity::query()->where('action', 'ai.disconnect')->where('subject', 'Anthropic')->exists())->toBeTrue();
+
+    // Removing again when nothing is saved is harmless and logs nothing new.
+    $this->actingAs($workspace->owner)->delete(aiUrl($workspace, '/settings/ai/anthropic'))
+        ->assertSessionHasNoErrors();
+    expect(Activity::query()->where('action', 'ai.disconnect')->count())->toBe(1);
 });
 
 test('with its own Anthropic key, server fixes run on it', function () {

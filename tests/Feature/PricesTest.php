@@ -35,7 +35,7 @@ test('without prices the panel shows plans and usage with no price', function ()
 test('prices come from whatever is bound to Prices', function () {
     app()->instance(Prices::class, new class implements Prices
     {
-        public function plan(Plan $plan, BillingInterval $interval, Currency $currency): ?int
+        public function plan(Plan $plan, BillingInterval $interval, Currency $currency, ?Workspace $workspace = null): ?int
         {
             return $interval === BillingInterval::Annual ? 12300 : 1230;
         }

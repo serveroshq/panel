@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { themeColour } from '@/lib/themeColour';
 import { useUpgradeLink } from '@/composables/useUpgradeLink';
 import { trans } from 'laravel-vue-i18n';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
@@ -79,9 +80,18 @@ import ToggleSwitch from '@/components/workspace/ToggleSwitch.vue';
 import WorkspacePage from '@/components/workspace/WorkspacePage.vue';
 import { usePathTab } from '@/composables/usePathTab';
 import { useZipUpload } from '@/composables/useZipUpload';
+import { fixed } from '@/lib/formatting';
 import { timeAgo } from '@/lib/timeAgo';
 import { edit as securityEdit } from '@/routes/security';
 import type { Workspace, WorkspaceAccess } from '@/types';
+import {
+    describe,
+    errorMessage,
+    jobReason,
+    networkMessage,
+    reasonIn,
+    responseError,
+} from '@/lib/errors';
 
 const upgrade = useUpgradeLink();
 
@@ -135,6 +145,7 @@ const props = defineProps<{
         canMove: boolean;
         deployedAt: string | null;
         snapshotBefore: boolean;
+        deployOnPush: { on: boolean; branch: string } | null;
         database: {
             setting: string;
             current: { name: string; display: string } | null;
@@ -304,8 +315,8 @@ onBeforeUnmount(() => {
 
 function bytes(value: number | null | undefined): string {
     if (value === null || value === undefined) return '—';
-    if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GiB`;
-    if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(1)} MiB`;
+    if (value >= 1024 ** 3) return `${fixed(value / 1024 ** 3, 2)} GiB`;
+    if (value >= 1024 ** 2) return `${fixed(value / 1024 ** 2, 1)} MiB`;
     if (value >= 1024) return `${Math.round(value / 1024)} KiB`;
 
     return `${Math.round(value)} B`;
@@ -394,7 +405,7 @@ async function act(
         const body = await response.json().catch(() => ({}));
 
         if (!response.ok && response.status !== 422) {
-            toast.error(body.error ?? trans('That didn’t work.'));
+            toast.error(describe(response.status, body));
         }
 
         if (response.ok) {
@@ -402,8 +413,8 @@ async function act(
         }
 
         return { ok: response.ok, body };
-    } catch {
-        toast.error(trans('Couldn’t reach the panel.'));
+    } catch (cause) {
+        toast.error(errorMessage(cause));
 
         return { ok: false, body: {} };
     } finally {
@@ -512,11 +523,13 @@ watch(
             }
         } else {
             toast.error(
-                pendingJob.value?.error?.message ??
+                jobReason(
+                    pendingJob.value?.error,
                     trans('Couldn’t :action :displayName.', {
                         action: String(current.action),
                         displayName: String(displayName.value),
                     }),
+                ),
                 { id: current.toast },
             );
         }
@@ -651,9 +664,70 @@ async function saveDatabase(value: string): Promise<void> {
         },
     ).catch(() => null);
     if (!response?.ok) {
-        toast.error(trans('Couldn’t save that.'));
+        toast.error(
+            response ? await responseError(response) : networkMessage(),
+        );
     }
     router.reload({ only: ['app'] });
+}
+
+const deployOnPush = ref(props.app?.deployOnPush?.on ?? false);
+const pushBranch = ref(props.app?.deployOnPush?.branch ?? 'main');
+const pushBranchError = ref<string | null>(null);
+watch(
+    () => props.app?.deployOnPush,
+    (setting) => {
+        if (!setting) return;
+        deployOnPush.value = setting.on;
+        pushBranch.value = setting.branch;
+    },
+);
+
+async function savePushSettings(body: {
+    deploy_on_push?: boolean;
+    push_branch?: string;
+}): Promise<boolean> {
+    if (!props.app) return false;
+    pushBranchError.value = null;
+    const response = await fetch(
+        `/machines/${props.machine.id}/apps/${props.app.service}/settings`,
+        {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrf(),
+            },
+            body: JSON.stringify(body),
+        },
+    ).catch(() => null);
+    if (!response?.ok) {
+        const message = response
+            ? await responseError(response)
+            : networkMessage();
+        if (body.push_branch !== undefined) pushBranchError.value = message;
+        else toast.error(message);
+        return false;
+    }
+
+    return true;
+}
+
+async function saveDeployOnPush(on: boolean): Promise<void> {
+    const saved = await savePushSettings({
+        deploy_on_push: on,
+        push_branch: pushBranch.value.trim() || 'main',
+    });
+    if (!saved) deployOnPush.value = !on;
+}
+
+async function savePushBranch(): Promise<void> {
+    const branch = pushBranch.value.trim();
+    if (!branch || branch === props.app?.deployOnPush?.branch) return;
+    if (await savePushSettings({ push_branch: branch })) {
+        router.reload({ only: ['app'] });
+    }
 }
 
 async function saveSnapshotBefore(on: boolean): Promise<void> {
@@ -673,7 +747,9 @@ async function saveSnapshotBefore(on: boolean): Promise<void> {
     ).catch(() => null);
     if (!response?.ok) {
         snapshotBefore.value = !on;
-        toast.error(trans('Couldn’t save that.'));
+        toast.error(
+            response ? await responseError(response) : networkMessage(),
+        );
     }
 }
 
@@ -790,10 +866,10 @@ async function shipVersion(file: File | undefined) {
         toast.success(trans('Building the new version…'));
         router.visit(`/machines/${props.machine.id}?job=${json.jobId}`);
     } catch (cause) {
-        zip.error.value =
-            cause instanceof Error
-                ? cause.message
-                : trans('Couldn’t start the deploy.');
+        zip.error.value = errorMessage(
+            cause,
+            trans('Couldn’t start the deploy.'),
+        );
     } finally {
         shipping.value = false;
         if (zipInput.value) zipInput.value.value = '';
@@ -897,10 +973,10 @@ async function moveDomain() {
         );
         router.visit(`/machines/${props.machine.id}?job=${json.jobId}`);
     } catch (cause) {
-        moveError.value =
-            cause instanceof Error
-                ? cause.message
-                : trans('Couldn’t change the domain.');
+        moveError.value = errorMessage(
+            cause,
+            trans('Couldn’t change the domain.'),
+        );
     } finally {
         moveBusy.value = false;
     }
@@ -1043,10 +1119,7 @@ async function unlock(): Promise<void> {
         const body = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            unlockError.value =
-                body.errors?.code?.[0] ??
-                body.error ??
-                trans('Couldn’t unlock.');
+            unlockError.value = describe(response.status, body);
             unlockCode.value = '';
 
             return;
@@ -1057,6 +1130,8 @@ async function unlock(): Promise<void> {
             only: ['consoleLock'],
             onFinish: () => nextTick(() => consoleInput.value?.focus()),
         });
+    } catch (cause) {
+        unlockError.value = errorMessage(cause);
     } finally {
         unlocking.value = false;
     }
@@ -1158,13 +1233,7 @@ async function remove(): Promise<void> {
         );
         router.visit(`/machines/${props.machine.id}`);
     } else {
-        removeError.value =
-            (body.errors as Record<string, string[]> | undefined)
-                ?.confirm?.[0] ??
-            (body.errors as Record<string, string[]> | undefined)
-                ?.delete_adopted_volumes?.[0] ??
-            (body.error as string | undefined) ??
-            trans('Couldn’t remove it.');
+        removeError.value = reasonIn(body) ?? trans('Couldn’t remove it.');
     }
 }
 
@@ -1727,6 +1796,43 @@ const focusRing =
                             @update:model-value="saveSnapshotBefore"
                         />
                     </label>
+                    <div
+                        v-if="app.deployOnPush"
+                        class="flex w-full flex-wrap items-center gap-2.5 text-[13px] text-(--ds-text-secondary)"
+                    >
+                        <label class="flex items-center gap-2.5">
+                            {{ ' ' + $t('Deploy each push to') }}
+                            <Input
+                                v-model="pushBranch"
+                                class="h-8 w-36 font-mono text-xs"
+                                :aria-label="$t('Branch')"
+                                :disabled="!canManage"
+                                spellcheck="false"
+                                @blur="savePushBranch"
+                                @keydown.enter.prevent="savePushBranch"
+                            />
+                            <ToggleSwitch
+                                v-model="deployOnPush"
+                                :label="$t('Deploy each push')"
+                                :disabled="!canManage"
+                                @update:model-value="saveDeployOnPush"
+                            />
+                        </label>
+                        <span
+                            v-if="pushBranchError"
+                            class="text-xs text-(--ds-red)"
+                            >{{ pushBranchError }}</span
+                        >
+                        <span v-else class="text-xs text-(--ds-text-faint)">{{
+                            deployOnPush
+                                ? $t(
+                                      'Each push deploys with the settings it has now. Needs the GitHub app on the repository.',
+                                  )
+                                : $t(
+                                      'Turn on to deploy every push without a workflow.',
+                                  )
+                        }}</span>
+                    </div>
                     <label
                         v-if="snapshotBefore"
                         class="flex w-full flex-wrap items-center gap-2.5 text-[13px] text-(--ds-text-secondary)"
@@ -1894,7 +2000,7 @@ const focusRing =
                     :series="[
                         {
                             label: 'CPU',
-                            color: '#60A5FA',
+                            color: themeColour('--ds-chart', '#60A5FA'),
                             values: history.map((p) => p.cpu),
                         },
                     ]"
@@ -2023,7 +2129,7 @@ const focusRing =
                     {{ ' ' + $t('Fetching logs…') + ' ' }}
                 </p>
                 <p v-else-if="logsJob.error" class="px-4 text-(--ds-red)">
-                    {{ logsJob.error.message }}
+                    {{ jobReason(logsJob.error, $t('That didn’t finish.')) }}
                 </p>
                 <p
                     v-else-if="logs.length === 0"
@@ -2989,7 +3095,13 @@ const focusRing =
                                         {{ line }}
                                     </div>
                                     <p v-if="job.error" class="text-(--ds-red)">
-                                        {{ job.error.message }}
+                                        {{
+                                            jobReason(
+                                                job.error,
+                                                $t('That didn’t finish.'),
+                                                false,
+                                            )
+                                        }}
                                     </p>
                                 </div>
                             </div>

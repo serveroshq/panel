@@ -338,3 +338,33 @@ test('a service that stops or keeps restarting alerts, but not one stopped on pu
 
     expect(Activity::query()->pluck('action')->all())->toBe(['service.down', 'service.up', 'service.crash_loop']);
 });
+
+test('the open incident is found even when a newer one was already resolved', function () {
+    $monitor = makeMonitor(monitorWorkspace(), ['status' => 'down']);
+    $open = $monitor->incidents()->create(['started_at' => now()->subHour(), 'cause' => 'Still down']);
+    $monitor->incidents()->create(['started_at' => now(), 'resolved_at' => now(), 'cause' => 'Already fixed']);
+
+    expect($monitor->fresh()->openIncident?->id)->toBe($open->id)
+        ->and($monitor->fresh()->load('openIncident')->openIncident?->id)->toBe($open->id);
+});
+
+test('the newest open incident is returned when several are open', function () {
+    $monitor = makeMonitor(monitorWorkspace(), ['status' => 'down']);
+    $monitor->incidents()->create(['started_at' => now()->subHours(2), 'cause' => 'Oldest']);
+    $newest = $monitor->incidents()->create(['started_at' => now()->subHour(), 'cause' => 'Newest open']);
+
+    expect($monitor->fresh()->openIncident?->id)->toBe($newest->id);
+});
+
+test('recovery closes the open incident even when a newer one is resolved', function () {
+    Http::fake(['*' => Http::response('ok')]);
+    $monitor = makeMonitor(monitorWorkspace(), ['status' => 'down', 'next_check_at' => now()->subSecond()]);
+    $open = $monitor->incidents()->create(['started_at' => now()->subHour(), 'cause' => 'Still down']);
+    $monitor->incidents()->create(['started_at' => now(), 'resolved_at' => now(), 'cause' => 'Already fixed']);
+
+    runMonitor($monitor);
+
+    expect($monitor->fresh()->status)->toBe('up')
+        ->and($open->fresh()->resolved_at)->not->toBeNull()
+        ->and($monitor->fresh()->openIncident)->toBeNull();
+});

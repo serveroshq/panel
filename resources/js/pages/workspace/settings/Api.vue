@@ -29,6 +29,7 @@ import SubmitButton from '@/components/workspace/SubmitButton.vue';
 import Tile from '@/components/workspace/Tile.vue';
 import { timeAgo } from '@/lib/timeAgo';
 import type { Workspace } from '@/types';
+import { describe, errorMessage } from '@/lib/errors';
 
 type Key = {
     id: number;
@@ -137,14 +138,15 @@ async function createKey(): Promise<void> {
                 Object.entries(body.errors ?? {}).map(([k, v]) => [k, v[0]]),
             );
             if (!body.errors)
-                keyErrors.value.name =
-                    body.message ?? trans('Couldn’t make the key.');
+                keyErrors.value.name = describe(response.status, body);
             if (keyErrors.value.code) codeAsked.value = true;
             keyCode.value = '';
             return;
         }
         created.value = body.secret;
         router.reload({ only: ['keys', 'consoleUnlocked'] });
+    } catch (cause) {
+        keyErrors.value = { name: errorMessage(cause) };
     } finally {
         creating.value = false;
     }

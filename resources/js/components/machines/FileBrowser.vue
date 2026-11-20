@@ -41,6 +41,7 @@ import AppButton from '@/components/workspace/AppButton.vue';
 import DangerButton from '@/components/workspace/DangerButton.vue';
 import SubmitButton from '@/components/workspace/SubmitButton.vue';
 import { edit as securityEdit } from '@/routes/security';
+import { describe, errorMessage, jobReason } from '@/lib/errors';
 
 export type FilePlace = { label: string; path: string };
 
@@ -123,12 +124,8 @@ async function job(
     const sent = await call('POST', base, { op, path, content });
 
     if (!sent.ok) {
-        const errors = sent.body.errors as Record<string, string[]> | undefined;
-
         throw new FileJobError(
-            (errors && Object.values(errors)[0]?.[0]) ??
-                (sent.body.error as string | undefined) ??
-                trans('That didn’t work.'),
+            describe(sent.status, sent.body),
             sent.body.code as string | undefined,
         );
     }
@@ -148,15 +145,21 @@ async function job(
         const state = status.body.state as string | undefined;
 
         if (!status.ok || !state) {
-            throw new FileJobError(trans('Couldn’t check on it. Try again.'));
+            throw new FileJobError(
+                status.ok
+                    ? trans('Couldn’t check on it. Try again.')
+                    : describe(status.status, status.body),
+            );
         }
         if (state === 'succeeded') {
             return (status.body.result as Record<string, unknown>) ?? {};
         }
         if (FINISHED.includes(state)) {
             throw new FileJobError(
-                (status.body.error as { message?: string } | null)?.message ??
+                jobReason(
+                    status.body.error,
                     trans('The machine couldn’t do that.'),
+                ),
             );
         }
     }
@@ -259,13 +262,7 @@ async function unlock(): Promise<void> {
             code: unlockCode.value,
         });
         if (!response.ok) {
-            const errors = response.body.errors as
-                | Record<string, string[]>
-                | undefined;
-            unlockError.value =
-                errors?.code?.[0] ??
-                (response.body.error as string | undefined) ??
-                trans('Couldn’t unlock.');
+            unlockError.value = describe(response.status, response.body);
             unlockCode.value = '';
 
             return;
@@ -278,6 +275,8 @@ async function unlock(): Promise<void> {
                 then?.();
             },
         });
+    } catch (error) {
+        unlockError.value = errorMessage(error);
     } finally {
         unlocking.value = false;
     }
@@ -296,7 +295,7 @@ function handle(error: unknown, retry: () => void): string | null {
         return null;
     }
 
-    return error instanceof Error ? error.message : trans('That didn’t work.');
+    return errorMessage(error);
 }
 
 const dir = ref<string | null>(props.places[0]?.path ?? null);

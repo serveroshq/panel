@@ -310,7 +310,7 @@ final class ArrangeStatusPage extends Tool
             $notes[] = 'Not on the page (nothing shown in '.(count($empty) === 1 ? 'it' : 'them').'): '.implode(', ', array_map(fn ($g) => "“{$g['name']}”", $empty)).'.';
         }
         if (! $context->workspace->hasStatusPages()) {
-            $notes[] = 'Status pages come with Pro and Business: this page can’t be published on the current plan.';
+            $notes[] = 'Status pages come with Pro and Scale: this page can’t be published on the current plan.';
         } elseif (! $page->enabled) {
             $notes[] = 'The page is switched off, so visitors don’t see this yet. update_status_page with enabled true publishes it (check with the person first).';
         }

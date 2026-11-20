@@ -58,6 +58,7 @@ class DocsMarkdown
         $environment->addExtension(new CommonMarkCoreExtension);
         $environment->addExtension(new GithubFlavoredMarkdownExtension);
         $environment->addExtension(new HeadingPermalinkExtension);
+        $environment->addRenderer(Image::class, new DocsVideoRenderer, 10);
         $environment->addEventListener(DocumentParsedEvent::class, function (DocumentParsedEvent $event): void {
             foreach ($event->getDocument()->iterator() as $node) {
                 if ($node instanceof Image) {

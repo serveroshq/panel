@@ -5,6 +5,7 @@ use App\Mcp\Tools;
 return [
     'groups' => [
         Tools\WorkspaceTools::class,
+        Tools\ThemeTools::class,
         Tools\MachineTools::class,
         Tools\ServiceTools::class,
         Tools\DeployTools::class,
@@ -12,6 +13,7 @@ return [
         Tools\MonitorTools::class,
         Tools\StatusPageTools::class,
         Tools\WorkflowTools::class,
+        Tools\AgentTools::class,
         Tools\BackupTools::class,
         Tools\LogTools::class,
         Tools\TeamTools::class,

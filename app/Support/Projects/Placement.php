@@ -70,7 +70,7 @@ final class Placement
     /** @return list<array<string, mixed>> */
     public static function containers(Machine $machine, string $name): array
     {
-        $release = '/^serveros-'.preg_quote($name, '/').'-[0-9a-f]{7,12}$/';
+        $release = '/^serveros-'.preg_quote($name, '/').'-[0-9a-f]{7,12}(?:-b)?$/';
         $found = [];
         foreach ($machine->inventory['services'] ?? [] as $service) {
             if (! is_array($service)) {

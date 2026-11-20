@@ -25,7 +25,7 @@ final class ListStatusPages extends Tool
     public function description(): string
     {
         return 'Lists the workspace’s status pages: for each machine (by name), whether it has a page (`exists`), whether it’s switched on (`enabled`) and actually served (`live`: on, on a plan that has status pages), public or members-only, its address (slug, URL, badge and JSON URLs), title, how many services and monitors it shows and its headline right now; '
-            .'and the workspace’s fleet page, one page with a section per machine (Business). Machines without a page are listed with exists false. '
+            .'and the workspace’s fleet page, one page with a section per machine (Scale). Machines without a page are listed with exists false. '
             .'Use get_status_page for one machine’s page in full and get_fleet_status_page for the fleet page.';
     }
 
@@ -99,7 +99,7 @@ final class ListStatusPages extends Tool
                     'available' => $workspace->hasFleetStatusPage(),
                     'note' => $workspace->hasFleetStatusPage()
                         ? 'No fleet page yet: update_fleet_status_page makes one.'
-                        : (Edition::selfHosted() ? 'One status page for every machine needs a ServerOS license (Settings › License).' : 'One status page for every machine comes with Business.'),
+                        : (Edition::selfHosted() ? 'One status page for every machine needs a ServerOS license (Settings › License).' : 'One status page for every machine comes with Scale.'),
                     'settingsUrl' => $context->url('/settings/status-page'),
                 ]
                 : [

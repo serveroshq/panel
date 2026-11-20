@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import AppButton from '@/components/workspace/AppButton.vue';
 import SubmitButton from '@/components/workspace/SubmitButton.vue';
 import ToggleSwitch from '@/components/workspace/ToggleSwitch.vue';
+import { describe, errorMessage } from '@/lib/errors';
 
 const props = defineProps<{
     alerts: { email: boolean; webhook: string | null; muted?: string[] };
@@ -102,21 +103,15 @@ async function sendTest(): Promise<void> {
             },
             body: JSON.stringify({ webhook: form.webhook }),
         });
-        const body = await response.json();
+        const body = await response.json().catch(() => ({}));
 
         test.value = response.ok
             ? body.ok
                 ? { ok: true, message: trans('Sent. Check the channel.') }
                 : { ok: false, message: body.error }
-            : {
-                  ok: false,
-                  message:
-                      body.errors?.webhook?.[0] ??
-                      body.message ??
-                      trans('Couldn’t send it.'),
-              };
-    } catch {
-        test.value = { ok: false, message: trans('Couldn’t send it.') };
+            : { ok: false, message: describe(response.status, body) };
+    } catch (cause) {
+        test.value = { ok: false, message: errorMessage(cause) };
     } finally {
         testing.value = false;
     }

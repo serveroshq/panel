@@ -22,7 +22,9 @@ class AssistantController extends Controller
     {
         $data = $request->validate([
             'chat' => ['nullable', 'string', 'uuid'],
-            'message' => ['required', 'string', 'max:6000'],
+            'message' => ['required_without:images', 'nullable', 'string', 'max:6000'],
+            'images' => ['nullable', 'array', 'max:'.AssistantAgent::IMAGES_PER_MESSAGE],
+            'images.*' => ['string', 'max:'.(int) ceil(AssistantAgent::IMAGE_BYTES * 4 / 3) + 40, 'regex:/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+\/=]+$/'],
             'path' => ['nullable', 'string', 'max:300'],
             'model' => ['nullable', 'string', 'max:100', 'regex:/^(anthropic|openai|custom):[A-Za-z0-9._:\/\[\]-]{1,80}$/'],
         ]);
@@ -39,8 +41,24 @@ class AssistantController extends Controller
             return response()->json(['error' => $why, 'allowance' => AssistantAllowance::for($workspace)], 429);
         }
         $chat = AssistantAgent::reload($chat);
+        $images = [];
+        foreach ($data['images'] ?? [] as $url) {
+            [$head, $body] = explode(',', $url, 2);
+            $binary = base64_decode($body, true);
+            if ($binary === false || strlen($binary) > AssistantAgent::IMAGE_BYTES || @getimagesizefromstring($binary) === false) {
+                $lock->release();
 
-        return $this->stream($lock, $workspace, fn (callable $emit) => $agent->ask($chat, $workspace, $user, trim($data['message']), $data['path'] ?? null, $emit, $data['model'] ?? null));
+                return response()->json(['error' => 'One of those images couldn’t be read. Try a PNG, JPEG or WebP under 4 MB.'], 422);
+            }
+            $images[] = ['type' => substr($head, 5, -7), 'data' => $body];
+        }
+        if (count($chat['images'] ?? []) + count($images) > AssistantAgent::IMAGES_PER_CHAT) {
+            $lock->release();
+
+            return response()->json(['error' => 'This chat has all the images it can take. Start a new chat to send more.'], 422);
+        }
+
+        return $this->stream($lock, $workspace, fn (callable $emit) => $agent->ask($chat, $workspace, $user, trim((string) ($data['message'] ?? '')), $data['path'] ?? null, $emit, $data['model'] ?? null, $images));
     }
 
     public function models(Workspace $workspace, AiProviders $providers): JsonResponse

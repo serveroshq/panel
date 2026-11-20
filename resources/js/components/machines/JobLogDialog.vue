@@ -10,7 +10,10 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import AppButton from '@/components/workspace/AppButton.vue';
+import { usePage } from '@inertiajs/vue3';
+import { appButtonClasses } from '@/lib/appButton';
 import SubmitButton from '@/components/workspace/SubmitButton.vue';
+import { describe, errorMessage, jobReason } from '@/lib/errors';
 
 export type DaemonJob = {
     id: string;
@@ -46,6 +49,10 @@ const props = defineProps<{
     machineId: number;
     canManage: boolean;
 }>();
+
+// Agents can pick up a failed job with its log, when they're turned on.
+const agentsPage = usePage<{ agentsPreview?: boolean }>();
+const agentsPreview = computed(() => agentsPage.props.agentsPreview === true);
 
 const copiedInstall = ref(false);
 function copyInstall(): void {
@@ -153,7 +160,7 @@ async function post(action: 'retry' | 'abandon'): Promise<string | null> {
     const body = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-        error.value = body.error ?? trans('That didn’t work. Try again.');
+        error.value = describe(response.status, body);
 
         return null;
     }
@@ -175,6 +182,8 @@ async function retry(): Promise<void> {
         if (jobId) {
             emit('retried', jobId);
         }
+    } catch (cause) {
+        error.value = errorMessage(cause);
     } finally {
         busy.value = null;
     }
@@ -214,7 +223,7 @@ async function installAndRetry(): Promise<void> {
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok || !body.jobId) {
-            error.value = body.error ?? trans('That didn’t work. Try again.');
+            error.value = describe(response.status, body);
 
             return;
         }
@@ -245,7 +254,7 @@ async function installAndRetry(): Promise<void> {
             ) {
                 error.value = status?.error?.message
                     ? trans('The install didn’t work: :message', {
-                          message: String(status.error.message),
+                          message: jobReason(status.error, ''),
                       })
                     : trans(
                           'The install didn’t work. Try the command above on the machine instead.',
@@ -260,6 +269,8 @@ async function installAndRetry(): Promise<void> {
         if (jobId) {
             emit('retried', jobId);
         }
+    } catch (cause) {
+        error.value = errorMessage(cause);
     } finally {
         installing.value = null;
     }
@@ -277,6 +288,8 @@ async function stopWaiting(): Promise<void> {
         if (await post('abandon')) {
             emit('changed');
         }
+    } catch (cause) {
+        error.value = errorMessage(cause);
     } finally {
         busy.value = null;
     }
@@ -402,7 +415,9 @@ async function stopWaiting(): Promise<void> {
                         {{
                             job.explanation?.cause ??
                             job.error.message ??
-                            $t('The deploy failed.')
+                            (job.kind === 'deploy'
+                                ? $t('The deploy failed.')
+                                : $t('That didn’t finish.'))
                         }}
                     </p>
                     <div
@@ -533,6 +548,13 @@ async function stopWaiting(): Promise<void> {
                 >
                     {{ busy === 'stop' ? $t('Stopping…') : $t('Stop waiting') }}
                 </AppButton>
+                <a
+                    v-if="failed && canManage && agentsPreview"
+                    :href="`/agents?from=job:${job.id}`"
+                    :class="appButtonClasses('secondary', 'sm')"
+                >
+                    {{ $t('Fix with an agent') }}
+                </a>
                 <AppButton size="sm" variant="quiet" @click="open = false">
                     {{ ' ' + $t('Close') + ' ' }}
                 </AppButton>

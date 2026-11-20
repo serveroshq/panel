@@ -18,6 +18,8 @@ function unbranded(): void
     config()->set('app.name', 'ServerOS');
     config()->set('app.url', 'https://panel.example.com');
     config()->set('app.domain', 'panel.example.com');
+    config()->set('serveros.mail_links', null);
+    config()->set('serveros.mail_socials', null);
 }
 
 test('an install that names nobody shows no company or terms, and signs its emails with its own name and address', function () {
@@ -26,7 +28,7 @@ test('an install that names nobody shows no company or terms, and signs its emai
     $this->get(route('login'))->assertInertia(fn (Assert $page) => $page
         ->where('brand', ['company' => null, 'terms' => null, 'privacy' => null, 'source' => 'https://github.com/serveroshq/panel']));
 
-    expect(brandFooter())->toContain('ServerOS &middot; <a href="https://panel.example.com" style="color:#5E5E6A; text-decoration:none;">panel.example.com</a>')
+    expect(brandFooter())->toContain('<a href="https://panel.example.com" style="color:#8A8A84; text-decoration:underline;">panel.example.com</a>')->toContain('&copy; '.now()->year.' ServerOS</p>')
         ->not->toContain('ServerOS Cloud Ltd')
         ->not->toContain('serveros.com');
 
@@ -44,7 +46,7 @@ test('a company, its address and its terms show where serveros.com’s always di
     $this->get(route('login'))->assertInertia(fn (Assert $page) => $page
         ->where('brand', ['company' => 'Example Hosting Ltd', 'terms' => '/terms', 'privacy' => 'https://example.com/privacy', 'source' => null]));
 
-    expect(brandFooter())->toContain('Example Hosting Ltd &middot; <a href="https://panel.example.com" style="color:#5E5E6A; text-decoration:none;">example.com</a>');
+    expect(brandFooter())->toContain('<a href="https://panel.example.com" style="color:#8A8A84; text-decoration:underline;">example.com</a>')->toContain('&copy; '.now()->year.' Example Hosting Ltd · 1 Example Street, London');
 
     expect(AgentSpec::script())->toContain('${SERVEROS_AGENT_AUTHOR_EMAIL:-bot@example.com}');
 });

@@ -33,6 +33,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string|null $uid
  * @property string|null $certificate_serial
  * @property string|null $daemon_version
+ * @property string|null $proxy caddy, nginx, apache, traefik or none: what serves its app domains
  * @property CarbonImmutable|null $last_seen_at
  * @property CarbonImmutable|null $connected_at when the daemon last said hello (connected)
  * @property CarbonImmutable|null $disconnected_at
@@ -69,19 +70,23 @@ use Illuminate\Support\Facades\Storage;
  * @property array{id: string|null, version_id: string|null, pretty_name: string|null}|null $os_release
  * @property bool $updates_complete false when the list came from an older daemon's capped lines
  * @property CarbonImmutable|null $vulns_scanned_at when its waiting updates were last matched against known vulnerabilities
+ * @property string|null $hosted_by the package that runs it for the workspace (ServerOS's agent machines); it doesn't use the machine allowance
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
 #[Fillable(['name', 'ip_address', 'provider', 'environment', 'services_count', 'memory_used_mb', 'cpu_percent', 'last_backup_at'])]
 class Machine extends Model
 {
+    /** The reverse proxies a deploy can pick, by name, with how people write them. */
+    public const PROXIES = ['caddy' => 'Caddy', 'nginx' => 'nginx', 'apache' => 'Apache', 'traefik' => 'Traefik'];
+
     /** @use HasFactory<MachineFactory> */
     use HasFactory;
 
     protected static function booted(): void
     {
         static::creating(function (Machine $machine) {
-            if (! $machine->workspace->canAddMachine()) {
+            if ($machine->hosted_by === null && ! $machine->workspace->canAddMachine()) {
                 throw MachineLimitReached::for($machine->workspace);
             }
         });

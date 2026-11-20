@@ -51,9 +51,20 @@ const canManageBilling = computed(
         v-if="message"
         class="flex min-h-11 shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-1.5 font-ui text-[13px]/5"
         :class="
-            message.tone === 'urgent'
-                ? 'bg-(--ds-amber-bg) text-(--ds-amber-strong)'
-                : 'bg-(--ds-panel) text-(--ds-text-secondary)'
+            message.tone === 'brand'
+                ? 'bg-[linear-gradient(90deg,#1621D1,#2B45E3)] text-white'
+                : message.tone === 'urgent'
+                  ? 'bg-(--ds-amber-bg) text-(--ds-amber-strong)'
+                  : 'bg-(--ds-panel) text-(--ds-text-secondary)'
+        "
+        :style="
+            message.image
+                ? {
+                      backgroundImage: `linear-gradient(rgb(10 16 110 / .35), rgb(10 16 110 / .35)), url(${message.image})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center 62%',
+                  }
+                : undefined
         "
         role="status"
     >
@@ -81,8 +92,15 @@ const canManageBilling = computed(
             </button>
             {{ $t('for :offer.', { offer: message.promo.offer }) + ' ' }}
         </span>
+        <a
+            v-if="message.external && message.href"
+            :href="message.href"
+            class="inline-flex h-7 items-center rounded-md bg-white px-2.5 text-[13px] font-medium text-[#1621D1] shadow-[0_1px_2px_rgb(0_0_0/.2)] transition-colors hover:bg-white/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        >
+            {{ message.action }}
+        </a>
         <Link
-            v-if="billingHref && (canManageBilling || message.href)"
+            v-else-if="billingHref && (canManageBilling || message.href)"
             :href="billingHref"
             :class="
                 appButtonClasses(

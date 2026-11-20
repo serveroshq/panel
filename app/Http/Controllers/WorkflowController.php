@@ -71,7 +71,7 @@ class WorkflowController extends Controller
     {
         Gate::authorize('manageMachines', $workspace);
         if (! $workspace->hasAutomations()) {
-            throw ValidationException::withMessages(['template' => 'Workflows come with Pro. Choose Pro or Business to use them.']);
+            throw ValidationException::withMessages(['template' => 'Workflows come with Pro. Choose Pro or Scale to use them.']);
         }
         if ($workspace->workflows()->count() >= 100) {
             throw ValidationException::withMessages(['template' => 'A workspace can have 100 workflows.']);
@@ -154,7 +154,7 @@ class WorkflowController extends Controller
         $graph = WorkflowSteps::clean($data['graph']);
         $problems = WorkflowSteps::problems($graph, $workspace);
         if ($data['enabled'] && ! $workspace->hasAutomations()) {
-            throw ValidationException::withMessages(['enabled' => 'Workflows come with Pro. Choose Pro or Business to turn one on.']);
+            throw ValidationException::withMessages(['enabled' => 'Workflows come with Pro. Choose Pro or Scale to turn one on.']);
         }
         if ($data['enabled'] && $problems !== []) {
             throw ValidationException::withMessages(['enabled' => 'Fix the steps marked with a warning before turning it on.']);

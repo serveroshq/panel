@@ -22,7 +22,7 @@ final class ListWorkflows extends Tool
     public function description(): string
     {
         return 'Lists the workspace’s workflows (automations: a trigger and steps), by name, like the Workflows page: id, name, description, whether it’s on (enabled), its trigger (the event, and in words like “Every day at 03:00 UTC” or “A monitor goes down: Shop”), how many steps, its last run (id, state, time), runs and failed runs in the last 7 days, and when it runs next (scheduled ones that are on). '
-            .'`planAllows` says whether the plan includes workflows (Pro or Business). Use get_workflow for one workflow’s steps and problems, list_workflow_runs for its runs, and list_workflow_templates to start a new one.';
+            .'`planAllows` says whether the plan includes workflows (Pro or Scale). Use get_workflow for one workflow’s steps and problems, list_workflow_runs for its runs, and list_workflow_templates to start a new one.';
     }
 
     public function inputSchema(): array

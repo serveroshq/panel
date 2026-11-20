@@ -21,6 +21,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { describe, errorMessage, jobReason } from '@/lib/errors';
 
 const props = defineProps<{
     machineId: number;
@@ -135,15 +136,11 @@ async function change(
         });
         const body = await response.json().catch(() => ({}));
         if (response.status !== 202) {
-            throw new Error(
-                body.error ??
-                    body.message ??
-                    trans('That didn’t work. Try again.'),
-            );
+            throw new Error(describe(response.status, body));
         }
         await follow(body.jobId, key, action);
     } catch (e) {
-        toast.error(e instanceof Error ? e.message : String(e));
+        toast.error(errorMessage(e));
     } finally {
         busy.value = null;
     }
@@ -199,10 +196,12 @@ function follow(
                     );
                     reject(
                         new Error(
-                            job.error?.message ??
+                            jobReason(
+                                job.error,
                                 trans('The machine didn’t change :key.', {
                                     key: String(key),
                                 }),
+                            ),
                         ),
                     );
 

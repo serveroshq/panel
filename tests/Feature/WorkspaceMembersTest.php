@@ -131,5 +131,5 @@ test('starter workspaces cannot use staff roles', function () {
 
     $this->actingAs($workspace->owner)
         ->patch(membersUrl($workspace, "/{$admin->id}"), ['role' => 'member'])
-        ->assertSessionHasErrors(['role' => 'Member and Viewer roles are on Pro and Business.']);
+        ->assertSessionHasErrors(['role' => 'Member and Viewer roles are on Pro and Scale.']);
 });

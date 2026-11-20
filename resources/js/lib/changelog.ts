@@ -8,6 +8,7 @@ export type ChangelogCard = {
     categoryLabel: string;
     summary: string;
     imageUrl: string | null;
+    imageIsVideo?: boolean;
     linkUrl: string | null;
     linkLabel: string | null;
     publishedAt: string | null;

@@ -18,6 +18,7 @@ use App\Support\Databases\DatabaseConsole;
 use App\Support\Deploys\AppReleases;
 use App\Support\Deploys\AppVersions;
 use App\Support\Deploys\ContainerNames;
+use App\Support\Deploys\DeployOnPush;
 use App\Support\Deploys\ServiceLabels;
 use App\Support\Files\FileJobs;
 use App\Support\Machines\ServiceClones;
@@ -26,6 +27,7 @@ use App\Support\Projects\Placement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -95,7 +97,7 @@ class MachineServiceController extends Controller
                         'state' => $job->state,
                         'log' => $hidden ? [] : ($job->log ?? []),
                         'result' => $hidden ? null : $job->result,
-                        'error' => $job->error,
+                        'error' => $hidden && is_array($job->error) ? Arr::except($job->error, ['output_tail']) : $job->error,
                         'createdAt' => $job->created_at?->toIso8601String(),
                     ];
                 }),
@@ -110,6 +112,7 @@ class MachineServiceController extends Controller
                     || (DeploySource::fromRepoUrl($deploy->command['job']['repo'] ?? null)?->usable() ?? false),
                 'deployedAt' => $deploy->created_at?->toIso8601String(),
                 'snapshotBefore' => $machine->snapshotsBeforeDeploy($deploy->service),
+                'deployOnPush' => DeployOnPush::repoName($deploy->command['job']['repo'] ?? null) === null ? null : DeployOnPush::setting($machine, (string) $deploy->service),
                 'database' => AppVersionController::databaseProps($machine, $deploy),
                 'versions' => array_map(fn (array $v) => [
                     'commit' => $v['commit'],

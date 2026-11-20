@@ -14,6 +14,7 @@ import type {
     StatusComponent,
     StatusReport,
 } from '@/components/status/status';
+import { describe, errorMessage } from '@/lib/errors';
 
 const props = defineProps<{
     status: StatusReport;
@@ -203,12 +204,10 @@ async function subscribe(): Promise<void> {
         subscribeState.value = response.ok ? 'sent' : 'failed';
         subscribeMessage.value = response.ok
             ? trans('Check your inbox for a link to confirm.')
-            : (json.errors?.email?.[0] ??
-              json.message ??
-              trans('That didn’t work. Try again.'));
-    } catch {
+            : describe(response.status, json);
+    } catch (cause) {
         subscribeState.value = 'failed';
-        subscribeMessage.value = trans('That didn’t work. Try again.');
+        subscribeMessage.value = errorMessage(cause);
     }
 }
 

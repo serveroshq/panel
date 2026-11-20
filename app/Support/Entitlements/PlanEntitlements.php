@@ -48,7 +48,7 @@ class PlanEntitlements implements Entitlements
             },
             Limit::LogRetentionDays => $plan?->logRetentionDays() ?? 1,
             Limit::LogLinesPerDay => $plan?->logLinesPerDay() ?? 50_000,
-            Limit::ActivityRetentionDays => $workspace->plan?->activityRetentionDays() ?? Activity::KEEP_DAYS,
+            Limit::ActivityRetentionDays => $plan?->activityRetentionDays() ?? Activity::KEEP_DAYS,
             Limit::Monitors => $plan?->monitorLimit() ?? 0,
             Limit::MinMonitorInterval => $plan?->minMonitorInterval() ?? 300,
             Limit::StatusSubscribers => $plan?->statusSubscriberLimit() ?? 0,

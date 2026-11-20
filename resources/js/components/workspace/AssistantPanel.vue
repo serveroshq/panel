@@ -9,6 +9,7 @@ import {
     Minimize2,
     Eye,
     EyeOff,
+    ImagePlus,
     Pause,
     X,
 } from '@lucide/vue';
@@ -21,6 +22,7 @@ import { computed, nextTick, ref, useTemplateRef, watch } from 'vue';
 import type { AssistantStep } from '@/composables/useAssistant';
 import { useAssistant } from '@/composables/useAssistant';
 import AssistantModelPicker from '@/components/workspace/AssistantModelPicker.vue';
+import { imageForAi } from '@/lib/imageForAi';
 import { renderMarkdown } from '@/lib/markdown';
 
 const emit = defineEmits<{ close: [] }>();
@@ -36,10 +38,15 @@ const {
     decide,
     stop,
     clear,
+    composer: draft,
 } = useAssistant();
 
-const draft = ref('');
 const input = useTemplateRef<HTMLTextAreaElement>('input');
+const filePicker = useTemplateRef<HTMLInputElement>('filePicker');
+const MAX_IMAGES = 4;
+const attachments = ref<string[]>([]);
+const attachNote = ref<string | null>(null);
+const dropping = ref(false);
 const scroller = useTemplateRef<HTMLElement>('scroller');
 const copied = ref<number | null>(null);
 
@@ -87,10 +94,52 @@ const allowanceLine = computed(() => {
 });
 
 function ask(text = draft.value) {
-    if (!text.trim() || streaming.value) return;
-    void send(text);
+    if ((!text.trim() && attachments.value.length === 0) || streaming.value)
+        return;
+    void send(text, attachments.value);
     draft.value = '';
+    attachments.value = [];
+    attachNote.value = null;
     void nextTick(resize);
+}
+
+// Reference images: picked, pasted or dropped, shrunk to what a model reads.
+async function attach(files: Iterable<File>) {
+    attachNote.value = null;
+    for (const file of files) {
+        if (!file.type.startsWith('image/')) continue;
+        if (attachments.value.length >= MAX_IMAGES) {
+            attachNote.value = trans('Up to :count images a message.', {
+                count: String(MAX_IMAGES),
+            });
+            break;
+        }
+        try {
+            attachments.value.push(await imageForAi(file));
+        } catch {
+            attachNote.value = trans('That image couldn’t be read.');
+        }
+    }
+}
+
+function onPick(event: Event) {
+    const picker = event.target as HTMLInputElement;
+    void attach(Array.from(picker.files ?? []));
+    picker.value = '';
+}
+
+function onPaste(event: ClipboardEvent) {
+    const files = Array.from(event.clipboardData?.files ?? []).filter((f) =>
+        f.type.startsWith('image/'),
+    );
+    if (files.length === 0) return;
+    event.preventDefault();
+    void attach(files);
+}
+
+function onDrop(event: DragEvent) {
+    dropping.value = false;
+    void attach(Array.from(event.dataTransfer?.files ?? []));
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -324,12 +373,30 @@ const focusRing =
                         'mt-3': item.kind === 'user' && index > 0,
                     }"
                 >
-                    <p
-                        v-if="item.kind === 'user'"
-                        class="assistant-bubble max-w-[85%] rounded-[8px] px-3.5 py-2 text-[13px]/5 whitespace-pre-wrap"
-                    >
-                        {{ item.text }}
-                    </p>
+                    <template v-if="item.kind === 'user'">
+                        <div
+                            v-if="item.images?.length"
+                            class="mb-1.5 flex max-w-[85%] flex-wrap justify-end gap-1.5"
+                        >
+                            <img
+                                v-for="(image, n) in item.images"
+                                :key="n"
+                                :src="image"
+                                :alt="
+                                    $t('Image :n you sent', {
+                                        n: String(n + 1),
+                                    })
+                                "
+                                class="size-20 rounded-[8px] object-cover shadow-[0_0_0_1px_var(--ds-border)]"
+                            />
+                        </div>
+                        <p
+                            v-if="item.text"
+                            class="assistant-bubble max-w-[85%] rounded-[8px] px-3.5 py-2 text-[13px]/5 whitespace-pre-wrap"
+                        >
+                            {{ item.text }}
+                        </p>
+                    </template>
 
                     <p
                         v-else-if="item.kind === 'error'"
@@ -571,9 +638,48 @@ const focusRing =
         <form
             class="mx-auto w-full max-w-[744px] shrink-0 px-3 pt-1 pb-3"
             @submit.prevent="ask()"
+            @dragover.prevent="dropping = true"
+            @dragleave="dropping = false"
+            @drop.prevent="onDrop"
         >
             <div
+                v-if="attachments.length"
+                class="mb-2 flex flex-wrap gap-1.5"
+                :aria-label="$t('Images to send')"
+            >
+                <div
+                    v-for="(image, n) in attachments"
+                    :key="n"
+                    class="group relative"
+                >
+                    <img
+                        :src="image"
+                        :alt="$t('Image :n', { n: String(n + 1) })"
+                        class="size-14 rounded-[8px] object-cover shadow-[0_0_0_1px_var(--ds-border)]"
+                    />
+                    <button
+                        type="button"
+                        class="absolute -top-1.5 -right-1.5 flex size-5 cursor-pointer items-center justify-center rounded-full bg-(--ds-text) text-(--ds-frame) shadow-sm"
+                        :class="focusRing"
+                        :aria-label="
+                            $t('Remove image :n', { n: String(n + 1) })
+                        "
+                        @click="attachments.splice(n, 1)"
+                    >
+                        <X class="size-3" :stroke-width="2.4" />
+                    </button>
+                </div>
+            </div>
+            <p
+                v-if="attachNote"
+                class="mb-2 text-[12px]/4 text-(--ds-text-muted)"
+                role="status"
+            >
+                {{ attachNote }}
+            </p>
+            <div
                 class="assistant-input flex items-end gap-2 rounded-[10px] py-1 pr-1 pl-3"
+                :class="{ 'outline-2 outline-(--ds-ring)': dropping }"
             >
                 <label for="assistant-input" class="sr-only">{{
                     $t('Ask or tell Ask AI what to do')
@@ -591,7 +697,28 @@ const focusRing =
                     class="max-h-37 min-h-8 grow resize-none bg-transparent py-1.5 text-[13px]/5 text-(--ds-text) outline-none placeholder:text-(--ds-text-faint)"
                     @input="resize"
                     @keydown="onKeydown"
+                    @paste="onPaste"
                 />
+                <input
+                    ref="filePicker"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    multiple
+                    class="sr-only"
+                    tabindex="-1"
+                    @change="onPick"
+                />
+                <button
+                    type="button"
+                    class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-[7px] text-(--ds-text-muted) hover:bg-(--ds-hover) hover:text-(--ds-text) disabled:cursor-default disabled:opacity-50"
+                    :class="focusRing"
+                    :disabled="attachments.length >= MAX_IMAGES"
+                    :aria-label="$t('Add images')"
+                    :title="$t('Add images. You can paste or drop them too.')"
+                    @click="filePicker?.click()"
+                >
+                    <ImagePlus class="size-4" :stroke-width="1.9" />
+                </button>
                 <AssistantModelPicker mode="button" />
                 <button
                     v-if="streaming"
@@ -609,7 +736,7 @@ const focusRing =
                     type="submit"
                     class="assistant-key flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-[7px] disabled:cursor-default"
                     :class="focusRing"
-                    :disabled="!draft.trim()"
+                    :disabled="!draft.trim() && attachments.length === 0"
                     :aria-label="$t('Send')"
                     :title="$t('Send')"
                 >

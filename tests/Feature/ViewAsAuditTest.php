@@ -47,6 +47,10 @@ function viewAsSetup(): array
 }
 
 test('a View as is kept from start to the way back', function () {
+    // Frozen to the second, so the 5 minutes below are exactly 300 seconds.
+    // A real clock can tick past a second boundary between the two requests,
+    // and minutes() rounds 301 seconds up to 6.
+    $this->freezeSecond();
     [$boss, $workspace] = viewAsSetup();
     $sam = $workspace->owner;
 

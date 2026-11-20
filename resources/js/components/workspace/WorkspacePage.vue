@@ -10,16 +10,18 @@ defineProps<Props>();
 
 <template>
     <div
+        data-theme-part="page"
         class="workspace-panel @container flex min-h-full w-full flex-col px-4 pt-8 pb-12 font-ui text-(--ds-text) sm:px-8"
         :class="toolbar ? 'gap-4' : 'gap-6'"
     >
-        <header class="flex flex-col gap-5">
+        <header data-theme-part="page-header" class="flex flex-col gap-5">
             <div
                 class="flex flex-wrap items-end justify-between gap-x-6 gap-y-4"
             >
                 <div class="flex min-w-0 flex-1 basis-80 flex-col gap-1">
                     <slot name="title">
                         <h1
+                            data-theme-part="page-title"
                             class="text-[21px]/7 font-semibold tracking-[-0.01em]"
                         >
                             {{ title }}

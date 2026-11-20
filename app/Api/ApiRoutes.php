@@ -49,6 +49,9 @@ final class ApiRoutes
                 ['GET', 'activity', 'get_activity'],
                 ['GET', 'me/notifications', 'get_my_notifications'],
                 ['PATCH', 'me/notifications', 'update_my_notifications'],
+                ['GET', 'theme', 'get_dashboard_theme'],
+                ['PUT', 'theme/draft', 'update_dashboard_theme'],
+                ['POST', 'theme/publish', 'publish_dashboard_theme'],
             ],
             'Machines' => [
                 ['GET', 'machines', 'list_machines'],
@@ -189,6 +192,15 @@ final class ApiRoutes
                 ['GET', 'workflow-runs', 'list_workflow_runs'],
                 ['GET', 'workflow-runs/{run}', 'get_workflow_run'],
                 ['POST', 'workflow-runs/{run}/cancel', 'cancel_workflow_run'],
+            ],
+            'Agents' => [
+                ['GET', 'agents/machines', 'list_agent_machines'],
+                ['GET', 'agents/tasks', 'list_agent_tasks'],
+                ['POST', 'agents/tasks', 'start_agents'],
+                ['GET', 'agents/tasks/{task}', 'get_agent_task'],
+                ['POST', 'agents/tasks/{task}/agents', 'add_agents'],
+                ['POST', 'agents/tasks/{task}/stop', 'stop_agent_task'],
+                ['POST', 'agents/tasks/{task}/agents/{agent}/merge', 'merge_agent_pull_request'],
             ],
             'Backups' => [
                 ['GET', 'backups', 'list_backups'],

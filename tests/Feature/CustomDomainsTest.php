@@ -100,7 +100,7 @@ test('connecting a domain asks Cloudflare and shows the records to add', functio
         ->where('allowed', true));
 });
 
-test('only Business workspaces, only subdomains, never ours', function () {
+test('only Scale workspaces, only subdomains, never ours', function () {
     [$pro, $proUrl] = domainWorkspace(Plan::Pro, 'acme-pro');
     $this->actingAs($pro->owner)->post($proUrl, ['purpose' => 'dashboard', 'hostname' => 'ops.acme.test'])->assertSessionHasErrors('hostname');
 

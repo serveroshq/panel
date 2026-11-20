@@ -241,7 +241,7 @@ const focusRing =
                           )
                         : ' ' +
                           $t(
-                              'One status page for every machine comes with Business. On Pro, each machine can have its own, from its Settings.',
+                              'One status page for every machine comes with Scale. On Pro, each machine can have its own, from its Settings.',
                           ) +
                           ' '
                 }}

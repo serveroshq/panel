@@ -916,6 +916,11 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
 @package-css 'site-sheen.css';
 
 :root {
+    --ds-primary-bg: #1c4bb0;
+    --ds-primary-bg-hover: #2257c7;
+    --ds-primary-border: rgb(59 123 255 / 0.6);
+    --ds-primary-border-hover: #3b7bff;
+    --ds-primary-text: #ffffff;
     --ds-frame: #f7f7f6;
     --ds-panel: #ffffff;
     --ds-card: #ffffff;
@@ -1202,8 +1207,8 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
 
 .ds-choice {
     border-radius: 8px;
-    background-color: #ffffff;
-    color: #3f3f3c;
+    background: var(--ds-choice-bg, #ffffff);
+    color: var(--ds-choice-text, #3f3f3c);
     box-shadow:
         rgb(0 0 0 / 0.06) 0 1px 2px,
         rgb(0 0 0 / 0.08) 0 0 0 1px;
@@ -1211,7 +1216,7 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
     transition-duration: 150ms;
 
     &:hover {
-        color: #151515;
+        color: var(--ds-choice-text-hover, #151515);
     }
 
     &:active {
@@ -1219,8 +1224,8 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
     }
 
     &[aria-checked='true'] {
-        background-color: #f4f4f2;
-        color: #151515;
+        background: var(--ds-choice-selected-bg, #f4f4f2);
+        color: var(--ds-choice-text-hover, #151515);
         box-shadow:
             rgb(0 0 0 / 0.08) 0 1px 2px inset,
             var(--ds-ring) 0 0 0 1px;
@@ -1228,8 +1233,11 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
 }
 
 .dark .ds-choice {
-    background: linear-gradient(180deg, #1c1c1c 50%, #31312e);
-    color: #c8c8c9;
+    background: var(
+        --ds-choice-bg,
+        linear-gradient(180deg, #1c1c1c 50%, #31312e)
+    );
+    color: var(--ds-choice-text, #c8c8c9);
     box-shadow:
         #2a2a2a 0 0.8px 0 inset,
         rgb(255 255 255 / 0.1) 0 1px 2px -1px inset,
@@ -1237,12 +1245,15 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
         rgb(0 0 0 / 0.24) 0 0 0 1px;
 
     &:hover {
-        color: #ffffff;
+        color: var(--ds-choice-text-hover, #ffffff);
     }
 
     &[aria-checked='true'] {
-        background: linear-gradient(180deg, #1a1a1e 50%, #212126);
-        color: #ffffff;
+        background: var(
+            --ds-choice-selected-bg,
+            linear-gradient(180deg, #1a1a1e 50%, #212126)
+        );
+        color: var(--ds-choice-text-hover, #ffffff);
         box-shadow:
             rgb(0 0 0 / 0.32) 0 -1px 2px inset,
             rgb(0 0 0 / 0.2) 0 2px 4px inset,
@@ -1260,7 +1271,7 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
 .ds-modal {
     border: 1px solid rgb(0 0 0 / 0.08);
     border-radius: 12px;
-    background: #ffffff;
+    background: var(--ds-modal-bg, #ffffff);
     box-shadow:
         rgb(255 255 255) 0 1px 0 inset,
         rgb(0 0 0 / 0.06) 0 2px 4px -1px,
@@ -1269,7 +1280,10 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
 
 .dark .ds-modal {
     border-color: rgb(0 0 0 / 0.5);
-    background: linear-gradient(180deg, #161616 50%, #181818);
+    background: var(
+        --ds-modal-bg,
+        linear-gradient(180deg, #161616 50%, #181818)
+    );
     box-shadow:
         #2a2a2a 0 0.8px 0 inset,
         rgb(255 255 255 / 0.1) 0 1px 2px -1px inset,
@@ -1301,8 +1315,8 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
     height: 32px;
     padding: 0 10px;
     border-radius: 8px;
-    background-color: #ffffff;
-    color: #3f3f3c;
+    background: var(--ds-button-bg, #ffffff);
+    color: var(--ds-button-text, #3f3f3c);
     font-size: 14px;
     font-weight: 500;
     box-shadow:
@@ -1310,13 +1324,13 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
         rgb(0 0 0 / 0.08) 0 0 0 1px;
 
     &:hover {
-        color: #151515;
+        color: var(--ds-button-text-hover, #151515);
     }
 }
 
 .dark .ds-raised-button {
-    background-color: #161616;
-    color: rgb(255 255 255 / 0.8);
+    background: var(--ds-button-bg, #161616);
+    color: var(--ds-button-text, rgb(255 255 255 / 0.8));
     box-shadow:
         rgb(255 255 255 / 0.04) 0 1px 0 inset,
         rgb(255 255 255 / 0.04) 0 0 0 1px inset,
@@ -1324,7 +1338,7 @@ html:has(.marketing-page)::-webkit-scrollbar-thumb:active {
         rgb(0 0 0 / 0.12) 0 0 0 1px;
 
     &:hover {
-        color: #ffffff;
+        color: var(--ds-button-text-hover, #ffffff);
     }
 }
 
@@ -2604,8 +2618,8 @@ html.dark
 }
 
 .dark .ds-raised-button {
-    background-color: #151515;
-    color: rgb(255 255 255 / 0.82);
+    background: var(--ds-button-bg, #151515);
+    color: var(--ds-button-text, rgb(255 255 255 / 0.82));
     box-shadow:
         rgb(255 255 255 / 0.05) 0 1px 0 inset,
         rgb(255 255 255 / 0.08) 0 0 0 1px;
@@ -2725,7 +2739,7 @@ html.dark
 }
 
 .dark .ds-bar {
-    background-color: #1d1d1d;
+    background-color: var(--ds-bar-bg, #1d1d1d);
     background-image: linear-gradient(180deg, #262626, #161616);
 }
 
@@ -2743,7 +2757,7 @@ html.dark
 .ds-tray {
     padding: 0 4px 4px;
     border-radius: 14px;
-    background-color: #f1f1ef;
+    background-color: var(--ds-tray-bg, #f1f1ef);
     box-shadow: var(--ds-border) 0 0 0 1px;
 
     & > .ds-tile {
@@ -2752,10 +2766,10 @@ html.dark
 }
 
 .dark .ds-tray {
-    background-color: #141414;
+    background-color: var(--ds-tray-bg, #141414);
 
     & > .ds-tile {
-        --tile-bg: #0f0f0f;
+        --tile-bg: var(--ds-tray-tile-bg, #0f0f0f);
     }
 }
 
@@ -2818,24 +2832,24 @@ html.dark
 }
 
 .dark .ds-tray {
-    background-color: #0f0f0f;
+    background-color: var(--ds-tray-bg, #0f0f0f);
     box-shadow: #1e1e1e 0 0 0 1px;
 
     & > .ds-tile {
-        --tile-bg: #181818;
+        --tile-bg: var(--ds-tray-tile-bg, #181818);
     }
 }
 
 .sidebar-pill--active {
     border-radius: 10px;
-    background-color: var(--ds-frame);
+    background-color: var(--ds-nav-active-bg, var(--ds-frame));
     box-shadow:
         rgb(0 0 0 / 0.06) 0 0 0 1px,
         rgb(0 0 0 / 0.06) 0 1px 2px;
 }
 
 .dark .sidebar-pill--active {
-    background-color: #242424;
+    background-color: var(--ds-nav-active-bg, #242424);
     box-shadow:
         rgb(0 0 0 / 0.5) 0 1px 2px,
         rgb(0 0 0 / 0.35) 0 4px 8px -2px;
@@ -2858,13 +2872,13 @@ html.dark
 }
 
 .dark .ds-tray {
-    background-color: #0f0f0f;
+    background-color: var(--ds-tray-bg, #0f0f0f);
     box-shadow:
         #232323 0 0 0 1px,
         rgb(0 0 0 / 0.55) 0 0 0 1px inset;
 
     & > .ds-tile {
-        --tile-bg: #181818;
+        --tile-bg: var(--ds-tray-tile-bg, #181818);
         --tile-edge: #262626;
         --tile-inset: transparent;
 

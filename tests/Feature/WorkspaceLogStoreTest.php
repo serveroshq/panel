@@ -23,7 +23,7 @@ beforeEach(fn () => $this->withoutVite());
 
 afterEach(fn () => LogStore::flush());
 
-test('only Business workspaces can set it up', function () {
+test('only Scale workspaces can set it up', function () {
     $pro = Workspace::factory()->onPlan(Plan::Pro)->create();
 
     $this->actingAs($pro->owner)->get(logStorageUrl($pro))->assertOk()

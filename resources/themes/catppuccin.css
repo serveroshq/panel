@@ -1,0 +1,207 @@
+/*
+ * name: Catppuccin
+ * description: Latte in light mode, Mocha in dark. Soft pastels with a mauve accent.
+ * credit: catppuccin.com, MIT
+ */
+
+/* Light mode */
+
+html:root {
+    --ds-panel: #dce0e8;
+    --ds-sidebar: #dce0e8;
+    --ds-frame: #e6e9ef;
+    --ds-card: #eff1f5;
+    --ds-field: #eff1f5;
+    --ds-subtle: #e6e9ef;
+    --ds-hover: color-mix(in srgb, #ccd0da 60%, #eff1f5);
+    --ds-row-hover: color-mix(
+        in srgb,
+        color-mix(in srgb, #ccd0da 60%, #eff1f5) 50%,
+        #eff1f5
+    );
+    --ds-active: #ccd0da;
+    --ds-avatar: #ccd0da;
+    --ds-segment-track: #dce0e8;
+    --ds-segment-thumb: #eff1f5;
+    --ds-divider: #ccd0da;
+    --ds-border: #ccd0da;
+    --ds-border-strong: #bcc0cc;
+    --ds-border-stronger: #acb0be;
+    --ds-border-hover: #acb0be;
+    --ds-border-focus: #acb0be;
+    --ds-panel-ring: #ccd0da;
+    --ds-text: #4c4f69;
+    --ds-text-strong: #4c4f69;
+    --ds-text-secondary: #5c5f77;
+    --ds-text-muted: #6c6f85;
+    --ds-text-faint: #8c8fa1;
+    --ds-text-subtle: #8c8fa1;
+    --ds-inverse: #4c4f69;
+    --ds-inverse-text: #eff1f5;
+    --ds-code: #e6e9ef;
+    --ds-ring: #8839ef;
+    --ds-accent: #8839ef;
+    --ds-accent-strong: color-mix(in srgb, #8839ef 82%, #4c4f69);
+    --ds-accent-soft: color-mix(in srgb, #8839ef 60%, #eff1f5);
+    --ds-accent-bg: color-mix(in srgb, #8839ef 14%, #eff1f5);
+    --ds-accent-border: color-mix(in srgb, #8839ef 40%, #eff1f5);
+    --ds-accent-glow: color-mix(in srgb, #8839ef 45%, transparent);
+    --ds-blue: #8839ef;
+    --ds-blue-strong: color-mix(in srgb, #8839ef 82%, #4c4f69);
+    --ds-blue-bg: color-mix(in srgb, #8839ef 14%, #eff1f5);
+    --ds-blue-border: color-mix(in srgb, #8839ef 40%, #eff1f5);
+    --ds-green: #40a02b;
+    --ds-green-strong: color-mix(in srgb, #40a02b 82%, #4c4f69);
+    --ds-green-bg: color-mix(in srgb, #40a02b 14%, #eff1f5);
+    --ds-green-border: color-mix(in srgb, #40a02b 38%, #eff1f5);
+    --ds-amber: #df8e1d;
+    --ds-amber-strong: color-mix(in srgb, #df8e1d 82%, #4c4f69);
+    --ds-amber-bg: color-mix(in srgb, #df8e1d 14%, #eff1f5);
+    --ds-amber-border: color-mix(in srgb, #df8e1d 38%, #eff1f5);
+    --ds-red: #d20f39;
+    --ds-red-strong: color-mix(in srgb, #d20f39 82%, #4c4f69);
+    --ds-red-bg: color-mix(in srgb, #d20f39 14%, #eff1f5);
+    --ds-red-border: color-mix(in srgb, #d20f39 38%, #eff1f5);
+    --ds-scrollbar: #acb0be;
+    --ds-shimmer-base: color-mix(in srgb, #ccd0da 60%, #eff1f5);
+    --ds-shimmer-sheen: color-mix(in srgb, #4c4f69 8%, transparent);
+    --ds-menu: #eff1f5;
+    --ds-menu-icon: #6c6f85;
+    --ds-menu-rule: #ccd0da;
+    --ds-menu-hover: color-mix(in srgb, #ccd0da 60%, #eff1f5);
+    --ds-choice-bg: #eff1f5;
+    --ds-choice-text: #5c5f77;
+    --ds-choice-text-hover: #4c4f69;
+    --ds-choice-selected-bg: color-mix(in srgb, #ccd0da 60%, #eff1f5);
+    --ds-button-bg: #eff1f5;
+    --ds-button-text: #5c5f77;
+    --ds-button-text-hover: #4c4f69;
+    --ds-modal-bg: #eff1f5;
+    --ds-tray-bg: #e6e9ef;
+    --ds-tray-tile-bg: #eff1f5;
+    --ds-nav-active-bg: #eff1f5;
+    --ds-bar-bg: #ccd0da;
+    --ds-primary-bg: #8839ef;
+    --ds-primary-bg-hover: color-mix(in srgb, #8839ef 85%, #4c4f69);
+    --ds-primary-border: color-mix(in srgb, #8839ef 80%, #4c4f69);
+    --ds-primary-border-hover: color-mix(in srgb, #8839ef 70%, #4c4f69);
+    --ds-primary-text: #eff1f5;
+    --ds-chart: #8839ef;
+    --ds-chart-warn: #df8e1d;
+    --ds-chart-hot: #d20f39;
+    --ds-chart-empty: #ccd0da;
+}
+
+html:root .ds-tile,
+html:root .ds-tray > .ds-tile {
+    --tile-bg: #eff1f5;
+    --tile-head: #eff1f5;
+    --tile-inner: #e6e9ef;
+    --tile-edge: #ccd0da;
+    --tile-rule: #ccd0da;
+    --tile-inset: transparent;
+}
+
+html:root .workspace-panel {
+    --primary: #8839ef;
+    --primary-foreground: #eff1f5;
+}
+
+/* Dark mode */
+
+html.dark {
+    --ds-panel: #11111b;
+    --ds-sidebar: #11111b;
+    --ds-frame: #181825;
+    --ds-card: #1e1e2e;
+    --ds-field: #181825;
+    --ds-subtle: #181825;
+    --ds-hover: #313244;
+    --ds-row-hover: color-mix(in srgb, #313244 50%, #1e1e2e);
+    --ds-active: #45475a;
+    --ds-avatar: #45475a;
+    --ds-segment-track: #11111b;
+    --ds-segment-thumb: #45475a;
+    --ds-divider: #313244;
+    --ds-border: #313244;
+    --ds-border-strong: #45475a;
+    --ds-border-stronger: #585b70;
+    --ds-border-hover: #585b70;
+    --ds-border-focus: #585b70;
+    --ds-panel-ring: #313244;
+    --ds-text: #cdd6f4;
+    --ds-text-strong: #cdd6f4;
+    --ds-text-secondary: #bac2de;
+    --ds-text-muted: #a6adc8;
+    --ds-text-faint: #7f849c;
+    --ds-text-subtle: #7f849c;
+    --ds-inverse: #cdd6f4;
+    --ds-inverse-text: #1e1e2e;
+    --ds-code: #181825;
+    --ds-ring: #cba6f7;
+    --ds-accent: #cba6f7;
+    --ds-accent-strong: color-mix(in srgb, #cba6f7 82%, #cdd6f4);
+    --ds-accent-soft: color-mix(in srgb, #cba6f7 60%, #1e1e2e);
+    --ds-accent-bg: color-mix(in srgb, #cba6f7 14%, #1e1e2e);
+    --ds-accent-border: color-mix(in srgb, #cba6f7 40%, #1e1e2e);
+    --ds-accent-glow: color-mix(in srgb, #cba6f7 45%, transparent);
+    --ds-blue: #cba6f7;
+    --ds-blue-strong: color-mix(in srgb, #cba6f7 82%, #cdd6f4);
+    --ds-blue-bg: color-mix(in srgb, #cba6f7 14%, #1e1e2e);
+    --ds-blue-border: color-mix(in srgb, #cba6f7 40%, #1e1e2e);
+    --ds-green: #a6e3a1;
+    --ds-green-strong: color-mix(in srgb, #a6e3a1 82%, #cdd6f4);
+    --ds-green-bg: color-mix(in srgb, #a6e3a1 14%, #1e1e2e);
+    --ds-green-border: color-mix(in srgb, #a6e3a1 38%, #1e1e2e);
+    --ds-amber: #f9e2af;
+    --ds-amber-strong: color-mix(in srgb, #f9e2af 82%, #cdd6f4);
+    --ds-amber-bg: color-mix(in srgb, #f9e2af 14%, #1e1e2e);
+    --ds-amber-border: color-mix(in srgb, #f9e2af 38%, #1e1e2e);
+    --ds-red: #f38ba8;
+    --ds-red-strong: color-mix(in srgb, #f38ba8 82%, #cdd6f4);
+    --ds-red-bg: color-mix(in srgb, #f38ba8 14%, #1e1e2e);
+    --ds-red-border: color-mix(in srgb, #f38ba8 38%, #1e1e2e);
+    --ds-scrollbar: #585b70;
+    --ds-shimmer-base: #313244;
+    --ds-shimmer-sheen: color-mix(in srgb, #cdd6f4 8%, transparent);
+    --ds-menu: #1e1e2e;
+    --ds-menu-icon: #a6adc8;
+    --ds-menu-rule: #313244;
+    --ds-menu-hover: #313244;
+    --ds-choice-bg: #1e1e2e;
+    --ds-choice-text: #bac2de;
+    --ds-choice-text-hover: #cdd6f4;
+    --ds-choice-selected-bg: #313244;
+    --ds-button-bg: #1e1e2e;
+    --ds-button-text: #bac2de;
+    --ds-button-text-hover: #cdd6f4;
+    --ds-modal-bg: #1e1e2e;
+    --ds-tray-bg: #181825;
+    --ds-tray-tile-bg: #1e1e2e;
+    --ds-nav-active-bg: #45475a;
+    --ds-bar-bg: #313244;
+    --ds-primary-bg: #cba6f7;
+    --ds-primary-bg-hover: color-mix(in srgb, #cba6f7 85%, #cdd6f4);
+    --ds-primary-border: color-mix(in srgb, #cba6f7 80%, #cdd6f4);
+    --ds-primary-border-hover: color-mix(in srgb, #cba6f7 70%, #cdd6f4);
+    --ds-primary-text: #11111b;
+    --ds-chart: #cba6f7;
+    --ds-chart-warn: #f9e2af;
+    --ds-chart-hot: #f38ba8;
+    --ds-chart-empty: #313244;
+}
+
+html.dark .ds-tile,
+html.dark .ds-tray > .ds-tile {
+    --tile-bg: #1e1e2e;
+    --tile-head: #1e1e2e;
+    --tile-inner: #181825;
+    --tile-edge: #313244;
+    --tile-rule: #313244;
+    --tile-inset: transparent;
+}
+
+html.dark .workspace-panel {
+    --primary: #cba6f7;
+    --primary-foreground: #11111b;
+}

@@ -13,7 +13,7 @@ final class AppReleases
     /** @return array{app: string, commit: string}|null */
     public static function parse(?string $containerName): ?array
     {
-        if (! preg_match('/^\/?serveros-(.+)-([0-9a-f]{12})$/', (string) $containerName, $match)) {
+        if (! preg_match('/^\/?serveros-(.+)-([0-9a-f]{12})(?:-b)?$/', (string) $containerName, $match)) {
             return null;
         }
 

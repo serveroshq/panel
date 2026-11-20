@@ -19,7 +19,10 @@ class DeploySourcePacker
 
     private const SKIP_FILES = ['.DS_Store', 'Thumbs.db'];
 
-    public function __construct(private RepositoryDetector $detector) {}
+    public function __construct(
+        private RepositoryDetector $detector,
+        private int $maxUnpackedBytes = self::MAX_UNPACKED_BYTES,
+    ) {}
 
     public function pack(DeploySource $source): void
     {
@@ -105,9 +108,12 @@ class DeploySourcePacker
                     continue;
                 }
 
-                $total += $stat['size'];
-                if ($total > self::MAX_UNPACKED_BYTES) {
-                    throw $this->fail('That zip unpacks to more than 4 GB. Leave out node_modules and build folders.');
+                // The size in the zip's header is whatever the uploader wrote there,
+                // so it only turns away honest big zips early. The real limit is the
+                // bytes we write: copy at most one byte past what's left, then check.
+                $remaining = $this->maxUnpackedBytes - $total;
+                if ($stat['size'] > $remaining) {
+                    throw $this->tooBig();
                 }
 
                 File::ensureDirectoryExists(dirname($target));
@@ -116,9 +122,17 @@ class DeploySourcePacker
                 if ($in === false || $out === false) {
                     throw $this->fail('Couldn’t read every file in that zip.');
                 }
-                stream_copy_to_stream($in, $out);
+                $written = stream_copy_to_stream($in, $out, $remaining + 1);
                 fclose($in);
                 fclose($out);
+                if ($written === false) {
+                    throw $this->fail('Couldn’t read every file in that zip.');
+                }
+
+                $total += $written;
+                if ($total > $this->maxUnpackedBytes) {
+                    throw $this->tooBig();
+                }
                 $kept++;
             }
 
@@ -194,6 +208,11 @@ class DeploySourcePacker
         }
 
         return $result->output();
+    }
+
+    private function tooBig(): ValidationException
+    {
+        return $this->fail('That zip unpacks to more than 4 GB. Leave out node_modules and build folders.');
     }
 
     private function fail(string $message): ValidationException

@@ -23,7 +23,7 @@ final class GetFleetStatusPage extends Tool
 
     public function description(): string
     {
-        return 'Returns the workspace’s fleet status page, one page at /status/{slug} with a section for each machine it covers (a Business feature), like Settings → Status page: its settings (enabled, live, public, slug, title, description, notice, showUptime, and whether it covers every machine, including ones connected later, or a chosen list), the page, badge and JSON URLs, '
+        return 'Returns the workspace’s fleet status page, one page at /status/{slug} with a section for each machine it covers (a Scale feature), like Settings → Status page: its settings (enabled, live, public, slug, title, description, notice, showUptime, and whether it covers every machine, including ones connected later, or a chosen list), the page, badge and JSON URLs, '
             .'the connected machines with whether each is on the page and whether it has its own status page settings (those pick which of its services show here, and under what names; a machine without them shows everything it runs), and `preview`, what the page shows right now. '
             .'On the fleet page each machine is one section; a machine’s own sections show as a suffix on the name, like “Shop (Web)”. If there’s no fleet page yet, `exists` is false and this is the draft. Change it with update_fleet_status_page; organise a machine’s part with arrange_status_page.';
     }
@@ -61,7 +61,7 @@ final class GetFleetStatusPage extends Tool
             'note' => match (true) {
                 ! $workspace->hasFleetStatusPage() => Edition::selfHosted()
                     ? 'One status page for every machine needs a ServerOS license (Settings › License). Each machine can still have its own (list_status_pages).'
-                    : 'One status page for every machine comes with Business. On Pro, each machine can have its own (list_status_pages).',
+                    : 'One status page for every machine comes with Scale. On Pro, each machine can have its own (list_status_pages).',
                 ! $page->exists => 'There’s no fleet page yet: these are the settings it would start with. update_fleet_status_page creates it.',
                 ! $page->enabled => 'The fleet page is switched off: visitors get “not found”.',
                 default => null,

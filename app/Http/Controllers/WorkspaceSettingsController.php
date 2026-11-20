@@ -10,6 +10,7 @@ use App\Http\Requests\UpdateWorkspaceRequest;
 use App\Models\Activity;
 use App\Models\GitHubInstallation;
 use App\Models\SocialAccount;
+use App\Models\ThemeShare;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Audit\AuditContext;
@@ -74,12 +75,17 @@ class WorkspaceSettingsController extends Controller
     {
         $name = $workspace->name;
         $logo = $workspace->logo_path;
+        $shares = ThemeShare::query()->where('workspace_id', $workspace->id)->pluck('token');
 
         Activity::record($workspace, 'workspace.delete', $name);
         $workspace->delete();
 
         if ($logo !== null) {
             Storage::disk('public')->delete($logo);
+        }
+        Storage::disk('public')->deleteDirectory('workspace-themes/'.$workspace->id);
+        foreach ($shares as $token) {
+            Storage::disk('public')->deleteDirectory('theme-shares/'.$token);
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => "Deleted {$name}."]);

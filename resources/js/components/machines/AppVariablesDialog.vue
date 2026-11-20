@@ -11,6 +11,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { appButtonClasses } from '@/lib/appButton';
 import { toast } from '@/lib/toast';
+import { describe, networkMessage, responseError } from '@/lib/errors';
 
 type Variables = {
     names: { name: string; from: string | null; build: boolean }[];
@@ -29,7 +30,7 @@ const url = computed(
         `/machines/${props.machineId}/apps/${encodeURIComponent(props.app)}/variables`,
 );
 const variables = ref<Variables | null>(null);
-const failedToLoad = ref(false);
+const failedToLoad = ref<string | null>(null);
 const drafts = ref<{ name: string; value: string; isNew: boolean }[]>([]);
 const removing = ref<Set<string>>(new Set());
 const busy = ref(false);
@@ -44,13 +45,15 @@ function csrf(): string {
 
 async function load(): Promise<void> {
     variables.value = null;
-    failedToLoad.value = false;
+    failedToLoad.value = null;
     const response = await fetch(url.value, {
         credentials: 'same-origin',
         headers: { Accept: 'application/json' },
     }).catch(() => null);
     if (!response?.ok) {
-        failedToLoad.value = true;
+        failedToLoad.value = response
+            ? await responseError(response)
+            : networkMessage();
 
         return;
     }
@@ -123,10 +126,9 @@ async function save(): Promise<void> {
         errors?: Record<string, string[]>;
     } | null;
     if (!response?.ok) {
-        error.value =
-            Object.values(body?.errors ?? {})[0]?.[0] ??
-            body?.message ??
-            trans('Couldn’t save that.');
+        error.value = response
+            ? describe(response.status, body)
+            : networkMessage();
 
         return;
     }
@@ -165,7 +167,7 @@ async function save(): Promise<void> {
                         v-if="failedToLoad"
                         class="py-6 text-center text-[13px] text-(--ds-text-muted)"
                     >
-                        {{ $t('Couldn’t load them.') }}
+                        {{ failedToLoad }}
                     </p>
                     <p
                         v-else-if="variables === null"

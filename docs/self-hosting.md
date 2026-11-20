@@ -32,6 +32,16 @@ The panel answers on the domain, and each workspace on a subdomain of it (`acme.
 
 Installing has two parts: putting ServerOS on the server, then setting it up in your browser with the web installer. Until it's set up, every page of the panel opens the installer, and the installer asks first for a **setup code**: a one-time code only someone who can get into the server can see. Once you finish, the installer is gone for good and the code stops working.
 
+### With your AI app
+
+ServerOS has an MCP server for installing it, at `https://serveros.com/mcp`, with no account. Add it to Claude Code (or any app that takes a remote MCP server):
+
+```sh
+claude mcp add --transport http serveros https://serveros.com/mcp
+```
+
+Then ask: "Install ServerOS on my server." It asks where (a server you reach over SSH, the server you're on, or this computer to try it), the domain and an email, checks the server, your DNS and your firewall from the internet, shows you the install command before it runs it, and checks the panel answers afterwards. Your AI app runs the commands over your own SSH access; passwords and tokens never go through the chat.
+
 ### With Docker (recommended)
 
 On the server:
@@ -49,6 +59,8 @@ git clone https://github.com/serveroshq/panel.git && cd panel
 docker build -f docker/self-hosted/Dockerfile -t serveros/panel:dev .
 sudo bash docker/self-hosted/install.sh --domain=panel.example.com --email=you@example.com --image=serveros/panel --version=dev
 ```
+
+To see whether a server is ready first, without changing anything: `curl -fsSL https://raw.githubusercontent.com/serveroshq/panel/main/docker/self-hosted/install.sh | bash -s -- --check`. It prints the system, memory, disk, Docker, which of ports 80, 443 and 8443 are taken, and the server's public address.
 
 The script installs Docker if it isn't there, writes the settings to `/opt/serveros/.env` (with new keys and passwords), starts ServerOS and waits for it to answer. It takes a few minutes the first time. Its last lines show the setup code.
 
@@ -364,23 +376,19 @@ serveros-panel restart
 - **The browser says the certificate is wrong, or the page won't load.** Check both DNS records point at the server, and that ports 80 and 443 are open: Let's Encrypt checks the name from the internet before it gives a certificate. `serveros-panel logs web` says what it tried.
 - **Machines won't connect.** Port 8443 must be open, and `serveros-panel logs gateway` should show the gateway listening. The install command only works for 15 minutes: make a new one if it's older.
 - **Emails don't arrive.** See [Email](#email); until it's set up, they're only in the log.
+- **"no configuration file provided: not found" when starting ServerOS.** If Docker was installed as a snap (`snap install docker`), snap confinement prevents Docker Compose from reading files in `/opt/serveros`. Either uninstall the snap and install Docker from [Docker's repository](https://get.docker.com) (or `apt`), or install ServerOS into a non-hidden directory under your home folder with `--dir=/home/username/serveros`.
 
 ## Trying it on your own computer
 
-For a look before you put it on a server, run it with Caddy's own certificates instead of Let's Encrypt's. In a folder with `compose.yaml` from `docker/self-hosted`, make a `.env` like this:
+For a look before you put it on a server, install it on your computer with `--local`. It runs on Linux, or on a Mac with Docker Desktop, needs no root, and lives in `~/serveros`:
 
 ```sh
-SERVEROS_DOMAIN=serveros.localhost
-ACME_EMAIL=you@example.com
-SERVEROS_IMAGE=ghcr.io/serveroshq/panel:latest   # or the image you built
-CADDY_GLOBAL_OPTIONS=local_certs
-GATEWAY_PANEL_CA=/gateway/panel-ca.crt
-APP_KEY=base64:...      # head -c 32 /dev/urandom | base64
-DB_PASSWORD=...         # anything long
-DAEMON_GATEWAY_SECRET=... # anything 16 characters or longer
+curl -fsSL https://raw.githubusercontent.com/serveroshq/panel/main/docker/self-hosted/install.sh | bash -s -- --local
 ```
 
-Then `docker compose up -d` and open https://serveros.localhost (your browser will warn about the certificate, since it's Caddy's own). Browsers send every `*.localhost` name to your computer, so workspaces work too.
+Then open https://serveros.localhost in Chrome or Firefox (Safari doesn't open `.localhost` subdomains) and enter the setup code it shows. The certificate comes from Caddy on your computer, so the browser warns about it the first time; the script says how to trust it. Browsers send every `*.localhost` name to your computer, so workspaces work too. Ports 80 and 443 need to be free: stop any other web server on your computer while you try it.
+
+A local panel is for trying ServerOS: machines on the internet can't connect to it. Stop it with `cd ~/serveros && docker compose down`, or remove it with `docker compose down -v` and `rm -rf ~/serveros`.
 
 ## Building the community edition yourself
 

@@ -572,7 +572,7 @@ const focusRing =
             {{
                 ' ' +
                 $t(
-                    'Workflows come with Pro and Business. You can look around and edit; turning one on or running it needs',
+                    'Workflows come with Pro and Scale. You can look around and edit; turning one on or running it needs',
                 )
             }}
             <Link

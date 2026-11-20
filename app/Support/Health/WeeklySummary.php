@@ -59,8 +59,9 @@ class WeeklySummary
         $downtime = $monitors->isEmpty() ? null : MonitorIncident::query()->whereIn('monitor_id', $monitors->modelKeys())->where('started_at', '>=', $since)->count();
         $headline = match (true) {
             $issues !== [] => count($issues).' '.(count($issues) === 1 ? 'thing needs' : 'things need').' attention',
-            $downtime === 0 => 'No downtime this week',
-            default => 'Everything is running',
+            $downtime === null => 'Everything is running',
+            $downtime > 0 => self::count($downtime, 'outage').' this week',
+            default => 'No downtime this week',
         };
 
         return ['headline' => $headline, 'sections' => $sections];

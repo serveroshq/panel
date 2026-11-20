@@ -1,3 +1,5 @@
+import { responseError, statusMessage } from '@/lib/errors';
+
 export type Check = { status: 'ok' | 'warn' | 'fail'; text: string };
 
 function headers(): Record<string, string> {
@@ -30,11 +32,14 @@ export async function postJson<T>(
         body: JSON.stringify(body),
         credentials: 'same-origin',
     });
+    if (!response.ok && response.status !== 422) {
+        throw new Error(await responseError(response));
+    }
 
     try {
         return (await response.json()) as T;
     } catch {
-        throw new Error(`The panel answered ${response.status}.`);
+        throw new Error(statusMessage(response.status));
     }
 }
 
@@ -55,13 +60,7 @@ export async function postLines(
         credentials: 'same-origin',
     });
     if (!response.ok || !response.body) {
-        let message = `The panel answered ${response.status}.`;
-        try {
-            message =
-                ((await response.json()) as { message?: string }).message ??
-                message;
-        } catch {}
-        throw new Error(message);
+        throw new Error(await responseError(response));
     }
 
     const reader = response.body.getReader();

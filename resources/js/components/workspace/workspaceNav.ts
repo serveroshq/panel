@@ -80,6 +80,7 @@ export function useWorkspaceNav(): ComputedRef<WorkspaceNavItem[]> {
     const page = usePage<{
         workspace?: Workspace;
         extensions?: { nav: ExtensionNavItem[] } | null;
+        agentsPreview?: boolean;
     }>();
 
     const settingsNav = useSettingsNav();
@@ -100,6 +101,8 @@ export function useWorkspaceNav(): ComputedRef<WorkspaceNavItem[]> {
                 active: page.component === 'workspace/Home',
                 group: 'start',
             },
+            // Agents is its own side now: the switch at the top of the sidebar.
+
             {
                 key: 'machines',
                 label: trans('Machines'),

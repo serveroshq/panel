@@ -20,6 +20,7 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
@@ -57,6 +58,34 @@ class FortifyServiceProvider extends ServiceProvider
         $this->configureActions();
         $this->configureViews();
         $this->configureRateLimiting();
+        $this->requireConfirmedEmailForSignInMethods();
+    }
+
+    /**
+     * Adding a passkey or two-factor needs a confirmed email, so nobody can
+     * add their own sign-in method to an account made with someone else's
+     * address. Removing them stays open.
+     */
+    private function requireConfirmedEmailForSignInMethods(): void
+    {
+        $this->app->booted(function () {
+            $names = [
+                'passkey.registration-options',
+                'passkey.store',
+                'two-factor.enable',
+                'two-factor.confirm',
+                'two-factor.qr-code',
+                'two-factor.secret-key',
+                'two-factor.recovery-codes',
+                'two-factor.regenerate-recovery-codes',
+            ];
+
+            foreach (Route::getRoutes()->getRoutes() as $route) {
+                if (in_array($route->getName(), $names, true)) {
+                    $route->middleware('verified');
+                }
+            }
+        });
     }
 
     private function configureActions(): void

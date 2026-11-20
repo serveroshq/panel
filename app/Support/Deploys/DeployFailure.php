@@ -3,6 +3,7 @@
 namespace App\Support\Deploys;
 
 use App\Models\DaemonJob;
+use Illuminate\Support\Str;
 
 final class DeployFailure
 {
@@ -15,11 +16,18 @@ final class DeployFailure
      */
     public static function explain(DaemonJob $job): ?array
     {
-        if (! in_array($job->kind, ['deploy', 'rollback'], true) || ! in_array($job->state, ['failed', 'timed_out', 'refused'], true)) {
+        if (! in_array($job->state, ['failed', 'timed_out', 'refused'], true) || $job->kind === 'service_exec') {
             return null;
         }
 
         $error = is_array($job->error) ? $job->error : [];
+
+        if (! in_array($job->kind, ['deploy', 'rollback'], true)) {
+            return self::general(
+                (is_string($error['message'] ?? null) ? $error['message'] : '')."\n".implode("\n", array_slice(array_values(array_filter($job->log ?? [], 'is_string')), -self::LOG_LINES)),
+                $job->state === 'timed_out',
+            );
+        }
 
         return self::fromError(
             is_string($error['phase'] ?? null) ? $error['phase'] : '',
@@ -131,6 +139,16 @@ final class DeployFailure
             ];
         }
 
+        if ($phase === 'proxy' && $has('/\b(nginx|apache2|traefik) is not running and would not start/i')) {
+            $unit = $has('/\bnginx is not running/i') ? 'nginx' : ($has('/\bapache2 is not running/i') ? 'apache2' : 'traefik');
+            $name = ['nginx' => 'nginx', 'apache2' => 'Apache', 'traefik' => 'Traefik'][$unit];
+
+            return [
+                'cause' => "The app is running, but {$name} (the web server that gives it HTTPS) isn’t, so its domain couldn’t be switched on.",
+                'fix' => "Start {$name} on the machine and retry. If it won’t start, something else is probably using port 80 or 443 (“ss -ltnp” shows what), or “journalctl -u {$unit}” says why.",
+                'command' => "systemctl enable --now {$unit}",
+            ];
+        }
         if ($phase === 'proxy' && $has('/localhost:2019.*connection refused|is not running and would not start/i')) {
             return [
                 'cause' => 'The app is running, but Caddy (the web server that gives it HTTPS) isn’t, so its domain couldn’t be switched on.',
@@ -217,6 +235,63 @@ final class DeployFailure
         }
 
         return null;
+    }
+
+    /**
+     * @return array{cause: string, fix: string, command?: string}|null
+     */
+    public static function general(string $text, bool $timedOut = false): ?array
+    {
+        $has = fn (string $pattern): bool => preg_match($pattern, $text) === 1;
+
+        return match (true) {
+            $has('/no space left on device/i') => [
+                'cause' => 'The machine ran out of disk space.',
+                'fix' => 'Free some space, then retry. Old Docker images and build cache are often the biggest:',
+                'command' => 'docker system prune',
+            ],
+            $has('/Cannot allocate memory|\bENOMEM\b|\bOOMKilled\b|^\s*Killed\s*$/im') => [
+                'cause' => 'The machine ran out of memory, so Linux stopped it.',
+                'fix' => 'Stop something else on the machine, add swap, or move to a machine with more memory, then retry.',
+            ],
+            $has('/Could not get lock|Unable to acquire the dpkg frontend lock|dpkg was interrupted/i') => [
+                'cause' => 'Another install or update is already running on the machine, so the package manager is locked.',
+                'fix' => 'Wait a few minutes and retry. If it stays locked, an earlier install was cut off; this on the machine as root repairs it:',
+                'command' => 'dpkg --configure -a',
+            ],
+            $has('/Unable to locate package|has no installation candidate/i') => [
+                'cause' => 'The machine’s package list doesn’t have that package.',
+                'fix' => 'Check the name is right for this version of Linux, or refresh the list on the machine and retry:',
+                'command' => 'apt-get update',
+            ],
+            $has('/port is already allocated|address already in use|EADDRINUSE/i') => [
+                'cause' => 'The port is already taken by something else on this machine.',
+                'fix' => 'Pick another port, or stop what’s using it. This shows what’s listening where:',
+                'command' => 'ss -ltnp',
+            ],
+            $has('/Could not resolve host|Temporary failure in name resolution|getaddrinfo (EAI_AGAIN|ENOTFOUND)|Network is unreachable|i\/o timeout|TLS handshake timeout/i') => [
+                'cause' => 'The machine couldn’t reach the internet.',
+                'fix' => 'Check the machine’s DNS and outbound network (try “curl -I https://github.com” on it), then retry.',
+            ],
+            $timedOut => [
+                'cause' => 'It took too long and was stopped.',
+                'fix' => 'The machine may be busy or slow to answer. Retry once; if it happens again, check the machine’s load on its page.',
+            ],
+            default => null,
+        };
+    }
+
+    /** @param  array<mixed>  $lines */
+    public static function keyLine(array $lines): ?string
+    {
+        $clean = array_values(array_filter(
+            array_map(fn ($line) => is_string($line) ? trim((string) preg_replace('/\x1b\[[0-9;]*[A-Za-z]/', '', $line)) : '', $lines),
+            fn (string $line) => $line !== '' && preg_match('/^(W: |warning\b)/i', $line) !== 1,
+        ));
+        $telling = array_values(array_filter($clean, fn (string $line) => preg_match('/^E: |\b(error|errors|fail|failed|failure|fatal|denied|not found|unable|cannot|can[\'’]t|couldn[\'’]?t|invalid|refused|no such|missing|timed out|killed)\b/i', $line) === 1));
+        $line = $telling !== [] ? end($telling) : end($clean);
+
+        return $line === false ? null : Str::limit($line, 300);
     }
 
     private static function missingVariable(string $text): ?string

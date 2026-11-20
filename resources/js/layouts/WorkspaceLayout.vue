@@ -3,6 +3,7 @@ import SubscriptionBanner from '@/components/workspace/SubscriptionBanner.vue';
 import { useSubscriptionNotice } from '@/composables/useSubscriptionNotice';
 import { usePage } from '@inertiajs/vue3';
 import {
+    computed,
     defineAsyncComponent,
     onBeforeUnmount,
     onMounted,
@@ -20,7 +21,9 @@ import NotchToaster from '@/components/workspace/NotchToaster.vue';
 import type AssistantPanelComponent from '@/components/workspace/AssistantPanel.vue';
 import WorkspacePageSkeleton from '@/components/workspace/WorkspacePageSkeleton.vue';
 import WorkspaceSidebar from '@/components/workspace/WorkspaceSidebar.vue';
+import AgentsSidebar from '@/components/agents/AgentsSidebar.vue';
 import WorkspaceNavBar from '@/components/workspace/WorkspaceNavBar.vue';
+import ThemeDraftBar from '@/components/workspace/ThemeDraftBar.vue';
 import { useAssistant } from '@/composables/useAssistant';
 import { useWorkspaceSwitch } from '@/composables/useWorkspaceSwitch';
 import { useIsDark } from '@/composables/useAppearance';
@@ -47,6 +50,20 @@ const mobileOpen = ref(false);
 const searching = ref(false);
 
 const { layout } = useNavLayout();
+
+// Pages that bring their own header row and fill the height, like an agent
+// task's chat and changes, skip the bar on wide screens with the sidebar.
+const fullHeight = computed(
+    () =>
+        layout.value === 'sidebar' &&
+        ['workspace/AgentTaskShow', 'workspace/Agents'].includes(
+            page.component,
+        ),
+);
+
+// Agents is its own side of ServerOS, with its own sidebar. Going between
+// the two, the sidebar slides the way the switch points.
+const inAgents = computed(() => page.component.startsWith('workspace/Agent'));
 const COLLAPSED_KEY = 'workspace-sidebar-collapsed';
 const collapsed = ref(false);
 
@@ -148,22 +165,45 @@ watch(
             >
                 <aside
                     v-if="layout === 'sidebar'"
+                    data-theme-part="sidebar"
                     class="hidden shrink-0 transition-[width] duration-200 ease-out motion-reduce:transition-none lg:block"
                     :class="collapsed ? 'w-14' : 'w-[228px]'"
                 >
-                    <WorkspaceSidebar
-                        :collapsed="collapsed"
-                        collapsible
-                        @toggle="toggleCollapsed"
-                        @search="openSearch"
-                    />
+                    <div class="relative h-full overflow-hidden">
+                        <Transition
+                            :name="
+                                inAgents ? 'side-to-agents' : 'side-to-servers'
+                            "
+                        >
+                            <AgentsSidebar
+                                v-if="inAgents"
+                                key="agents"
+                                class="absolute inset-0"
+                                :collapsed="collapsed"
+                                collapsible
+                                @toggle="toggleCollapsed"
+                            />
+                            <WorkspaceSidebar
+                                v-else
+                                key="servers"
+                                class="absolute inset-0"
+                                :collapsed="collapsed"
+                                collapsible
+                                @toggle="toggleCollapsed"
+                                @search="openSearch"
+                            />
+                        </Transition>
+                    </div>
                 </aside>
 
                 <div
+                    data-theme-part="content"
                     class="relative isolate flex min-h-0 min-w-0 flex-1 flex-col bg-(--ds-frame) lg:overflow-hidden lg:rounded-[14px] lg:shadow-[0_0_0_1px_var(--ds-border)] lg:dark:shadow-none"
                     :class="{ 'lg:ml-[3px]': layout === 'sidebar' }"
                 >
                     <WorkspaceNavBar
+                        data-theme-part="topbar"
+                        :class="{ 'lg:hidden': fullHeight }"
                         :sidebar="layout === 'sidebar'"
                         @search="openSearch"
                         @menu="mobileOpen = true"
@@ -171,6 +211,7 @@ watch(
 
                     <main
                         id="main"
+                        data-theme-part="main"
                         class="relative isolate flex min-h-0 min-w-0 grow flex-col overflow-hidden"
                     >
                         <div
@@ -201,6 +242,7 @@ watch(
             <div
                 v-if="isDesktop"
                 id="assistant-panel"
+                data-theme-part="assistant"
                 class="hidden shrink-0 overflow-hidden transition-[width,opacity] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none lg:block"
                 :class="
                     assistantOpen
@@ -245,7 +287,13 @@ watch(
                             ' '
                         }}
                     </SheetDescription>
+                    <AgentsSidebar
+                        v-if="inAgents"
+                        closable
+                        @close="mobileOpen = false"
+                    />
                     <WorkspaceSidebar
+                        v-else
                         closable
                         @close="mobileOpen = false"
                         @search="openSearch"
@@ -284,6 +332,43 @@ watch(
             <CommandPalette v-model:open="searching" />
             <WhatsNewDialog />
             <NotchToaster />
+            <ThemeDraftBar />
         </div>
     </div>
 </template>
+
+<style scoped>
+/* Servers on the left, Agents on the right: the sidebar slides that way. */
+.side-to-agents-enter-active,
+.side-to-agents-leave-active,
+.side-to-servers-enter-active,
+.side-to-servers-leave-active {
+    transition:
+        transform 320ms cubic-bezier(0.32, 0.72, 0, 1),
+        opacity 220ms ease;
+}
+.side-to-agents-enter-from,
+.side-to-servers-leave-to {
+    transform: translateX(28%);
+    opacity: 0;
+}
+.side-to-agents-leave-to,
+.side-to-servers-enter-from {
+    transform: translateX(-28%);
+    opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+    .side-to-agents-enter-active,
+    .side-to-agents-leave-active,
+    .side-to-servers-enter-active,
+    .side-to-servers-leave-active {
+        transition: opacity 150ms ease;
+    }
+    .side-to-agents-enter-from,
+    .side-to-agents-leave-to,
+    .side-to-servers-enter-from,
+    .side-to-servers-leave-to {
+        transform: none;
+    }
+}
+</style>

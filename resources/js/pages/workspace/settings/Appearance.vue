@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
+import { Head, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import { SolarLayoutDashboard as LayoutDashboard } from '@/lib/solarIcons';
 import Tile from '@/components/workspace/Tile.vue';
 import { useAppearance } from '@/composables/useAppearance';
 import { useNavLayout } from '@/composables/useNavLayout';
+import { forcedAppearance } from '@/lib/workspaceTheme';
+import type { WorkspaceTheme } from '@/lib/workspaceTheme';
 
 const { appearance, updateAppearance } = useAppearance();
 const { layout, setLayout } = useNavLayout();
+const page = usePage<{ workspaceTheme?: WorkspaceTheme | null }>();
+const forced = computed(() =>
+    forcedAppearance(page.props.workspaceTheme?.css ?? null),
+);
 </script>
 
 <template>
@@ -41,6 +48,17 @@ const { layout, setLayout } = useNavLayout();
                         {{ $t(label) }}
                     </button>
                 </div>
+                <span v-if="forced" class="text-xs/4 text-(--ds-text-muted)">
+                    {{
+                        forced === 'dark'
+                            ? $t(
+                                  'This workspace’s theme is made for dark mode, so the dashboard stays dark here.',
+                              )
+                            : $t(
+                                  'This workspace’s theme is made for light mode, so the dashboard stays light here.',
+                              )
+                    }}
+                </span>
             </div>
             <div class="flex flex-col gap-2">
                 <span class="text-[13px]/5 font-medium">{{

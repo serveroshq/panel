@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Mcp\InstallMcpController;
 use App\Http\Controllers\Mcp\McpController;
 use App\Http\Controllers\Mcp\OAuthMetadataController;
 use App\Http\Controllers\Mcp\OAuthRegistrationController;
@@ -19,6 +20,14 @@ Route::middleware(McpCors::class)->group(function () {
         Route::options('mcp', fn () => response('', 204));
         Route::get('.well-known/oauth-protected-resource/mcp', [OAuthMetadataController::class, 'resource'])->name('mcp.resource-metadata');
         Route::get('.well-known/oauth-protected-resource', [OAuthMetadataController::class, 'resource']);
+    });
+
+    // serveros.com/mcp: installs ServerOS on someone's own server, through
+    // their AI app, with no account. Not on self-hosted panels.
+    Route::domain(config('app.domain'))->group(function () {
+        Route::post('mcp', InstallMcpController::class)->name('install.mcp');
+        Route::match(['get', 'delete'], 'mcp', [InstallMcpController::class, 'stream']);
+        Route::options('mcp', fn () => response('', 204));
     });
 
     Route::get('.well-known/mcp/server-card.json', [ServerCardController::class, 'workspace'])->name('mcp.server-card');

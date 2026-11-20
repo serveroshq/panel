@@ -55,7 +55,7 @@ class WorkspaceGoogleSignInController extends Controller
         ]);
 
         if ($data['mode'] !== 'off' && ! $workspace->hasGoogleTeamAccess()) {
-            throw ValidationException::withMessages(['mode' => 'Joining with a verified domain is on Pro and Business.']);
+            throw ValidationException::withMessages(['mode' => 'Joining with a verified domain is on Pro and Scale.']);
         }
 
         $choice = RoleChoice::parse($workspace, $data['role'] ?? RoleChoice::value($workspace->domain_join_role, $workspace->domain_join_custom_role_id));
@@ -102,7 +102,7 @@ class WorkspaceGoogleSignInController extends Controller
 
         if ($require) {
             if (! $workspace->hasGoogleTeamAccess()) {
-                throw ValidationException::withMessages(['require' => 'Requiring Google sign-in is on Pro and Business.']);
+                throw ValidationException::withMessages(['require' => 'Requiring Google sign-in is on Pro and Scale.']);
             }
             $verified = $workspace->emailDomains()->whereNotNull('verified_at')->pluck('domain')->all();
             if ($verified === []) {

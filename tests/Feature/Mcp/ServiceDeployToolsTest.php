@@ -311,3 +311,18 @@ test('templates that control Docker on the machine need a connection allowed to 
     expect($allowed['error'])->toBeFalse($allowed['text'])
         ->and(DaemonJob::query()->where('service', 'portainer')->exists())->toBeTrue();
 });
+
+test('a failed console command’s output stays hidden from viewers over MCP too', function () {
+    [$workspace, $machine] = serviceToolsSetup();
+    $viewer = User::factory()->create();
+    $workspace->members()->attach($viewer, ['role' => 'viewer']);
+    $job = DaemonJob::query()->create([
+        'id' => (string) Str::uuid(), 'machine_id' => $machine->id, 'user_id' => $workspace->owner_id, 'kind' => 'service_exec', 'service' => 'docker:aaa', 'state' => 'failed',
+        'command' => ['job' => ['type' => 'service_exec', 'service' => 'docker:aaa', 'command' => 'cat .env']],
+        'log' => [], 'error' => ['phase' => 'exec', 'message' => 'exited 1', 'output_tail' => ['SECRET=hunter2']],
+    ]);
+
+    $seen = mcpCall($workspace, mcpKey($workspace, $viewer), 'get_job', ['job' => $job->id]);
+    expect($seen['error'])->toBeFalse()->and($seen['text'])->toContain('exited 1')->not->toContain('hunter2');
+    expect(mcpCall($workspace, mcpKey($workspace), 'get_job', ['job' => $job->id])['text'])->toContain('hunter2');
+});

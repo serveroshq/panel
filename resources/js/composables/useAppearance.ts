@@ -15,6 +15,13 @@ export function updateTheme(value: Appearance): void {
         return;
     }
 
+    // A workspace theme can be made for one mode only (--theme-appearance).
+    const forced = document.documentElement.dataset.themeAppearance;
+    if (forced === 'dark' || forced === 'light') {
+        document.documentElement.classList.toggle('dark', forced === 'dark');
+        return;
+    }
+
     if (value === 'system') {
         const mediaQueryList = window.matchMedia(
             '(prefers-color-scheme: dark)',

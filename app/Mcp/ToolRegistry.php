@@ -53,6 +53,9 @@ final class ToolRegistry
 
     private function access(Tool $tool, McpContext $context): ?string
     {
+        if (! $tool->enabled()) {
+            return 'That tool isn’t available here.';
+        }
         if (! $context->allows($tool->scope())) {
             return match ($tool->scope()) {
                 Scopes::WRITE => 'This connection is read-only. To let it make changes, reconnect and allow “Make changes”, or use an API key that allows them.',

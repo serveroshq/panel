@@ -374,7 +374,7 @@ const selectClass =
                     {{
                         ' ' +
                         $t(
-                            'Member and Viewer roles are on Pro and Business. On your plan, people join as Admins.',
+                            'Member and Viewer roles are on Pro and Scale. On your plan, people join as Admins.',
                         ) +
                         ' '
                     }}
@@ -662,7 +662,7 @@ const selectClass =
                             <span
                                 v-if="!hasCustomRoles && !selfHosted"
                                 class="rounded-[4px] border border-(--ds-blue-border) bg-(--ds-blue-bg)/70 px-1.5 py-0.5 font-body text-[10px]/3 font-medium tracking-[0.08em] text-(--ds-blue-strong) uppercase"
-                                >{{ $t('Business') }}</span
+                                >{{ $t('Scale') }}</span
                             >
                         </span>
                         <span
@@ -698,7 +698,7 @@ const selectClass =
                             {{
                                 ' ' +
                                 $t(
-                                    'Pick exactly what a role can do. If the workspace leaves Business, people with these roles become Viewers.',
+                                    'Pick exactly what a role can do. If the workspace leaves Scale, people with these roles become Viewers.',
                                 ) +
                                 ' '
                             }}

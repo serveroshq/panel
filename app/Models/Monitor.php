@@ -108,7 +108,7 @@ class Monitor extends Model
      */
     public function openIncident(): HasOne
     {
-        return $this->hasOne(MonitorIncident::class)->whereNull('resolved_at')->latestOfMany('started_at');
+        return $this->hasOne(MonitorIncident::class)->whereNull('resolved_at')->latest('started_at');
     }
 
     public function muted(): bool

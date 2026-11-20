@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class(['dark' => ($appearance ?? 'system') == 'dark'])>
+@php($themeAppearance = preg_match('/--theme-appearance\s*:\s*(dark|light)\b/i', (string) ($page['props']['workspaceTheme']['css'] ?? ''), $themeMode) ? strtolower($themeMode[1]) : null)
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class(['dark' => $themeAppearance !== null ? $themeAppearance === 'dark' : ($appearance ?? 'system') == 'dark']) @if ($themeAppearance) data-theme-appearance="{{ $themeAppearance }}" @endif>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +10,7 @@
             (function() {
                 const appearance = '{{ $appearance ?? "system" }}';
 
-                if (appearance === 'system') {
+                if (appearance === 'system' && ! document.documentElement.dataset.themeAppearance) {
                     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
                     if (prefersDark) {
@@ -82,6 +83,10 @@
         @endif
 
         @vite(['resources/css/app.css', 'resources/js/app.ts', \App\Support\Extensions\Extensions::pageEntry($page['component'], 'pages', 'vue')])
+        @if (! empty($page['props']['workspaceTheme']['css']))
+            {{-- Safe raw output: ThemeCss refuses any "<", so the CSS can't close this tag. --}}
+            <style id="workspace-theme">{!! str_replace('<', '\\3c ', $page['props']['workspaceTheme']['css']) !!}</style>
+        @endif
         @php($panelLines = app()->getLocale() !== 'en' && ! Vite::isRunningHot() && is_file(lang_path(app()->getLocale().'.json')) ? rescue(fn () => Vite::asset('lang/'.app()->getLocale().'.json'), null, false) : null)
         @if ($panelLines)
             <link rel="modulepreload" href="{{ $panelLines }}">

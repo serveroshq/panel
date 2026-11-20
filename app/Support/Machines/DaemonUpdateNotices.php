@@ -43,13 +43,5 @@ final class DaemonUpdateNotices
             return;
         }
         Activity::system($machine->workspace_id, 'machine.daemon_updated', $machine->name, $machine, ['from' => $from, 'to' => $to]);
-
-        if (MachinePolicies::for($machine)->updates === 'automatic') {
-            return;
-        }
-        $this->alerts->notify($machine->workspace, 'daemon.updated', "{$machine->name} is on daemon {$to}", [
-            "It updated from {$from} and has reconnected.",
-        ], 'https://'.$machine->workspace->host().'/machines/'.$machine->id.'/settings', false, 'Open the machine',
-            ['machine' => ['id' => $machine->id, 'name' => $machine->name], 'from' => $from, 'to' => $to]);
     }
 }

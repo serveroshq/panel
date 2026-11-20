@@ -6,11 +6,11 @@ use App\Enums\WorkspacePermission;
 use App\Jobs\DiagnoseFix;
 use App\Mcp\McpContext;
 use App\Mcp\McpServer;
-use App\Mcp\Present;
 use App\Mcp\Scopes;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
 use App\Mcp\ToolRegistry;
+use App\Mcp\Tools\Service\ServiceView;
 use App\Mcp\Tools\Service\ServiceWork;
 use App\Models\Activity;
 use App\Models\AgentFix;
@@ -20,17 +20,29 @@ use App\Models\ProjectNode;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Ai\AiProviders;
+use App\Support\Deploys\DeployFailure;
 use App\Support\Extensions\DocsSource;
 use App\Support\Fixes\FixAllowance;
 use App\Support\Projects\ProjectActions;
+use App\Support\Theme\DashboardTheme;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 
 class AssistantAgent
 {
     private const TTL_HOURS = 6;
+
+    public const IMAGES_PER_MESSAGE = 4;
+
+    public const IMAGES_PER_CHAT = 8;
+
+    public const IMAGE_BYTES = 4_000_000;
+
+    /** Only the newest messages with images send them to the model again; older ones are mentioned. */
+    private const IMAGE_MESSAGES_SENT = 2;
 
     public const BUDGET_SECONDS = 840;
 
@@ -50,12 +62,12 @@ class AssistantAgent
 
     private const KEEPALIVE_SECONDS = 10;
 
-    private const NO_APPROVAL = ['get_connection'];
+    private const NO_APPROVAL = ['get_connection', 'update_dashboard_theme'];
 
     private const ALWAYS_ASK = [
         'install_packages', 'install_updates', 'create_package_rollout', 'open_port', 'close_port', 'reboot_machine',
         'create_workflow', 'update_workflow', 'run_workflow',
-        'invite_member', 'change_member_role', 'update_workspace',
+        'invite_member', 'change_member_role', 'update_workspace', 'publish_dashboard_theme',
         'deploy_from_git', 'deploy_template', 'deploy_new_version', 'update_app_settings', 'set_app_domain', 'clone_service', 'connect_project_app',
         'create_machine_policy', 'update_machine_policy', 'update_backup_settings', 'update_alert_settings', 'start_maintenance',
         'adopt_service', 'mute_monitor', 'pause_monitor', 'post_status_incident', 'update_status_incident',
@@ -121,7 +133,12 @@ class AssistantAgent
      * @param  array<string, mixed>  $chat
      * @param  callable(array<string, mixed>): void  $emit
      */
-    public function ask(array $chat, Workspace $workspace, User $user, string $message, ?string $path, callable $emit, ?string $model = null): void
+    /**
+     * @param  array<string, mixed>  $chat
+     * @param  callable(array<string, mixed>): void  $emit
+     * @param  list<array{type: string, data: string}>  $images
+     */
+    public function ask(array $chat, Workspace $workspace, User $user, string $message, ?string $path, callable $emit, ?string $model = null, array $images = []): void
     {
         if ($model !== null) {
             $chat['model'] = $model;
@@ -133,7 +150,12 @@ class AssistantAgent
         }
         $this->chat['pending'] = [];
         $this->chat['path'] = $path;
-        $this->chat['messages'][] = ['role' => 'user', 'content' => $message];
+        $said = ['role' => 'user', 'content' => $message !== '' ? $message : '(Sent images, no words.)'];
+        if ($images !== []) {
+            $this->chat['images'] = [...($this->chat['images'] ?? []), ...$images];
+            $said['images'] = range(count($this->chat['images']) - count($images), count($this->chat['images']) - 1);
+        }
+        $this->chat['messages'][] = $said;
         $this->loop();
     }
 
@@ -195,6 +217,9 @@ class AssistantAgent
     private function loop(): void
     {
         $ai = $this->providers->forChat($this->context->workspace, $this->chat['model'] ?? null);
+        if (($this->chat['images'] ?? []) !== []) {
+            $ai = AiProviders::forImages($ai);
+        }
         $instructions = null;
 
         try {
@@ -208,7 +233,9 @@ class AssistantAgent
                 }
                 $this->trim();
                 $instructions ??= $this->instructions();
-                $answer = $this->model->turn($ai, $instructions, $this->chat['messages'], $this->toolDefinitions());
+                // A theme is a whole stylesheet in one tool call, longer than an answer usually is.
+                $maxTokens = in_array('update_dashboard_theme', $this->chat['loaded'], true) ? 6000 : 1600;
+                $answer = $this->model->turn($ai, $instructions, $this->withImages(AiProviders::seesImages($ai)), $this->toolDefinitions(), $maxTokens);
 
                 if ($answer['text'] !== '') {
                     ($this->emit)(['type' => 'text', 'text' => $answer['text']]);
@@ -307,7 +334,7 @@ class AssistantAgent
             if (! $answered) {
                 $this->chat['messages'][] = ['role' => 'tool', 'id' => $call['id'], 'name' => $call['name'], 'content' => 'Error: something went wrong running this. It may or may not have happened: check before trying again.'];
             }
-            ($this->emit)(['type' => 'result', 'id' => $call['id'], 'ok' => false, 'state' => 'failed', 'summary' => 'Something went wrong']);
+            ($this->emit)(['type' => 'result', 'id' => $call['id'], 'ok' => false, 'state' => 'failed', 'summary' => 'Something went wrong running this. It may or may not have happened: check before trying again.']);
         }
     }
 
@@ -329,6 +356,7 @@ class AssistantAgent
         [$ok, $data] = match (true) {
             $call['name'] === 'load_tools' => $this->loadTools($call['arguments']),
             $call['name'] === 'investigate_problem' => $this->investigate($call['arguments']),
+            $call['name'] === 'add_image_to_theme' => $this->addImageToTheme($call['arguments']),
             $tool === null => [false, "There’s no tool called {$call['name']}."],
             ! $this->usable($tool) => [false, $this->registry->denial($tool, $this->context) ?? 'Ask AI can’t use that tool. Do it in the dashboard.'],
             default => $this->server->execute($tool, $call['arguments'], $this->context),
@@ -396,6 +424,18 @@ class AssistantAgent
 
         $finished = in_array($job->state, McpContext::FINISHED, true);
         $error = is_array($job->error) ? ($job->error['message'] ?? null) : null;
+        $error = is_string($error) && trim($error) !== '' ? $error : (DeployFailure::explain($job)['cause'] ?? match ($job->state) {
+            'timed_out' => 'it took too long and was stopped',
+            'refused' => 'the machine refused it',
+            'cancelled' => 'it was cancelled',
+            'stale' => 'the machine stopped answering',
+            default => null,
+        });
+        $view = ServiceView::job($this->context, $job, $job->state === 'succeeded' ? 5 : 40);
+        $line = DeployFailure::keyLine((array) ($view['error']['output_tail'] ?? []));
+        if ($line !== null && is_string($error) && ! str_contains($error, $line)) {
+            $error = rtrim($error, '. ').". The machine said: {$line}";
+        }
 
         return [
             'ok' => ! $finished || $job->state === 'succeeded',
@@ -404,7 +444,7 @@ class AssistantAgent
                 $job->state === 'succeeded' => 'Finished',
                 default => Str::limit('Failed'.(is_string($error) ? ': '.$error : ''), 220),
             },
-            'job' => self::withoutNoise(Present::job($job, $job->state === 'succeeded' ? 5 : 40)),
+            'job' => self::withoutNoise($view),
         ];
     }
 
@@ -576,6 +616,42 @@ class AssistantAgent
         ]];
     }
 
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @return array{0: bool, 1: array<string, mixed>|string}
+     */
+    private function addImageToTheme(array $arguments): array
+    {
+        $images = $this->chat['images'] ?? [];
+        $number = (int) ($arguments['image'] ?? 0);
+        $image = $images[$number - 1] ?? null;
+        if ($image === null) {
+            return [false, 'There’s no image number '.$number.' in this chat. They’re numbered from 1 in the order the person sent them.'];
+        }
+        if (! $this->context->can(WorkspacePermission::ManageSettings)) {
+            return [false, 'Their role doesn’t let them change the theme.'];
+        }
+
+        try {
+            $saved = app(DashboardTheme::class)->addImageData(
+                $this->context->workspace,
+                $this->context->user,
+                (string) base64_decode($image['data'], true),
+                match ($image['type']) {
+                    'image/png' => 'png',
+                    'image/webp' => 'webp',
+                    'image/gif' => 'gif',
+                    default => 'jpg',
+                },
+                Str::slug((string) ($arguments['name'] ?? '')) ?: 'chat-image',
+            );
+        } catch (InvalidArgumentException $e) {
+            return [false, $e->getMessage()];
+        }
+
+        return [true, ['summary' => 'Saved as '.$saved['name'], 'name' => $saved['name'], 'css' => "url({$saved['url']})"]];
+    }
+
     /** @return list<array{name: string, description: string, schema: array<string, mixed>}> */
     private function toolDefinitions(): array
     {
@@ -592,6 +668,16 @@ class AssistantAgent
             'description' => 'Load more tools by name, from the list of every tool in your instructions. They can be called from your next step. Load only what you need, up to 8 at a time.',
             'schema' => ['type' => 'object', 'properties' => ['names' => ['type' => 'array', 'items' => ['type' => 'string'], 'maxItems' => 8, 'description' => 'Tool names, exactly as listed.']], 'required' => ['names'], 'additionalProperties' => false],
         ];
+        if (($this->chat['images'] ?? []) !== [] && $this->context->can(WorkspacePermission::ManageSettings)) {
+            $tools[] = [
+                'name' => 'add_image_to_theme',
+                'description' => 'Save an image the person attached in this chat to the workspace’s theme images, so the dashboard theme can show it (for a background, say). Returns its url() for CSS. Only when they want the picture itself on the dashboard, not for reference images you only match colours from.',
+                'schema' => ['type' => 'object', 'properties' => [
+                    'image' => ['type' => 'integer', 'minimum' => 1, 'description' => 'Which attached image, numbered from 1 in the order they were sent.'],
+                    'name' => ['type' => 'string', 'maxLength' => 40, 'description' => 'A short file name, like minions.'],
+                ], 'required' => ['image'], 'additionalProperties' => false],
+            ];
+        }
         $tools[] = [
             'name' => 'investigate_problem',
             'description' => 'Ask ServerOS’s server agent to look into a problem on a machine or one of its services: it reads the state, logs and failed jobs, writes a diagnosis, and proposes fixes the person approves on the Fixes page. Use it when something is broken and the cause isn’t obvious. Comes with Pro; counts against the hour’s investigations.',
@@ -681,6 +767,8 @@ How to work:
 - Workflows and automations (CI/CD, deploy on every push to GitHub, nightly backups, alerts to Slack): list_workflow_templates first, then load get_workflow_reference and create_workflow. Start from a template when one fits. The coding agent templates open pull requests on GitHub. A workflow that needs GitHub needs the workspace's GitHub connected in Settings.
 - A machine missing something a deploy needs (git for a deploy from a repository, unzip and so on): load install_packages and install it, then deploy again. It installs from the machine's own repositories only; there's no shell and no SSH, so don't offer to run other commands on the machine.
 - A database or cache the internet can reach: load get_firewall, close_port and rescan_machine. get_firewall says how each port is exposed. "open" (the firewall lets it in): close_port, unless something outside the machine really needs it. "docker" (Docker publishes it, which gets in before the firewall): closing the port won't help; it has to be published on 127.0.0.1 or the Docker bridge instead. A stack ServerOS deployed from a template already is, so redeploying it fixes it. Anything else has to be re-created with a different port mapping, and data that isn't in a volume goes with the old container: don't stop, remove or replace it yourself. Explain that, give the exact change (in its compose file, "127.0.0.1:6380:6379" instead of "6380:6379"), and ask how they'd like to go ahead. Don't say its data will be kept unless a tool showed it's in a named volume. There's no way yet to allow only certain addresses, so say so if they ask. Afterwards rescan_machine and read get_firewall again, and only say it's fixed if it shows the port isn't reachable any more.
+- Images they attach show to you with a number (1 is the first in the chat). For a theme from a reference image or screenshot, match its colours with a palette. To put a picture they sent on the dashboard, save it with add_image_to_theme and use the url() it returns.
+- How the dashboard looks (colours, fonts, a theme, "make it look like X"): load get_dashboard_theme and update_dashboard_theme. Read the current CSS and the guide first, then send the whole new stylesheet. A draft shows only to them, straight away and without approval, so make the change, then ask what they think and keep going until they're happy. Publish with publish_dashboard_theme only when they say so; that shows it to everyone in the workspace.
 - Something broken: look at the service and its logs. For a real diagnosis, call investigate_problem: the server agent looks into it and proposes fixes they approve on the Fixes page.
 - If a tool fails, say what it said. If you're out of AI tool calls or messages, say so and where to get more (Billing).
 
@@ -701,6 +789,36 @@ About the person:
 Every other tool, by group (load_tools to use them):
 {$catalogue}{$docs}
 PROMPT;
+    }
+
+    /**
+     * The messages as the model gets them: the newest images attached as data, older ones mentioned.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function withImages(bool $sees): array
+    {
+        $messages = $this->chat['messages'];
+        $sent = 0;
+        for ($i = count($messages) - 1; $i >= 0; $i--) {
+            $refs = $messages[$i]['images'] ?? [];
+            if ($messages[$i]['role'] !== 'user' || $refs === []) {
+                continue;
+            }
+            $numbers = implode(', ', array_map(fn (int $n) => (string) ($n + 1), $refs));
+            if (! $sees) {
+                $messages[$i]['content'] .= "\n\n(ServerOS: they attached ".count($refs).' image(s) here, but this model can’t see images. Tell them, and say a Claude or OpenAI model can: they pick one from the model menu.)';
+            } elseif ($sent < self::IMAGE_MESSAGES_SENT) {
+                $messages[$i]['image_data'] = array_values(array_filter(array_map(fn (int $n) => $this->chat['images'][$n] ?? null, $refs)));
+                $messages[$i]['content'] .= "\n\n(ServerOS: attached image(s) number {$numbers}.)";
+                $sent++;
+            } else {
+                $messages[$i]['content'] .= "\n\n(ServerOS: they attached image(s) number {$numbers} here earlier; you can’t see them any more.)";
+            }
+            unset($messages[$i]['images']);
+        }
+
+        return array_values($messages);
     }
 
     private function trim(): void
@@ -743,6 +861,7 @@ PROMPT;
         return match ($name) {
             'load_tools' => 'Get tools ready',
             'investigate_problem' => 'Ask the server agent',
+            'add_image_to_theme' => 'Add the image to the theme',
             default => Str::headline($name),
         };
     }
@@ -817,6 +936,9 @@ PROMPT;
         }
         if (array_is_list($data)) {
             return count($data).' found';
+        }
+        if (is_string($data['summary'] ?? null)) {
+            return Str::limit($data['summary'], 120);
         }
         $state = $data['job']['state'] ?? $data['state'] ?? null;
         if (is_string($state)) {

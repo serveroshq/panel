@@ -2,6 +2,7 @@
 import { router, useForm } from '@inertiajs/vue3';
 import { ArrowUpRight } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import { useSelfHosted } from '@/composables/useSelfHosted';
 import AiBrandIcon from '@/components/workspace/AiBrandIcon.vue';
 import Tile from '@/components/workspace/Tile.vue';
 import {
@@ -88,15 +89,16 @@ const open = computed({
     },
 });
 
+const selfHosted = useSelfHosted();
 const form = useForm({ key: '', model: '', url: '' });
-const confirmingDisconnect = ref(false);
+const confirmingRemove = ref(false);
 
 function show(p: AiProvider): void {
     form.reset();
     form.clearErrors();
     form.model = p.model ?? '';
     form.url = p.baseUrl ?? '';
-    confirmingDisconnect.value = false;
+    confirmingRemove.value = false;
     openFor.value = p.provider;
 }
 
@@ -111,11 +113,11 @@ function save(): void {
     });
 }
 
-function disconnect(): void {
+function removeKey(): void {
     const p = current.value;
     if (!p) return;
-    if (!confirmingDisconnect.value) {
-        confirmingDisconnect.value = true;
+    if (!confirmingRemove.value) {
+        confirmingRemove.value = true;
 
         return;
     }
@@ -187,10 +189,13 @@ const field =
                             class="truncate text-[12.5px]/5 text-(--ds-text-muted)"
                         >
                             <template v-if="p.connected">
-                                <code class="font-ui-mono text-[12px]">{{
-                                    p.hint
-                                }}</code>
-                                · {{ p.model ?? p.defaultModel }}
+                                <template v-if="p.hint">
+                                    <code class="font-ui-mono text-[12px]">{{
+                                        p.hint
+                                    }}</code>
+                                    ·
+                                </template>
+                                {{ p.model ?? p.defaultModel }}
                                 <template v-if="p.baseUrl">
                                     · {{ host(p.baseUrl) }}</template
                                 >
@@ -214,6 +219,12 @@ const field =
                         :class="appButtonClasses('secondary', 'sm')"
                         aria-hidden="true"
                         >{{ $t('Connect') }}</span
+                    >
+                    <span
+                        v-if="p.connected && canManage"
+                        :class="appButtonClasses('secondary', 'sm')"
+                        aria-hidden="true"
+                        >{{ $t('Manage') }}</span
                     >
                 </button>
             </li>
@@ -268,16 +279,21 @@ const field =
                         >
                             {{
                                 current.connected
-                                    ? $t('Key :hint, added :when:by.', {
-                                          hint: String(current.hint),
-                                          when: added(current),
-                                          by: current.by
-                                              ? ' ' +
-                                                $t('by :name', {
-                                                    name: current.by,
-                                                })
-                                              : '',
-                                      })
+                                    ? $t(
+                                          current.hint
+                                              ? 'Key :hint, added :when:by.'
+                                              : 'Key added :when:by.',
+                                          {
+                                              hint: String(current.hint),
+                                              when: added(current),
+                                              by: current.by
+                                                  ? ' ' +
+                                                    $t('by :name', {
+                                                        name: current.by,
+                                                    })
+                                                  : '',
+                                          },
+                                      )
                                     : $t(':uses run on your :name account.', {
                                           uses: about[current.provider].uses,
                                           name: about[current.provider].name,
@@ -319,7 +335,13 @@ const field =
                                 $t(
                                     'Any API that works like OpenAI’s: OpenRouter, DeepSeek, Groq, Ollama and more.',
                                 )
-                            }}</span
+                            }}<template v-if="selfHosted">
+                                {{
+                                    $t(
+                                        'For one on your own network, like Ollama, set MONITORS_ALLOW_PRIVATE=true.',
+                                    )
+                                }}</template
+                            ></span
                         >
                     </label>
                     <label class="flex flex-col gap-1.5">
@@ -410,12 +432,12 @@ const field =
                         v-if="current.connected"
                         type="button"
                         :class="appButtonClasses('danger', 'md', focusRing)"
-                        @click="disconnect"
+                        @click="removeKey"
                     >
                         {{
-                            confirmingDisconnect
-                                ? $t('Disconnect, sure?')
-                                : $t('Disconnect')
+                            confirmingRemove
+                                ? $t('Remove key, sure?')
+                                : $t('Remove key')
                         }}
                     </button>
                     <button

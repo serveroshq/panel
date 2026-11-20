@@ -170,7 +170,7 @@ final class WorkflowReference
                 'runsKeptDays' => WorkflowRun::KEEP_DAYS,
                 'note' => 'Event triggers don’t fire for a machine in maintenance or a muted monitor, and one workflow starts from events at most once every '.Workflow::COOLDOWN_SECONDS.' seconds, so a step that restarts what the trigger watches can’t loop.',
             ],
-            'turningOn' => 'A workflow runs on its own only when enabled, and it can be enabled (or run by hand) only when get_workflow lists no problems. Workflows need the Pro or Business plan. Saving one with a command or agent step needs two-factor authentication on, and through MCP a connection allowed to run commands.',
+            'turningOn' => 'A workflow runs on its own only when enabled, and it can be enabled (or run by hand) only when get_workflow lists no problems. Workflows need the Pro or Scale plan. Saving one with a command or agent step needs two-factor authentication on, and through MCP a connection allowed to run commands.',
             'example' => self::example(),
         ];
     }

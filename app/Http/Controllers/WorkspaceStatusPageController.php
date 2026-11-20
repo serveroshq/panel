@@ -116,7 +116,7 @@ class WorkspaceStatusPageController extends Controller
         ]);
 
         if ($data['enabled'] && ! $workspace->hasFleetStatusPage()) {
-            return back()->withErrors(['enabled' => Edition::selfHosted() ? 'One status page for every machine needs a ServerOS license.' : 'One status page for every machine comes with Business.']);
+            return back()->withErrors(['enabled' => Edition::selfHosted() ? 'One status page for every machine needs a ServerOS license.' : 'One status page for every machine comes with Scale.']);
         }
 
         $page->fill([

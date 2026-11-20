@@ -25,12 +25,15 @@ class RepositoryDetector
 
     private ?string $token = null;
 
+    // A folder inside the repository: plain names only, so never outside it.
+    public const BASE_DIR_PATTERN = '#^(?!.*(?:^|/)\.{1,2}(?:/|$))[A-Za-z0-9._@+-]+(?:/[A-Za-z0-9._@+-]+){0,15}$#';
+
     /**
-     * @return array{detected: bool, template: string|null, framework: string|null, type: string|null, repo: string, branch: string, commit: string, reasons: list<string>, php: string|null, healthPath: string|null, composeFile: string|null, composePort: int|null}
+     * @return array{detected: bool, template: string|null, framework: string|null, type: string|null, repo: string, branch: string, commit: string, baseDir: string|null, reasons: list<string>, php: string|null, healthPath: string|null, composeFile: string|null, composePort: int|null}
      */
     public function detect(string $url, ?Workspace $workspace = null): array
     {
-        [$owner, $name, $branch] = $this->parse($url);
+        [$owner, $name, $tree] = $this->parse($url);
         $this->token = $workspace === null ? null : app(GitHubApp::class)->tokenFor($workspace, $owner, $name);
 
         $repo = $this->api("repos/{$owner}/{$name}");
@@ -38,24 +41,32 @@ class RepositoryDetector
             throw ValidationException::withMessages(['repository' => self::notFound($workspace, $owner)]);
         }
 
-        $branch ??= (string) $repo['default_branch'];
-        $commit = $this->api("repos/{$owner}/{$name}/commits/".rawurlencode($branch));
-        if ($commit === null) {
-            throw ValidationException::withMessages(['repository' => "Couldn’t find the {$branch} branch."]);
-        }
-
+        [$branch, $baseDir, $commit] = $this->branchAndFolder($owner, $name, $tree, (string) $repo['default_branch']);
         $sha = (string) $commit['sha'];
-        $tree = $this->api("repos/{$owner}/{$name}/git/trees/{$sha}") ?? ['tree' => []];
-        $files = array_column($tree['tree'] ?? [], 'path');
+
+        if ($baseDir === null) {
+            $listing = $this->api("repos/{$owner}/{$name}/git/trees/{$sha}") ?? ['tree' => []];
+            $files = array_column($listing['tree'] ?? [], 'path');
+        } else {
+            $listing = $this->api("repos/{$owner}/{$name}/contents/".implode('/', array_map('rawurlencode', explode('/', $baseDir))).'?ref='.$sha);
+            if (! is_array($listing) || ! array_is_list($listing)) {
+                throw ValidationException::withMessages(['repository' => "Couldn’t find the folder {$baseDir} on the {$branch} branch."]);
+            }
+            $files = array_values(array_filter(array_map(fn ($entry) => is_array($entry) ? ($entry['name'] ?? null) : null, $listing), 'is_string'));
+        }
 
         $contents = [];
         foreach (self::MANIFESTS as $manifest) {
             if (in_array($manifest, $files, true)) {
-                $contents[$manifest] = $this->raw($owner, $name, $sha, $manifest);
+                $contents[$manifest] = $this->raw($owner, $name, $sha, $baseDir === null ? $manifest : "{$baseDir}/{$manifest}");
             }
         }
 
         $match = $this->match($files, $contents);
+        // The daemon runs a Compose file from the repository's root, so one in the folder is named by its full path.
+        if ($baseDir !== null && isset($match['composeFile'])) {
+            $match['composeFile'] = "{$baseDir}/{$match['composeFile']}";
+        }
 
         return [
             'detected' => $match !== null,
@@ -65,6 +76,7 @@ class RepositoryDetector
             'repo' => "https://github.com/{$owner}/{$name}.git",
             'branch' => $branch,
             'commit' => $sha,
+            'baseDir' => $baseDir,
             'reasons' => $match['reasons'] ?? [],
             'php' => $match['php'] ?? null,
             'healthPath' => $match['healthPath'] ?? null,
@@ -378,6 +390,42 @@ class RepositoryDetector
         return ['template' => $template, 'framework' => $framework, 'type' => $type, 'reasons' => [$reason]];
     }
 
+    /**
+     * The branch and folder a /tree/ link points at. Branch names can have
+     * slashes too, so the shortest prefix GitHub knows as a branch (or tag
+     * or commit) wins, and the rest is the folder.
+     *
+     * @return array{0: string, 1: string|null, 2: array<string, mixed>}
+     */
+    private function branchAndFolder(string $owner, string $name, ?string $tree, string $default): array
+    {
+        $parts = $tree === null ? [] : array_values(array_filter(explode('/', $tree), fn (string $p) => $p !== ''));
+        if ($parts === []) {
+            $commit = $this->api("repos/{$owner}/{$name}/commits/".rawurlencode($default));
+            if ($commit === null) {
+                throw ValidationException::withMessages(['repository' => "Couldn’t find the {$default} branch."]);
+            }
+
+            return [$default, null, $commit];
+        }
+
+        for ($i = 1; $i <= min(count($parts), 4); $i++) {
+            $branch = implode('/', array_slice($parts, 0, $i));
+            $commit = $this->api("repos/{$owner}/{$name}/commits/".rawurlencode($branch));
+            if ($commit === null) {
+                continue;
+            }
+            $folder = implode('/', array_slice($parts, $i));
+            if ($folder !== '' && preg_match(self::BASE_DIR_PATTERN, $folder) !== 1) {
+                throw ValidationException::withMessages(['repository' => "{$folder} isn’t a folder ServerOS can build from."]);
+            }
+
+            return [$branch, $folder === '' ? null : $folder, $commit];
+        }
+
+        throw ValidationException::withMessages(['repository' => 'Couldn’t find the '.$parts[0].' branch.']);
+    }
+
     /** @return array{0: string, 1: string, 2: string|null} */
     private function parse(string $url): array
     {
@@ -395,7 +443,7 @@ class RepositoryDetector
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @return array<array-key, mixed>|null an object, or a list for a folder's contents
      */
     private function api(string $path): ?array
     {

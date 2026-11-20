@@ -29,7 +29,7 @@ final class UpdateAppSettings extends Tool
     public function description(): string
     {
         return 'Changes an app’s settings (its environment variables) and deploys its live version again with them: the same code, domain, port and health check, with only the settings named here changed. set adds or replaces settings by name ({"API_URL": "https://..."}); remove takes names to drop. The rest stay as they are, and the answer only ever names settings, never their values. '
-            .'The live commit is deployed again, which replaces its container in place (a moment of downtime); its data stays, since volumes and databases aren’t touched. Settings a frontend build bakes in (NEXT_PUBLIC_, VITE_ and the like) need a new build, so they’re refused here: change them with deploy_template. '
+            .'The live commit is deployed again with them: an up-to-date daemon starts it beside the running container and switches over once it’s healthy, with no downtime and no rebuild (an older daemon replaces it in place, a moment of downtime); its data stays, since volumes and databases aren’t touched. Settings a frontend build bakes in (NEXT_PUBLIC_, VITE_ and the like) need a new build, so they’re refused here: change them with deploy_template. '
             .'Check with the person first: say the app, the machine and which settings change. app is the name it was deployed as (list_deploys or get_app shows it). Returns the queued job; follow it with get_job or list_deploys.';
     }
 

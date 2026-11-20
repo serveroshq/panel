@@ -13,6 +13,7 @@ import StatusIcon from './StatusIcon.vue';
 import StepHeading from './StepHeading.vue';
 import { stepUrl } from './types';
 import type { DatabaseDriver, DatabaseProps, Status } from './types';
+import { errorMessage } from '@/lib/errors';
 
 const props = defineProps<{ database: DatabaseProps; docker: boolean }>();
 
@@ -85,7 +86,7 @@ async function test(): Promise<void> {
             text: result.message,
         };
     } catch (error) {
-        tested.value = { status: 'fail', text: (error as Error).message };
+        tested.value = { status: 'fail', text: errorMessage(error) };
     } finally {
         testing.value = false;
     }
@@ -109,7 +110,7 @@ async function migrate(): Promise<void> {
             if ('error' in line) migrateError.value = line.error;
         });
     } catch (error) {
-        migrateError.value = (error as Error).message;
+        migrateError.value = errorMessage(error);
     }
     migrating.value = false;
     if (finished && !migrateError.value) router.visit('/install');

@@ -16,7 +16,7 @@ const sizes: Record<AppButtonSize, string> = {
 
 const variants: Record<AppButtonVariant, string> = {
     primary:
-        'border-[#3B7BFF]/60 bg-[#1C4BB0] text-white hover:border-[#3B7BFF] hover:bg-[#2257C7]',
+        'border-(--ds-primary-border) bg-(--ds-primary-bg) text-(--ds-primary-text) hover:border-(--ds-primary-border-hover) hover:bg-(--ds-primary-bg-hover)',
     secondary:
         'border-(--ds-border-strong) bg-(--ds-field) text-(--ds-text) hover:border-(--ds-border-hover) hover:bg-(--ds-hover)',
     quiet: 'border-transparent text-(--ds-text-secondary) hover:bg-(--ds-hover) hover:text-(--ds-text)',

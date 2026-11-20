@@ -229,7 +229,7 @@ const th = 'px-3 py-2.5 text-left text-[12px]/4 font-medium';
                 >
             </template>
             <template v-else-if="!allowed">
-                {{ $t('Your own domains come with Business.') + ' ' }}
+                {{ $t('Your own domains come with Scale.') + ' ' }}
                 <a
                     v-if="billingUrl"
                     :href="billingUrl"

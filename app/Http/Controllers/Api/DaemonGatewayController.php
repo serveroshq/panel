@@ -68,6 +68,7 @@ class DaemonGatewayController extends Controller
             'hello.logs' => ['nullable', 'boolean'],
             'hello.updates_automatic' => ['nullable', 'boolean'],
             'hello.pinned_version' => ['nullable', 'string', 'max:40'],
+            'hello.proxy' => ['nullable', 'string', 'in:caddy,nginx,apache,traefik,none'],
         ]);
         $machine = Machine::query()->where('certificate_serial', $data['serial'])->where('uid', $data['hello']['machine_id'])->first();
         if ($machine === null) {
@@ -88,6 +89,7 @@ class DaemonGatewayController extends Controller
             'connected_at' => now(),
             'disconnected_at' => null,
             ...(isset($data['hello']['log_skip']) ? ['log_skip' => LogSkipRules::fromDaemon($data['hello']['log_skip'])] : []),
+            ...(isset($data['hello']['proxy']) ? ['proxy' => $data['hello']['proxy']] : []),
         ])->save();
 
         if (is_string($versionBefore) && $versionBefore !== $machine->daemon_version) {
@@ -268,6 +270,10 @@ class DaemonGatewayController extends Controller
                             $changes['inventory'] = $this->withoutService($inventory, $job->service);
                             $changes['services_count'] = ServiceLabels::shownCount($machine, $changes['inventory']['services'] ?? []);
                         }
+                    }
+
+                    if ($state === 'succeeded' && $job->kind === 'deploy' && array_key_exists($payload['result']['proxy'] ?? '', Machine::PROXIES)) {
+                        $changes['proxy'] = $payload['result']['proxy'];
                     }
 
                     if ($state === 'succeeded' && $job->kind === 'firewall_rule' && is_array($payload['result']['firewall'] ?? null)) {

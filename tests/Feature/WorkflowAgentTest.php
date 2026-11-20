@@ -17,6 +17,7 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 beforeEach(function () {
@@ -206,7 +207,7 @@ test('without the GitHub App on the repository, the agent pushes with the contai
 });
 
 test('the agent’s summary can’t pass itself off as the change ServerOS sends back', function () {
-    expect(substr_count(AgentSpec::script(), "head -c 6000 \"\$work/out.txt\" | grep -v '^::serveros-' | head -n 200"))->toBe(2);
+    expect(substr_count(AgentSpec::script(), "head -c 6000 \"\$ctl/out.txt\" | grep -v '^::serveros-' | head -n 200"))->toBe(2);
 });
 
 test('a change that comes back damaged, or touches .git, opens no pull request', function () {
@@ -343,7 +344,7 @@ test('an agent step says what it needs before it can be turned on', function () 
     expect($problem([]))->toBeNull()
         ->and($problem(['service' => 'systemd:nginx.service']))->toBe('Choose the agent’s container, like one from the Coding agent template.')
         ->and($problem(['prompt' => '  ']))->toBe('Write what the agent should do.')
-        ->and($problem(['agent' => 'gpt']))->toBe('Choose Claude Code or Codex.')
+        ->and($problem(['agent' => 'gpt']))->toBe('Choose Claude Code, Codex or OpenCode.')
         ->and($problem(['repo' => 'not a repo']))->toBe('Enter the repository, as owner/name.')
         ->and($problem(['repo' => '', 'pull_request' => true]))->toBe('Choose a repository for the pull request.')
         ->and($problem(['repo' => '', 'pull_request' => false]))->toBeNull()
@@ -394,4 +395,66 @@ test('a labelled GitHub issue sent to the webhook becomes the agent’s task, in
     $this->postJson('/api/hooks/workflows/'.$token, [...$issue, 'action' => 'opened'])->assertStatus(202);
     expect(WorkflowRun::query()->count())->toBe(2);
     expect(DaemonJob::query()->count())->toBe(1);
+});
+
+/** A real JPEG, as the agent's browser saves one, and the log lines that carry it back. */
+function agentShotLog(string $name, int $parts = 0): array
+{
+    $image = imagecreatetruecolor(320, 200);
+    imagefill($image, 0, 0, (int) imagecolorallocate($image, 22, 33, 209));
+    ob_start();
+    imagejpeg($image, null, 70);
+    $payload = base64_encode((string) ob_get_clean());
+    $chunks = str_split($payload, 400);
+
+    return [
+        "::serveros-shot:: {$name}.jpg ".hash('sha256', $payload).' '.($parts ?: count($chunks)),
+        ...array_map(fn (string $c) => '::serveros-shot-part:: '.$c, $chunks),
+    ];
+}
+
+test('screenshots the agent took of its change go in the pull request and on its page; damaged ones are dropped', function () {
+    Storage::fake('public', ['url' => 'https://serveros.test/storage']);
+    [$workspace, $machine] = agentWorkspace();
+    $base = str_repeat('a', 40);
+    Http::swap(new Factory);
+    Http::fake([
+        '127.0.0.1:8090/*' => Http::response(['queued' => true], 202),
+        'api.github.com/app/installations/42/access_tokens' => Http::response(['token' => 'ghs_write']),
+        "api.github.com/repos/acme/shop/git/commits/{$base}" => Http::response(['sha' => $base, 'tree' => ['sha' => 'basetree']]),
+        'api.github.com/repos/acme/shop/git/blobs' => Http::response(['sha' => 'blob1'], 201),
+        'api.github.com/repos/acme/shop/git/trees' => Http::response(['sha' => 'tree2'], 201),
+        'api.github.com/repos/acme/shop/git/commits' => Http::response(['sha' => 'commit3'], 201),
+        'api.github.com/repos/acme/shop/git/refs' => Http::response(['ref' => 'x'], 201),
+        'api.github.com/repos/acme/shop/pulls' => Http::response(['html_url' => 'https://github.com/acme/shop/pull/9'], 201),
+        '*' => Http::response('ok'),
+    ]);
+    $run = app(WorkflowEngine::class)->start(agentFlow($workspace, $machine), 'manual', 'Run by hand', [], $workspace->owner);
+    $job = DaemonJob::query()->sole();
+
+    agentJobDone($machine, $job, [
+        ...agentShotLog('Checkout_total'),
+        ...agentShotLog('Cut_short', parts: 99),
+        '::serveros-shot:: not-an-image.jpg '.hash('sha256', base64_encode('hello')).' 1',
+        '::serveros-shot-part:: '.base64_encode('hello'),
+        ...agentChangeLog([['path' => 'cart.js', 'mode' => '100644', 'content' => base64_encode("x\n")]], $base),
+    ]);
+
+    $shots = $run->refresh()->steps['fix']['shots'];
+    expect($run->state)->toBe('succeeded')
+        ->and($shots)->toHaveCount(1)
+        ->and($shots[0]['name'])->toBe('Checkout total')
+        ->and($shots[0]['url'])->toStartWith('https://serveros.test/storage/agent-shots/'.$run->id.'/')
+        ->and(Storage::disk('public')->allFiles('agent-shots/'.$run->id))->toHaveCount(1);
+    Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/pulls')
+        && str_contains($r['body'], '<img src="'.$shots[0]['url'].'" alt="Checkout total" width="640">'));
+});
+
+test('the agent gets a browser when its container has one, and sends back what it took as itself', function () {
+    expect(AgentSpec::script())
+        ->toContain('serveros-browser')
+        ->toContain('node -e \'require("playwright")\'')
+        ->toContain('run_agent node -e')
+        ->toContain('st.isFile()')
+        ->toContain('slice(-3)');
 });

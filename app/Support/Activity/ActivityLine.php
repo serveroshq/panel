@@ -155,6 +155,13 @@ final class ActivityLine
             'workspace.rename' => $set('renamed the workspace to', isset($meta['from']) ? $t('(was :name)', ['name' => $meta['from']]) : null),
             'workspace.logo' => $set('changed the workspace logo'),
             'workspace.logo_remove' => $set('removed the workspace logo'),
+            'workspace.theme_publish' => $set('published a new dashboard theme'),
+            'workspace.theme_off' => $set('went back to the standard dashboard look'),
+            'workspace.theme_image' => $set('uploaded a dashboard theme image'),
+            'workspace.theme_image_remove' => $set('deleted a dashboard theme image'),
+            'workspace.theme_share' => $set('shared the dashboard theme as'),
+            'workspace.theme_unshare' => $set('stopped sharing the dashboard theme'),
+            'workspace.theme_import' => $set('added the shared theme'),
             'workspace.log_storage_update' => $set(($meta['added'] ?? false) ? 'added a log database at' : 'changed the log database at', isset($meta['prune']) ? ($meta['prune'] ? 'to delete lines after the plan’s retention' : 'to keep lines until you delete them') : null),
             'workspace.log_storage_enable' => $set('started keeping logs in the database at', null, 'good'),
             'workspace.log_storage_disable' => $set('stopped keeping logs in the database at', 'so new lines go to ServerOS again', 'warn'),
@@ -255,11 +262,16 @@ final class ActivityLine
             'console.unlock' => $set('unlocked the console'),
             'mcp.connect' => $set('connected', 'through MCP'),
             'job.abandon' => $set($t('gave up on the stuck :kind job for', ['kind' => str_replace('_', ' ', (string) ($meta['kind'] ?? ''))]), null, 'warn'),
-            'app.settings' => match ($meta['snapshot_before'] ?? null) {
-                true => $set('turned on the snapshot before each deploy of'),
-                false => $set('turned off the snapshot before each deploy of', null, 'warn'),
+            'app.settings' => match (true) {
+                ($meta['deploy_on_push'] ?? null) === true => $set('turned on deploying each push for', $t('to :branch', ['branch' => (string) ($meta['push_branch'] ?? 'main')])),
+                ($meta['deploy_on_push'] ?? null) === false => $set('turned off deploying each push for', null, 'warn'),
+                isset($meta['push_branch']) => $set('changed the branch that deploys', $t('to :branch', ['branch' => (string) $meta['push_branch']])),
+                ($meta['snapshot_before'] ?? null) === true => $set('turned on the snapshot before each deploy of'),
+                ($meta['snapshot_before'] ?? null) === false => $set('turned off the snapshot before each deploy of', null, 'warn'),
                 default => $set('changed which database is snapshotted before deploys of'),
             },
+            'app.deploy_key' => $set('made a deploy key for', 'to fetch its private repository'),
+            'app.push_skipped' => $set('didn’t deploy a push to', $t(':commit to :branch: :reason', ['commit' => (string) ($meta['commit'] ?? ''), 'branch' => (string) ($meta['branch'] ?? ''), 'reason' => rtrim((string) ($meta['reason'] ?? ''), '.')]), 'warn'),
             'backup_destination.update' => $set('changed the backup destination', isset($meta['from']) ? $t('(was :name)', ['name' => $meta['from']]) : null),
             'backup_destination.retry' => $set('set up the backup destination again'),
             'workspace.create' => $set('created the workspace', null, 'good'),
@@ -319,6 +331,11 @@ final class ActivityLine
             'updates.unhold' => $set('let go of', $t((int) ($meta['machines'] ?? 0) === 1 ? 'on :count machine' : 'on :count machines', ['count' => (int) ($meta['machines'] ?? 0)])),
             'monitor.mute' => $set('muted the monitor', isset($meta['minutes']) ? $t('for :duration', ['duration' => MonitorAlerts::duration((int) $meta['minutes'] * 60)]) : null, 'warn'),
             'monitor.unmute' => $set('unmuted the monitor'),
+            'agent.task' => $set('gave agents the task', (int) ($meta['agents'] ?? 1) > 1 ? $t(':count agents', ['count' => (int) $meta['agents']]) : null),
+            'agent.task.delete' => $set('deleted the agent task', null, 'bad'),
+            'agent.more' => $set('started more agents on', (int) ($meta['waiting'] ?? 0) > 0 ? $t(':count waiting for room', ['count' => (int) $meta['waiting']]) : null),
+            'agent.follow_up' => $set('followed up on the agent task'),
+            'agent.merge' => $set('merged the agent’s pull request for', isset($meta['commit']) ? (string) $meta['commit'] : null, 'good'),
             'workflow.add' => $set('created the workflow'),
             'workflow.update' => $set('changed the workflow'),
             'workflow.enable' => $set('turned on the workflow', null, 'good'),
@@ -337,7 +354,7 @@ final class ActivityLine
                 : $set('skipped a repeat push', $t(':commit to :branch already ran', ['commit' => (string) ($meta['commit'] ?? ''), 'branch' => (string) ($meta['branch'] ?? '')]), 'warn'),
             'ai.connect' => $set('connected their own AI key:', null, 'warn'),
             'ai.update' => $set('changed their AI key for'),
-            'ai.disconnect' => $set('disconnected their AI key for', null, 'warn'),
+            'ai.disconnect' => $set('removed their AI key for', null, 'warn'),
             'fix.start' => $set('asked the agent to look into'),
             'fix.approve' => $set('approved the agent’s fix', $t((int) ($meta['steps'] ?? 0) === 1 ? ':count step' : ':count steps', ['count' => (int) ($meta['steps'] ?? 0)]), 'warn'),
             'fix.decline' => $set('turned down the agent’s fix'),
@@ -357,7 +374,7 @@ final class ActivityLine
             $out['detail'] = $meta['cause'] ?? null;
         }
 
-        if (! $a->byPerson() && in_array($a->action, ['machine.offline', 'machine.online', 'machine.disk_full', 'monitor.down', 'monitor.up', 'backup.failed', 'backup.restore_failed', 'machine.connect', 'service.down', 'service.up', 'service.crash_loop', 'workflow.run', 'workflow.failed', 'workflow.skipped', 'fix.done', 'fix.failed', 'mcp.revoke', 'domain.active', 'machine.daemon_updated', 'daemon.update_waiting', 'panel.updated', 'panel.update_failed', 'email_domain.unverified', 'cloud.suspend', 'cloud.resume', 'cloud.end', 'cloud.throttle'], true)) {
+        if (! $a->byPerson() && in_array($a->action, ['machine.offline', 'machine.online', 'machine.disk_full', 'monitor.down', 'monitor.up', 'backup.failed', 'backup.restore_failed', 'machine.connect', 'service.down', 'service.up', 'service.crash_loop', 'workflow.run', 'workflow.failed', 'workflow.skipped', 'app.push_skipped', 'fix.done', 'fix.failed', 'mcp.revoke', 'domain.active', 'machine.daemon_updated', 'daemon.update_waiting', 'panel.updated', 'panel.update_failed', 'email_domain.unverified', 'cloud.suspend', 'cloud.resume', 'cloud.end', 'cloud.throttle'], true)) {
             $out['leads'] = true;
         }
 

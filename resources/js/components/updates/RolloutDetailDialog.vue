@@ -26,6 +26,7 @@ import {
     toneText,
 } from './updates';
 import type { RolloutDetail, RolloutTarget } from './updates';
+import { errorMessage } from '@/lib/errors';
 
 const props = defineProps<{ rolloutId: number | null; canManage: boolean }>();
 const open = defineModel<boolean>('open', { required: true });
@@ -49,7 +50,7 @@ async function load(): Promise<void> {
         error.value = null;
         if (wasOpen && !rolloutOpen(fresh)) emit('changed');
     } catch (cause) {
-        error.value = (cause as Error).message;
+        error.value = errorMessage(cause);
     }
     if (open.value && rollout.value && rolloutOpen(rollout.value)) {
         timer = setTimeout(load, 3000);
@@ -86,7 +87,7 @@ async function cancel(): Promise<void> {
         emit('changed');
         void load();
     } catch (cause) {
-        toast.error((cause as Error).message);
+        toast.error(errorMessage(cause));
     } finally {
         cancelling.value = false;
     }

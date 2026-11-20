@@ -126,6 +126,23 @@ test('the weekly summary goes once a week to those who want it', function () {
     Notification::assertSentTimes(WeeklySummaryMail::class, 1);
 });
 
+test('the weekly summary counts outages that have already recovered', function () {
+    [$workspace] = maintenanceMachine();
+    $monitor = $workspace->monitors()->create(['name' => 'Shop', 'type' => 'http', 'url' => 'https://shop.example.com', 'interval_seconds' => 60, 'timeout_seconds' => 10, 'status' => 'up']);
+    $monitor->incidents()->create(['started_at' => now()->subDays(3), 'resolved_at' => now()->subDays(3)->addMinutes(5), 'cause' => 'Timed out']);
+    $monitor->incidents()->create(['started_at' => now()->subDay(), 'resolved_at' => now()->subDay()->addMinutes(2), 'cause' => 'Returned 503.']);
+
+    $this->artisan('summaries:send')->expectsOutput('Sent 1 summary.')->assertSuccessful();
+    Notification::assertSentTo($workspace->owner, WeeklySummaryMail::class, fn (WeeklySummaryMail $n) => $n->summary['headline'] === '2 outages this week');
+});
+
+test('the weekly summary says everything is running when nothing is watched', function () {
+    [$workspace] = maintenanceMachine();
+
+    $this->artisan('summaries:send')->expectsOutput('Sent 1 summary.')->assertSuccessful();
+    Notification::assertSentTo($workspace->owner, WeeklySummaryMail::class, fn (WeeklySummaryMail $n) => $n->summary['headline'] === 'Everything is running');
+});
+
 test('search finds machines, services, monitors and workflows in the workspace only', function () {
     [$workspace, $machine] = maintenanceMachine();
     $machine->forceFill(['inventory' => ['services' => [['key' => 'docker:abc', 'name' => 'serveros-umami-umami-1', 'status' => 'running']]]])->save();

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ActivityController;
+use App\Http\Controllers\AgentTaskController;
 use App\Http\Controllers\AppVersionController;
 use App\Http\Controllers\AssistantController;
 use App\Http\Controllers\Auth\SocialLoginController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\DaemonConnectController;
 use App\Http\Controllers\DaemonInstallScriptController;
 use App\Http\Controllers\DaemonJobController;
 use App\Http\Controllers\DashboardRedirectController;
+use App\Http\Controllers\DeployKeyController;
 use App\Http\Controllers\DeploySourceController;
 use App\Http\Controllers\DomainCheckController;
 use App\Http\Controllers\FixController;
@@ -47,8 +49,10 @@ use App\Http\Controllers\SearchController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\ServiceDetectController;
 use App\Http\Controllers\ServiceGroupController;
+use App\Http\Controllers\StartWithAgentsController;
 use App\Http\Controllers\StatusIncidentController;
 use App\Http\Controllers\StatusSubscriptionController;
+use App\Http\Controllers\ThemeShareController;
 use App\Http\Controllers\UnsubscribeController;
 use App\Http\Controllers\UpdatesController;
 use App\Http\Controllers\WorkflowController;
@@ -73,6 +77,7 @@ use App\Http\Controllers\WorkspacePinController;
 use App\Http\Controllers\WorkspaceSettingsController;
 use App\Http\Controllers\WorkspaceStatusPageController;
 use App\Http\Controllers\WorkspaceSwitchController;
+use App\Http\Controllers\WorkspaceThemeController;
 use App\Http\Controllers\WorkspaceWelcomeController;
 use App\Http\Middleware\RecordWorkspaceVisit;
 use App\Http\Middleware\RequirePasswordIfSet;
@@ -87,6 +92,15 @@ use App\Support\Extensions\Extensions;
 use App\Support\Licensing\CommunityLicense;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Http\Request;
+
+if (app()->isLocal()) {
+    Route::get('/__dev/login/{id}', function (int $id, Request $request) {
+        auth()->loginUsingId($id, true);
+        cookie()->queue(cookie()->forever('appearance', $request->query('theme', 'dark'), '/', config('session.domain'), null, false));
+
+        return redirect($request->query('to', '/'));
+    });
+}
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['guest', 'throttle:20,1'])->group(function () {
@@ -187,6 +201,17 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
         Route::post('fixes', [FixController::class, 'store'])->middleware('throttle:30,1')->name('workspace.fixes.store');
         Route::post('fixes/{fix}/approve', [FixController::class, 'approve'])->withoutScopedBindings()->middleware('throttle:10,1')->name('workspace.fixes.approve');
         Route::post('fixes/{fix}/decline', [FixController::class, 'decline'])->withoutScopedBindings()->name('workspace.fixes.decline');
+        Route::get('agents', [AgentTaskController::class, 'index'])->name('workspace.agents.index');
+        Route::post('agents', [AgentTaskController::class, 'store'])->middleware('throttle:20,1')->name('workspace.agents.store');
+        Route::get('agents/machines/{machine}/templates', [AgentTaskController::class, 'templates'])->withoutScopedBindings()->middleware('throttle:30,1')->name('workspace.agents.templates');
+        Route::get('agents/{task}', [AgentTaskController::class, 'show'])->withoutScopedBindings()->name('workspace.agents.show');
+        Route::post('agents/{task}/runs', [AgentTaskController::class, 'more'])->withoutScopedBindings()->middleware('throttle:20,1')->name('workspace.agents.runs.store');
+        Route::get('agents/{task}/runs/{run}/changes', [AgentTaskController::class, 'changes'])->withoutScopedBindings()->whereNumber('run')->middleware('throttle:60,1')->name('workspace.agents.runs.changes');
+        Route::post('agents/{task}/runs/{run}/merge', [AgentTaskController::class, 'merge'])->withoutScopedBindings()->whereNumber('run')->middleware('throttle:10,1')->name('workspace.agents.runs.merge');
+        Route::post('agents/{task}/runs/{run}/deploy', [AgentTaskController::class, 'deploy'])->withoutScopedBindings()->whereNumber('run')->middleware('throttle:10,1')->name('workspace.agents.runs.deploy');
+        Route::post('agents/{task}/runs/{run}/preview', [AgentTaskController::class, 'preview'])->withoutScopedBindings()->whereNumber('run')->middleware('throttle:10,1')->name('workspace.agents.runs.preview');
+        Route::post('agents/{task}/stop', [AgentTaskController::class, 'stop'])->withoutScopedBindings()->name('workspace.agents.stop');
+        Route::delete('agents/{task}', [AgentTaskController::class, 'destroy'])->withoutScopedBindings()->name('workspace.agents.destroy');
         Route::get('workflows', [WorkflowController::class, 'index'])->name('workspace.workflows.index');
         Route::post('workflows', [WorkflowController::class, 'store'])->middleware('throttle:20,1')->name('workspace.workflows.store');
         Route::get('workflows/{workflow}', [WorkflowController::class, 'show'])->withoutScopedBindings()->name('workspace.workflows.show');
@@ -223,6 +248,9 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
         Route::put('machines/{machine}/apps/{service}/variables', [AppVersionController::class, 'updateVariables'])->middleware('throttle:20,1')->name('workspace.apps.variables.update');
         Route::post('machines/{machine}/deploy', MachineDeployController::class)->middleware('throttle:10,1')->name('workspace.machines.deploy');
         Route::get('machines/{machine}/deploy/taken', [MachineDeployController::class, 'taken'])->middleware('throttle:60,1')->name('workspace.machines.deploy.taken');
+        Route::post('machines/{machine}/deploy/key', [DeployKeyController::class, 'key'])->middleware('throttle:20,1')->name('workspace.machines.deploy.key');
+        Route::post('machines/{machine}/deploy/resolve', [DeployKeyController::class, 'resolve'])->middleware('throttle:30,1')->name('workspace.machines.deploy.resolve');
+        Route::get('machines/{machine}/deploy/jobs/{job}', [DeployKeyController::class, 'show'])->withoutScopedBindings()->middleware('throttle:120,1')->name('workspace.machines.deploy.job');
         Route::post('machines/{machine}/domain-check', DomainCheckController::class)->middleware('throttle:30,1')->name('workspace.machines.domain-check');
         Route::post('console/unlock', [ConsoleLockController::class, 'unlock'])->middleware('throttle:5,1')->name('workspace.console.unlock');
         Route::post('console/lock', [ConsoleLockController::class, 'lock'])->name('workspace.console.lock');
@@ -314,6 +342,16 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
         Route::delete('settings/logo', [WorkspaceSettingsController::class, 'destroyLogo'])->name('workspace.settings.logo.destroy');
         Route::get('settings/profile', [WorkspaceSettingsController::class, 'profile'])->name('workspace.settings.profile');
         Route::get('settings/appearance', [WorkspaceSettingsController::class, 'appearance'])->name('workspace.settings.appearance');
+        Route::get('settings/theme', [WorkspaceThemeController::class, 'show'])->name('workspace.settings.theme');
+        Route::put('settings/theme/draft', [WorkspaceThemeController::class, 'saveDraft'])->middleware('throttle:60,1')->name('workspace.settings.theme.draft');
+        Route::delete('settings/theme/draft', [WorkspaceThemeController::class, 'discardDraft'])->name('workspace.settings.theme.draft.destroy');
+        Route::post('settings/theme/publish', [WorkspaceThemeController::class, 'publish'])->middleware('throttle:30,1')->name('workspace.settings.theme.publish');
+        Route::delete('settings/theme', [WorkspaceThemeController::class, 'destroy'])->name('workspace.settings.theme.destroy');
+        Route::post('settings/theme/shares', [WorkspaceThemeController::class, 'storeShare'])->middleware('throttle:20,1')->name('workspace.settings.theme.shares.store');
+        Route::delete('settings/theme/shares/{share}', [WorkspaceThemeController::class, 'destroyShare'])->withoutScopedBindings()->name('workspace.settings.theme.shares.destroy');
+        Route::post('settings/theme/import', [WorkspaceThemeController::class, 'import'])->middleware('throttle:20,1')->name('workspace.settings.theme.import');
+        Route::post('settings/theme/images', [WorkspaceThemeController::class, 'storeImage'])->middleware('throttle:30,1')->name('workspace.settings.theme.images.store');
+        Route::delete('settings/theme/images/{image}', [WorkspaceThemeController::class, 'destroyImage'])->where('image', '[A-Za-z0-9._-]+')->name('workspace.settings.theme.images.destroy');
         Route::put('settings/notifications', [WorkspaceSettingsController::class, 'updateNotifications'])->middleware('throttle:30,1')->name('workspace.settings.notifications');
 
         Route::get('settings/members', [WorkspaceMemberController::class, 'index'])->name('workspace.members.index');
@@ -426,6 +464,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('oauth/authorize', [OAuthAuthorizeController::class, 'store'])->middleware('throttle:30,1')->name('mcp.oauth.approve');
 });
 
+Route::get('start/agents', StartWithAgentsController::class)->name('start.agents');
+
 Route::get('workspaces/availability', WorkspaceAvailabilityController::class)
     ->middleware('throttle:60,1')
     ->name('workspaces.availability');
@@ -439,6 +479,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 Route::post('admin/return', ImpersonationController::class)->middleware('auth')->name('impersonation.stop');
+
+Route::get('themes/{token}', [ThemeShareController::class, 'show'])->where('token', '[a-z0-9]{8,32}')->middleware('throttle:120,1')->name('themes.show');
+Route::middleware('auth')->group(function () {
+    Route::get('themes/{token}/add', [ThemeShareController::class, 'add'])->where('token', '[a-z0-9]{8,32}')->name('themes.add');
+    Route::post('themes/{token}/import', [ThemeShareController::class, 'import'])->where('token', '[a-z0-9]{8,32}')->middleware('throttle:20,1')->name('themes.import');
+});
 
 Route::middleware('auth')->group(function () {
     Route::get('invitations/{token}', [InvitationController::class, 'show'])->name('invitations.show');

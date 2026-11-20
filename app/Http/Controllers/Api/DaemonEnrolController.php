@@ -6,6 +6,7 @@ use App\Enums\MachineEnvironment;
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\DaemonEnrolment;
+use App\Models\Machine;
 use App\Models\Workspace;
 use App\Support\DaemonCertificateAuthority;
 use App\Support\DaemonFacts;
@@ -76,7 +77,7 @@ class DaemonEnrolController extends Controller
             }
 
             $workspace = Workspace::query()->lockForUpdate()->findOrFail($enrolment->workspace_id);
-            if (! $workspace->canAddMachine()) {
+            if ($enrolment->hosted_by === null && ! $workspace->canAddMachine()) {
                 return response()->json(['error' => 'The workspace machine limit was reached.', 'code' => 'machine_limit'], 403);
             }
 
@@ -90,13 +91,32 @@ class DaemonEnrolController extends Controller
 
             $uid = (string) Str::uuid();
             $name = $data['facts']['hostname'];
-            $machine = $workspace->machines()->create([
-                'name' => $name,
-                'ip_address' => DaemonFacts::address($data['facts'], $request->ip()) ?? '0.0.0.0',
-                'provider' => DaemonFacts::provider($data['facts']) ?? 'Other',
-                'environment' => MachineEnvironment::Production,
-                'services_count' => 0,
-            ]);
+            // A package's machine can join as the record it had before (a
+            // fresh server in its place), keeping its name and history.
+            $machine = $enrolment->hosted_by !== null && $enrolment->machine_id !== null
+                ? $workspace->machines()->where('hosted_by', $enrolment->hosted_by)->lockForUpdate()->find($enrolment->machine_id)
+                : null;
+            if ($machine !== null) {
+                $name = $machine->name;
+                $machine->forceFill([
+                    'ip_address' => DaemonFacts::address($data['facts'], $request->ip()) ?? '0.0.0.0',
+                    'inventory' => null,
+                    'inventory_scanned_at' => null,
+                    'disconnected_at' => null,
+                    'last_seen_at' => null,
+                ]);
+            } else {
+                $machine = new Machine([
+                    'name' => $name,
+                    'ip_address' => DaemonFacts::address($data['facts'], $request->ip()) ?? '0.0.0.0',
+                    'provider' => DaemonFacts::provider($data['facts']) ?? 'Other',
+                    'environment' => MachineEnvironment::Production,
+                    'services_count' => 0,
+                ]);
+                $machine->workspace()->associate($workspace);
+                $machine->hosted_by = $enrolment->hosted_by;
+                $machine->save();
+            }
             $machine->forceFill([
                 'uid' => $uid,
                 'certificate_serial' => $issued['serial'],
@@ -109,12 +129,15 @@ class DaemonEnrolController extends Controller
             MachineMetadata::apply($machine, $enrolment->metadata ?? []);
             $machine->forceFill(['log_ip_masking' => MachinePolicies::for($machine)->log_ip_masking])->save();
             $enrolment->update(['used_at' => now(), 'machine_id' => $machine->id]);
-            if ($enrolment->user !== null || $enrolment->impersonation_session_id !== null) {
-                Activity::record($workspace, 'machine.connect', $name, $machine, $enrolment->user, viewAs: $enrolment->impersonation_session_id);
-            } else {
-                Activity::system($workspace, 'machine.connect', $name, $machine);
+            // A package's machine says what it's doing in its own words.
+            if ($enrolment->hosted_by === null) {
+                if ($enrolment->user !== null || $enrolment->impersonation_session_id !== null) {
+                    Activity::record($workspace, 'machine.connect', $name, $machine, $enrolment->user, viewAs: $enrolment->impersonation_session_id);
+                } else {
+                    Activity::system($workspace, 'machine.connect', $name, $machine);
+                }
+                TeamPush::send('Machine connected', "A machine connected on {$machine->provider}", TeamPush::admin('admin.machines'), 'computer');
             }
-            TeamPush::send('Machine connected', "A machine connected on {$machine->provider}", TeamPush::admin('admin.machines'), 'computer');
 
             return response()->json([
                 'machine_id' => $uid,

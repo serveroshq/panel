@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useSelfHosted } from '@/composables/useSelfHosted';
 import { trans } from 'laravel-vue-i18n';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import { ArrowDown, ArrowLeft, Check, ChevronDown, Search } from '@lucide/vue';
 import {
     SolarScrollText as ScrollText,
@@ -38,6 +38,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { Workspace } from '@/types';
+import { describe, errorMessage } from '@/lib/errors';
 
 type Level = 'error' | 'warn' | 'info' | 'debug';
 
@@ -61,6 +62,10 @@ type Filters = {
 };
 
 const selfHosted = useSelfHosted();
+
+// With a machine picked, an agent can start from its recent logs.
+const agentsPage = usePage<{ agentsPreview?: boolean }>();
+const agentsPreview = computed(() => agentsPage.props.agentsPreview === true);
 const props = defineProps<{
     workspace: Workspace;
     machines: { id: number; name: string }[];
@@ -611,8 +616,7 @@ async function confirmDelete(): Promise<void> {
             message?: string;
         } | null;
         if (!response.ok) {
-            deleteError.value =
-                data?.message ?? trans('Couldn’t delete them. Try again.');
+            deleteError.value = describe(response.status, data);
             return;
         }
 
@@ -629,8 +633,8 @@ async function confirmDelete(): Promise<void> {
             );
         }
         router.reload({ only: ['lines', 'hasOlder', 'histogram'] });
-    } catch {
-        deleteError.value = trans('Couldn’t delete them. Try again.');
+    } catch (cause) {
+        deleteError.value = errorMessage(cause);
     } finally {
         deleteBusy.value = false;
     }
@@ -718,6 +722,13 @@ watch(live, (on) => {
         </template>
 
         <template v-if="machines.length > 0" #actions>
+            <a
+                v-if="agentsPreview && filters.machine !== null"
+                :href="`/agents?from=logs:${filters.machine}${filters.service ? ':' + filters.service : ''}`"
+                class="ds-raised-button cursor-pointer text-[13px]!"
+            >
+                {{ $t('Fix with an agent') }}
+            </a>
             <label
                 class="ds-raised-button w-full cursor-text focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-(--ds-ring) sm:w-72"
             >

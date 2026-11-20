@@ -18,21 +18,20 @@ function brandUser(): User
 test('the account emails are the designed ones', function () {
     $verify = (string) (new VerifyEmail)->toMail(User::factory()->unverified()->create())->render();
     expect($verify)->toContain('Confirm your email')
-        ->toContain('images/email/verify.jpg')
-        ->toContain('images/email/icon-verify.png')
+        ->toContain('images/email/logo-ink.png')
         ->toContain('The link works for an hour.');
 
     $reset = (new ResetPassword('tok123'))->toMail(brandUser());
     expect($reset->subject)->toBe('Reset your ServerOS password')
-        ->and((string) $reset->render())->toContain('Reset your password')->toContain('reset-password/tok123')->toContain('images/email/reset.jpg');
+        ->and((string) $reset->render())->toContain('Reset your password')->toContain('reset-password/tok123');
 });
 
 test('alerts are red when something’s wrong and green when it’s fixed', function () {
     $down = (string) (new MonitorAlert('Shop is down', ['https://shop.test', 'Timed out.'], 'https://acme.test/monitors/1', true, 'Open the monitor', 1))->toMail(brandUser())->render();
     $up = (string) (new MonitorAlert('Shop is back up', ['https://shop.test', 'Back after 3 minutes down.'], 'https://acme.test/monitors/1', false, 'Open the monitor', 1))->toMail(brandUser())->render();
 
-    expect($down)->toContain('images/email/down.jpg')->toContain('Timed out.')->toContain('Stop alert emails from this workspace')
-        ->and($up)->toContain('images/email/up.jpg')->toContain('Back after 3 minutes down.');
+    expect($down)->toContain('#E5484D')->toContain('Alert')->toContain('Timed out.')->toContain('Stop alert emails from this workspace')
+        ->and($up)->toContain('#30A46C')->toContain('Resolved')->toContain('Back after 3 minutes down.');
 });
 
 test('the weekly summary puts each section in a table, uptime as name and figure', function () {
@@ -43,7 +42,7 @@ test('the weekly summary puts each section in a table, uptime as name and figure
 
     expect($html)->toContain('No downtime this week')
         ->toContain('Shop')->toContain('99.9% up, down 1 time for 2 minutes')
-        ->toContain('#FCD34D')
+        ->toContain('#AD5700')
         ->toContain('Stop the weekly summary');
 });
 
@@ -54,7 +53,7 @@ test('status page emails carry the page’s name, not ours, and say where things
     $confirm = (new StatusSubscribeConfirm($subscriber, 'Acme status'))->render();
     $update = (new StatusPageUpdate($subscriber, 'Acme status', 'Checkout errors', 'Checkout errors', 'Resolved', 'All fixed.'))->render();
 
-    expect($confirm)->toContain('Confirm updates')->toContain('images/email/subscribe.jpg')->toContain('Sent by ServerOS for Acme status.')
+    expect($confirm)->toContain('Confirm updates')->toContain('Sent by ServerOS for Acme status.')->not->toContain('images/email/logo-ink.png')
         ->not->toContain('One panel for the servers you already rent')
-        ->and($update)->toContain('images/email/status.jpg')->toContain('Resolved')->toContain('#34D399')->toContain('All fixed.')->toContain('Unsubscribe');
+        ->and($update)->toContain('Resolved')->toContain('#30A46C')->toContain('All fixed.')->toContain('Unsubscribe');
 });

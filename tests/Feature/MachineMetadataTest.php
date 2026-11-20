@@ -179,7 +179,7 @@ test('a pinned policy keeps machines on one release, and a pin set elsewhere is 
     expect(detailsControls())->toHaveCount($before);
 });
 
-test('machines that ask first are told a release is waiting, and when they’ve updated', function () {
+test('machines that ask first get one workspace update notice and individual update activity', function () {
     Notification::fake();
     $workspace = Workspace::factory()->onPlan(Plan::Pro)->create();
     MachinePolicies::defaultFor($workspace)->update(['updates' => 'approve']);
@@ -198,14 +198,16 @@ test('machines that ask first are told a release is waiting, and when they’ve 
     expect(collect(detailsControls('self_update'))->pluck('uid')->sort()->values()->all())->toBe(collect([$one->uid, $two->uid])->sort()->values()->all())
         ->and(collect(detailsControls('self_update'))->every(fn (array $c) => $c['approved'] === true))->toBeTrue();
 
-    detailsHello($one, ['daemon_version' => 'v0.1.1-pre.25']);
-    expect(ActivityLine::sentence(Activity::query()->where('action', 'machine.daemon_updated')->sole()))->toBe('one is on a new daemon v0.1.1-pre.24 to v0.1.1-pre.25');
-    Notification::assertSentTo($workspace->owner, MonitorAlert::class, fn (MonitorAlert $n) => $n->subject === 'one is on daemon v0.1.1-pre.25');
-
-    detailsHello($one, ['daemon_version' => 'v0.1.1-pre.25']);
-    Notification::assertSentTimes(MonitorAlert::class, 2);
-
     $this->actingAs($workspace->owner)->get('https://'.$workspace->host().'/machines/'.$two->id.'/settings')
         ->assertInertia(fn ($page) => $page->where('policy.daemon.compareUrl', 'https://github.com/serveroshq/daemon/compare/v0.1.1-pre.24...v0.1.1-pre.25'));
+
+    detailsHello($one, ['daemon_version' => 'v0.1.1-pre.25']);
+    detailsHello($two, ['daemon_version' => 'v0.1.1-pre.25']);
+    expect(ActivityLine::sentence(Activity::query()->where('action', 'machine.daemon_updated')->where('machine_id', $one->id)->sole()))->toBe('one is on a new daemon v0.1.1-pre.24 to v0.1.1-pre.25')
+        ->and(Activity::query()->where('action', 'machine.daemon_updated')->count())->toBe(2);
+
+    detailsHello($one, ['daemon_version' => 'v0.1.1-pre.25']);
+    Notification::assertSentTimes(MonitorAlert::class, 1);
+    expect(Activity::query()->where('action', 'machine.daemon_updated')->count())->toBe(2);
     expect($release->version)->toBe('v0.1.1-pre.25');
 });

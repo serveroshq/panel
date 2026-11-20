@@ -27,6 +27,8 @@ return [
     'groq' => [
         'key' => env('GROQ_API_KEY'),
         'model' => env('GROQ_MODEL') ?: 'openai/gpt-oss-120b',
+        // Used for Ask AI messages with images when the main model can't see them.
+        'vision_model' => env('GROQ_VISION_MODEL') ?: 'qwen/qwen3.8-27b',
         'agent_queue' => env('AGENT_QUEUE') ?: 'default',
 
         'translate_key' => env('GROQ_TRANSLATE_KEY') ?: env('GROQ_API_KEY'),

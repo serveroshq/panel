@@ -37,6 +37,12 @@
 #   --version=X.Y.Z    an image version instead of the latest
 #   --image=NAME       another image (default ghcr.io/serveroshq/panel,
 #                      the official one); switches an install to it
+#   --local            try it on this computer (Linux, or a Mac with Docker
+#                      Desktop): at serveros.localhost, with certificates
+#                      made here, in ~/serveros, no root needed. Machines on
+#                      the internet can't connect to a local panel.
+#   --check            only report what this computer has (system, memory,
+#                      disk, Docker, ports, address) and change nothing
 #
 # Running it again keeps your settings and data, and brings the install up
 # to date. Afterwards, serveros-panel does upgrades and backups.
@@ -44,12 +50,14 @@ set -euo pipefail
 
 DOMAIN="${SERVEROS_DOMAIN:-}"
 EMAIL="${ACME_EMAIL:-}"
-DIR="${SERVEROS_DIR:-/opt/serveros}"
+DIR="${SERVEROS_DIR:-}"
 IMAGE_NAME="ghcr.io/serveroshq/panel"
 VERSION="latest"
 IMAGE_GIVEN=0
 TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
 GATEWAY_HOST="${SERVEROS_GATEWAY_HOST:-}"
+LOCAL=0
+CHECK=0
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -64,14 +72,112 @@ for arg in "$@"; do
         --image=*) IMAGE_NAME="${arg#--image=}"; IMAGE_GIVEN=1 ;;
         --tunnel-token=*) TUNNEL_TOKEN="${arg#--tunnel-token=}" ;;
         --gateway-host=*) GATEWAY_HOST="${arg#--gateway-host=}" ;;
+        --local) LOCAL=1 ;;
+        --check) CHECK=1 ;;
         -h|--help) sed -n '2,45p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) fail "unknown option $arg (see --help)" ;;
     esac
 done
 IMAGE="${IMAGE_NAME}:${VERSION}"
+OS="$(uname -s)"
+if [ -z "$DIR" ]; then
+    if [ "$LOCAL" = 1 ]; then DIR="$HOME/serveros"; else DIR=/opt/serveros; fi
+fi
 
-[ "$(id -u)" -eq 0 ] || fail "run it as root (with sudo)."
-[ "$(uname -s)" = "Linux" ] || fail "ServerOS self-hosting runs on Linux."
+# Whether a port is taken, and by what when that can be seen.
+port_owner() {
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltnH "sport = :$1" 2>/dev/null | grep -q . || return 1
+        ss -ltnpH "sport = :$1" 2>/dev/null | sed -n 's/.*users:((\"\([^\"]*\)\".*/\1/p' | head -n1
+    elif command -v lsof >/dev/null 2>&1; then
+        lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | grep -q LISTEN || return 1
+        lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1}'
+    else
+        return 1
+    fi
+}
+
+# --check: a report for whoever is setting this up (or the AI helping
+# them), one setting per line. It changes nothing and needs no root.
+if [ "$CHECK" = 1 ]; then
+    report() { printf '%s=%s\n' "$1" "$2"; }
+    report os "$OS"
+    report arch "$(uname -m)"
+    [ ! -r /etc/os-release ] || report distro "$(. /etc/os-release; printf '%s %s' "${ID:-}" "${VERSION_ID:-}")"
+    report cpus "$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 0)"
+    if [ -r /proc/meminfo ]; then
+        report memory_mb "$(awk '/^MemTotal:/ {print int($2 / 1024)}' /proc/meminfo)"
+    else
+        report memory_mb "$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1048576 ))"
+    fi
+    where="$DIR"
+    while [ ! -d "$where" ]; do where="$(dirname "$where")"; done
+    report disk_free_mb "$(df -Pk "$where" | awk 'NR==2 {print int($4 / 1024)}')"
+    if ! command -v docker >/dev/null 2>&1; then
+        report docker none
+    else
+        report docker "$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo not-running)"
+        report compose "$(docker compose version --short 2>/dev/null || echo none)"
+        case "$(command -v docker)" in /snap/*) report docker_snap yes ;; esac
+    fi
+    report root "$([ "$(id -u)" -eq 0 ] && echo yes || echo no)"
+    report sudo "$( (sudo -n true) >/dev/null 2>&1 && echo yes || echo no)"
+    report systemd "$(command -v systemctl >/dev/null 2>&1 && echo yes || echo no)"
+    report dir "$DIR"
+    if [ -f "$DIR/compose.yaml" ]; then
+        report installed yes
+        report installed_domain "$(grep -E '^SERVEROS_DOMAIN=' "$DIR/.env" 2>/dev/null | tail -n1 | cut -d= -f2-)"
+        report installed_image "$(grep -E '^SERVEROS_IMAGE=' "$DIR/.env" 2>/dev/null | tail -n1 | cut -d= -f2-)"
+    else
+        report installed no
+    fi
+    for port in 80 443 8443; do
+        if owner="$(port_owner "$port")"; then report "port_$port" "busy${owner:+:$owner}"; else report "port_$port" free; fi
+    done
+    report public_ipv4 "$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+    report public_ipv6 "$(curl -fsS6 --max-time 5 https://api6.ipify.org 2>/dev/null || true)"
+    exit 0
+fi
+
+if [ "$LOCAL" = 1 ]; then
+    case "$OS" in
+        Linux|Darwin) ;;
+        *) fail "--local runs on Linux or a Mac." ;;
+    esac
+    docker info >/dev/null 2>&1 || [ "$(id -u)" -eq 0 ] || [ "$OS" = Darwin ] \
+        || fail "Docker needs root here: run it with sudo, or add yourself to the docker group."
+else
+    [ "$(id -u)" -eq 0 ] || fail "run it as root (with sudo)."
+    [ "$OS" = "Linux" ] || fail "ServerOS self-hosting runs on Linux. To try it on this computer, add --local."
+fi
+
+# Docker installed via snap runs confined and cannot read outside /home (e.g. /opt/serveros).
+docker_bin="$(command -v docker 2>/dev/null || true)"
+docker_target="$(readlink -f "$docker_bin" 2>/dev/null || true)"
+is_docker_snap=0
+case "$docker_bin" in
+    /snap/*) is_docker_snap=1 ;;
+esac
+case "$docker_target" in
+    /snap/*|*/snap|*/snapd) is_docker_snap=1 ;;
+esac
+if [ "$is_docker_snap" = 1 ]; then
+    abs_dir="$(realpath -m -- "$DIR")"
+    user_example="${SUDO_USER:-username}"
+    [ "$user_example" != "root" ] || user_example="username"
+    case "$abs_dir" in
+        /home/*)
+            case "$abs_dir" in
+                */.*|*/.*/*)
+                    fail "Docker was installed as a snap, which cannot access hidden directories in /home due to snap confinement. Use a non-hidden path like --dir=/home/$user_example/serveros, or install Docker from https://get.docker.com."
+                    ;;
+            esac
+            ;;
+        *)
+            fail "Docker was installed as a snap, which cannot access $DIR due to snap confinement. Install Docker from https://get.docker.com (or https://docs.docker.com/engine/install/), or run with --dir=/home/$user_example/serveros."
+            ;;
+    esac
+fi
 
 ask() {
     # ask VAR "Question": from the terminal, even when piped from curl.
@@ -96,12 +202,19 @@ TUNNEL=0
 [ -z "$TUNNEL_TOKEN" ] || TUNNEL=1
 
 is_domain() { printf '%s' "$1" | grep -Eq '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'; }
-bare() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's|^https\?://||' -e 's|/.*$||' -e 's|:[0-9]*$||'; }
+bare() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E -e 's#^https?://##' -e 's#/.*$##' -e 's#:[0-9]*$##'; }
 
+[ "$LOCAL" = 0 ] || [ -n "$DOMAIN" ] || DOMAIN=serveros.localhost
 [ -n "$DOMAIN" ] || ask DOMAIN "The panel's domain (like panel.example.com):"
 DOMAIN="$(bare "$DOMAIN")"
 is_domain "$DOMAIN" || fail "\"$DOMAIN\" isn't a domain name. Use --domain=panel.example.com"
-if [ "$TUNNEL" = 1 ]; then
+if [ "$LOCAL" = 1 ]; then
+    [ "$TUNNEL" = 0 ] || fail "--local and --tunnel-token don't go together: a tunnel is for a server on the internet."
+    case "$DOMAIN" in
+        localhost|*.localhost) ;;
+        *) fail "a local panel answers on a .localhost name (like serveros.localhost), which always points at this computer." ;;
+    esac
+elif [ "$TUNNEL" = 1 ]; then
     printf '%s' "$TUNNEL_TOKEN" | grep -Eq '^[A-Za-z0-9+/=_-]{40,4096}$' \
         || fail "that isn't a Cloudflare Tunnel token. Copy it from the tunnel's install command in Cloudflare (Networking > Tunnels)."
     [ -n "$GATEWAY_HOST" ] || ask GATEWAY_HOST "Where machines connect, a name pointing straight at this server, DNS only (like gateway.example.com):"
@@ -115,20 +228,25 @@ fi
 
 # Docker, with Compose.
 if ! command -v docker >/dev/null 2>&1; then
+    [ "$OS" = Linux ] || fail "Docker isn't installed. Install Docker Desktop (https://www.docker.com/products/docker-desktop/), start it, then run this again."
+    [ "$(id -u)" -eq 0 ] || fail "Docker isn't installed. Run this with sudo to install it, or install Docker first."
     say "Installing Docker"
     curl -fsSL https://get.docker.com | sh
 fi
+docker info >/dev/null 2>&1 || fail "Docker isn't running. Start it (Docker Desktop on a Mac), then run this again."
 docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 isn't installed (the docker-compose-plugin package)."
-systemctl enable --now docker >/dev/null 2>&1 || true
+! command -v systemctl >/dev/null 2>&1 || [ "$(id -u)" -ne 0 ] || systemctl enable --now docker >/dev/null 2>&1 || true
 
-# Ports another program already holds.
-if command -v ss >/dev/null 2>&1 && [ ! -f "$DIR/compose.yaml" ]; then
+# Ports another program already holds. HTTP_PORT, HTTPS_PORT and
+# GATEWAY_PORT move them, for a local panel next to another web server.
+if [ ! -f "$DIR/compose.yaml" ]; then
     # Behind a tunnel the panel only listens on this server, on 18080 and 18443.
-    ports="80 443 8443"
-    [ "$TUNNEL" = 0 ] || ports="18080 18443 8443"
+    ports="${HTTP_PORT:-80} ${HTTPS_PORT:-443} ${GATEWAY_PORT:-8443}"
+    [ "$TUNNEL" = 0 ] || ports="18080 18443 ${GATEWAY_PORT:-8443}"
     for port in $ports; do
-        if ss -ltnH "sport = :$port" | grep -q .; then
-            fail "port $port is already in use ($(ss -ltnpH "sport = :$port" | sed -n 's/.*users:((\"\([^\"]*\)\".*/\1/p' | head -n1)). ServerOS needs $(printf '%s' "$ports" | sed 's/ /, /g')."
+        port="${port##*:}"
+        if owner="$(port_owner "$port")"; then
+            fail "port $port is already in use${owner:+ ($owner)}. ServerOS needs $(printf '%s' "$ports" | sed 's/ /, /g')."
         fi
     done
 fi
@@ -144,7 +262,9 @@ check_dns() {
         warn "$name points at $found, not this server ($public_ip)."
     fi
 }
-if [ "$TUNNEL" = 1 ]; then
+if [ "$LOCAL" = 1 ]; then
+    : # .localhost always points at this computer.
+elif [ "$TUNNEL" = 1 ]; then
     # The panel's names come from the tunnel's routes (set up
     # below); the gateway's must point here without Cloudflare's proxy.
     check_dns "$GATEWAY_HOST"
@@ -158,6 +278,8 @@ chmod 700 "$DIR"
 cd "$DIR"
 
 random() { head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+# sed -i, the same on Linux and macOS, keeping the file's permissions.
+sed_in() { sed "$1" "$2" > "$2.new" && cat "$2.new" > "$2" && rm -f "$2.new"; }
 
 if [ ! -f .env ]; then
     say "Writing $DIR/.env"
@@ -199,7 +321,7 @@ EOF
     umask 022
 elif [ "$VERSION" != "latest" ] || [ "$IMAGE_GIVEN" = 1 ] || ! grep -q '^SERVEROS_IMAGE=' .env; then
     if grep -q '^SERVEROS_IMAGE=' .env; then
-        sed -i "s|^SERVEROS_IMAGE=.*|SERVEROS_IMAGE=$IMAGE|" .env
+        sed_in "s|^SERVEROS_IMAGE=.*|SERVEROS_IMAGE=$IMAGE|" .env
     else
         printf 'SERVEROS_IMAGE=%s\n' "$IMAGE" >> .env
     fi
@@ -228,6 +350,17 @@ if [ "$TUNNEL" = 1 ]; then
     set_env CADDY_GLOBAL_OPTIONS local_certs
     set_env GATEWAY_PANEL_CA /gateway/panel-ca.crt
 fi
+if [ "$LOCAL" = 1 ]; then
+    # Caddy makes the certificates itself, since Let's Encrypt can't reach
+    # this computer. Browsers warn about them until its root is trusted.
+    set_env SERVEROS_LOCAL true
+    set_env CADDY_GLOBAL_OPTIONS local_certs
+    set_env GATEWAY_PANEL_CA /gateway/panel-ca.crt
+    for key in HTTP_PORT HTTPS_PORT GATEWAY_PORT; do
+        eval "value=\${$key:-}"
+        [ -z "$value" ] || set_env "$key" "$value"
+    done
+fi
 grep -q '^DAEMON_RELEASE_PUBKEY=' .env || printf 'DAEMON_RELEASE_PUBKEY=%s\n' "5245716675785d7bf5dc36d783fa5c690c705da4d542082f398e3e79543d06f8" >> .env
 
 say "Pulling $IMAGE"
@@ -245,11 +378,16 @@ if [ "$TUNNEL" = 1 ] && ! printf '%s' "$image_compose" | grep -q cloudflared; th
     fail "$IMAGE doesn't support Cloudflare Tunnels (1.2.0 and later do). Run the script again with --version=1.2.0, or a newer one."
 fi
 printf '%s\n' "$image_compose" > compose.yaml
-docker run --rm --entrypoint cat "$IMAGE" /app/docker/self-hosted/serveros-panel > /usr/local/bin/serveros-panel
-chmod 755 /usr/local/bin/serveros-panel
+# The serveros-panel command, on the PATH when this user may write there.
+PANEL_BIN=/usr/local/bin/serveros-panel
+if [ "$LOCAL" = 1 ] && ! { [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; }; then
+    PANEL_BIN="$DIR/serveros-panel"
+fi
+docker run --rm --entrypoint cat "$IMAGE" /app/docker/self-hosted/serveros-panel > "$PANEL_BIN"
+chmod 755 "$PANEL_BIN"
 # Only a compose file that gives Redis the password can have one.
 if grep -q requirepass compose.yaml && ! grep -q '^REDIS_PASSWORD=.' .env; then
-    sed -i '/^REDIS_PASSWORD=/d' .env
+    sed_in '/^REDIS_PASSWORD=/d' .env
     printf 'REDIS_PASSWORD=%s\n' "$(random 24)" >> .env
 fi
 
@@ -269,8 +407,10 @@ docker compose exec -T web php artisan daemon:sync-releases --no-interaction >/d
 # a month before its own runs out, then a backup of the database and
 # storage, the last 14 kept. Written each time, so running the script
 # again brings the schedule up to date.
-if grep -q '^    schedule) schedule ;;' /usr/local/bin/serveros-panel; then
-    SERVEROS_DIR="$DIR" /usr/local/bin/serveros-panel schedule
+if [ "$LOCAL" = 1 ]; then
+    : # A panel to try out: backups by hand (serveros-panel backup).
+elif grep -q '^    schedule) schedule ;;' "$PANEL_BIN"; then
+    SERVEROS_DIR="$DIR" "$PANEL_BIN" schedule
 elif [ -d /etc/cron.d ]; then
     cat > /etc/cron.d/serveros-panel <<EOF
 # ServerOS: the gateway's certificate checked, then a backup into $DIR/backups (serveros-panel nightly).
@@ -289,6 +429,37 @@ if [ -n "$code" ]; then
   (see it again with: serveros-panel setup-code)"
 else
     next="Open https://$DOMAIN and sign in."
+fi
+
+if [ "$LOCAL" = 1 ]; then
+    url="https://$DOMAIN"
+    [ "${HTTPS_PORT:-443}" = 443 ] || url="https://$DOMAIN:${HTTPS_PORT##*:}"
+    cat <<EOF
+
+  ServerOS is running on this computer.
+
+  Open $url (in Chrome or Firefox: Safari doesn't open
+  .localhost subdomains) and enter this setup code:
+
+      ${code:-(run: cd $DIR && docker compose exec web php artisan install:code)}
+
+  The certificate is made on this computer, so the browser warns about it
+  the first time. To trust it, save Caddy's root certificate:
+
+      cd $DIR && docker compose cp web:/data/caddy/pki/authorities/local/root.crt serveros-root.crt
+
+  and add serveros-root.crt to your keychain (Mac) or your system's
+  certificates (Linux).
+
+  This panel is for trying ServerOS. Machines on the internet can't connect
+  to it; to manage real servers, install it on a server with a domain.
+
+  Stop it:    cd $DIR && docker compose down
+  Start it:   cd $DIR && docker compose up -d
+  Remove it:  cd $DIR && docker compose down -v && rm -rf $DIR
+
+EOF
+    exit 0
 fi
 
 cat <<EOF

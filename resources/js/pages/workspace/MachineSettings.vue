@@ -1400,7 +1400,7 @@ const serviceColumns =
                 <p class="text-[13px]/5 text-(--ds-text-secondary)">
                     {{
                         ' ' +
-                        $t('Status pages are part of Pro and Business.') +
+                        $t('Status pages are part of Pro and Scale.') +
                         ' '
                     }}
                 </p>

@@ -99,7 +99,7 @@ test('a self-hosted install without billing has no billing permission or billing
             ->where('roles.0.description', 'Full access, including deleting the workspace.'));
 
     $roles = mcpCall($workspace, mcpKey($workspace), 'list_roles')['data'];
-    expect(json_encode($roles))->not->toContain('manage-billing')->not->toContain('leaves Business');
+    expect(json_encode($roles))->not->toContain('manage-billing')->not->toContain('leaves Scale');
 });
 
 test('locked paid features on a self-hosted install say they need a license, not a plan', function () {
@@ -115,7 +115,7 @@ test('locked paid features on a self-hosted install say they need a license, not
         ->assertForbidden();
 
     $text = json_encode(mcpCall($workspace, mcpKey($workspace), 'get_fleet_status_page')['data']);
-    expect($text)->toContain('needs a ServerOS license')->not->toContain('Business');
+    expect($text)->toContain('needs a ServerOS license')->not->toContain('Scale');
 });
 
 test('the machine and monitor limits on a self-hosted install say what applies there', function () {

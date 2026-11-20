@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $machine_policy_id
  * @property int|null $machine_group_id
  * @property array<string, mixed>|null $metadata
+ * @property string|null $hosted_by a package's machine: it joins without using the allowance (and as machine_id, when that's set before it's used)
  * @property CarbonImmutable $expires_at
  * @property CarbonImmutable|null $used_at
  * @property-read User|null $user

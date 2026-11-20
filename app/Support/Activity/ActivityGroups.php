@@ -13,7 +13,7 @@ final class ActivityGroups
         'machines' => ['Machines and console', ['machine.', 'machines.', 'cloud.', 'machine_group.', 'machine_policy.', 'updates.', 'daemon.', 'console.', 'file.', 'job.']],
         'monitors' => ['Monitors and alerts', ['monitor.', 'alerts.', 'issues.', 'status_page.']],
         'backups' => ['Backups', ['backup.', 'backups.', 'backup_destination.']],
-        'workflows' => ['Workflows and fixes', ['workflow.', 'fix.']],
+        'workflows' => ['Workflows, agents and fixes', ['workflow.', 'fix.', 'agent.']],
         'members' => ['Members and roles', ['member.', 'role.']],
         'workspace' => ['Workspace and billing', ['workspace.', 'plan.', 'domain.', 'panel.']],
         'security' => ['Security, MCP and API', ['security.', 'sign_in.', 'sso.', 'email_domain.', 'mcp.', 'ai.', 'api.', 'scim.', 'activity.']],

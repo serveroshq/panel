@@ -53,7 +53,7 @@ final class AddToProject extends Tool
             }
         }
         foreach ($names as $name) {
-            if (preg_match('/^\/?serveros-'.preg_quote($name, '/').'(-[a-z0-9_]+-\d+|-[0-9a-f]{12})$/i', $given) === 1) {
+            if (preg_match('/^\/?serveros-'.preg_quote($name, '/').'(-[a-z0-9_]+-\d+|-[0-9a-f]{12}(?:-b)?)$/i', $given) === 1) {
                 return $name;
             }
         }

@@ -91,15 +91,66 @@ test('on ServerOS cloud the address must be https and must not point into a priv
     'the metadata service' => ['https://169.254.169.254/latest', 'Couldn’t find 169.254.169.254, or it points into a private network.'],
 ]);
 
-test('a self-hosted panel can use a model on its own network, like Ollama', function () {
-    config()->set('serveros.edition', 'self-hosted');
+test('a self-hosted panel can use a model on its own network, like Ollama, once private addresses are allowed', function () {
+    config()->set(['serveros.edition' => 'self-hosted', 'monitors.allow_private' => false]);
     Http::fake(['ollama.internal:11434/v1/models' => Http::response(['object' => 'list', 'data' => [['id' => 'llama3.1']]])]);
     $workspace = Workspace::factory()->create();
+    $put = fn () => $this->actingAs($workspace->owner)->put(customAiUrl($workspace, '/settings/ai/custom'), ['url' => 'http://ollama.internal:11434/v1', 'key' => 'ollama', 'model' => 'llama3.1']);
 
-    $this->actingAs($workspace->owner)->put(customAiUrl($workspace, '/settings/ai/custom'), ['url' => 'http://ollama.internal:11434/v1', 'key' => 'ollama', 'model' => 'llama3.1'])
-        ->assertSessionHasNoErrors();
+    $put()->assertSessionHasErrors(['url' => 'Couldn’t find ollama.internal, or it points into a private network. To use one, set MONITORS_ALLOW_PRIVATE=true.']);
+    Http::assertNothingSent();
 
-    expect(WorkspaceAiKey::query()->sole()->base_url)->toBe('http://ollama.internal:11434/v1');
+    config()->set('monitors.allow_private', true);
+    $put()->assertSessionHasNoErrors();
+
+    // A key this short would be shown almost whole, so it gets no hint.
+    expect(WorkspaceAiKey::query()->sole()->only(['base_url', 'hint']))->toBe(['base_url' => 'http://ollama.internal:11434/v1', 'hint' => '']);
+});
+
+test('link-local addresses, like the metadata service, are refused even when private addresses are allowed', function (string $url, string $host) {
+    config()->set(['serveros.edition' => 'self-hosted', 'monitors.allow_private' => true]);
+    app()->instance(HostResolver::class, new class extends HostResolver
+    {
+        protected function addresses(string $host): array
+        {
+            return ['169.254.169.254'];
+        }
+    });
+    Http::fake();
+    $workspace = Workspace::factory()->create();
+
+    $this->actingAs($workspace->owner)->put(customAiUrl($workspace, '/settings/ai/custom'), ['url' => $url, 'key' => 'sk-x', 'model' => 'm'])
+        ->assertSessionHasErrors(['url' => "Couldn’t find {$host}, or it points into a private network. To use one, set MONITORS_ALLOW_PRIVATE=true."]);
+
+    expect(WorkspaceAiKey::query()->count())->toBe(0);
+    Http::assertNothingSent();
+})->with([
+    'the address itself' => ['http://169.254.169.254/latest', '169.254.169.254'],
+    'a name that resolves there' => ['http://metadata.example.com/v1', 'metadata.example.com'],
+    'IPv6 link-local' => ['http://[fe80::1]:11434/v1', 'fe80::1'],
+]);
+
+test('an address that answers 200 with something other than a model list isn’t saved', function (mixed $body) {
+    Http::fake(['site.example.com/*' => Http::response($body, 200, is_string($body) ? ['Content-Type' => 'text/html'] : [])]);
+    $workspace = Workspace::factory()->onPlan(Plan::Pro)->create();
+
+    $this->actingAs($workspace->owner)->put(customAiUrl($workspace, '/settings/ai/custom'), ['url' => 'https://site.example.com', 'key' => 'sk-x', 'model' => 'm'])
+        ->assertSessionHasErrors(['url' => 'There’s no OpenAI-compatible API at that address. It usually ends in /v1.']);
+
+    expect(WorkspaceAiKey::query()->count())->toBe(0);
+})->with([
+    'an HTML page' => ['<!doctype html><html><body>Welcome</body></html>'],
+    'JSON without a data list' => [['status' => 'ok']],
+]);
+
+test('an answer larger than 5 MB is refused', function () {
+    Http::fake(['huge.example.com/*' => Http::response(['data' => [], 'padding' => str_repeat('a', 5 * 1024 * 1024)])]);
+    $workspace = Workspace::factory()->onPlan(Plan::Pro)->create();
+
+    $this->actingAs($workspace->owner)->put(customAiUrl($workspace, '/settings/ai/custom'), ['url' => 'https://huge.example.com/v1', 'key' => 'sk-x', 'model' => 'm'])
+        ->assertSessionHasErrors(['url' => 'huge.example.com sent back more than 5 MB. Check the address.']);
+
+    expect(WorkspaceAiKey::query()->count())->toBe(0);
 });
 
 test('a redirect isn’t followed, a missing API says where to look, and a refused key is shown on the key', function () {
@@ -156,6 +207,8 @@ test('server fixes run on the OpenAI-compatible API, not on ServerOS’s model',
     Http::assertSent(fn (Request $r) => $r->url() === 'https://api.deepseek.com/chat/completions'
         && $r->header('Authorization')[0] === 'Bearer sk-or-v1-theirs'
         && $r['model'] === 'deepseek-chat'
+        && isset($r['max_completion_tokens'])
+        && ! isset($r['max_tokens'])
         && $r['messages'][0]['role'] === 'system');
     Http::assertNotSent(fn (Request $r) => str_contains($r->url(), 'groq.com'));
 });
@@ -180,6 +233,8 @@ test('Ask AI talks to the OpenAI-compatible API with its tools and none of Groq�
     Http::assertSent(fn (Request $r) => $r['tools'][0]['function']['name'] === 'list_machines'
         && ! isset($r['reasoning_effort'])
         && ! isset($r['include_reasoning'])
+        && $r['max_completion_tokens'] === 3200
+        && ! isset($r['max_tokens'])
         && $r['messages'][1] === ['role' => 'user', 'content' => 'What’s online?']);
 });
 

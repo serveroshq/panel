@@ -23,8 +23,8 @@ final class ListRoles extends Tool
 
     public function description(): string
     {
-        return 'Lists the roles in the workspace and what each may do. Built-in: Owner (everything, including billing; one per workspace, can’t be given), Admin, Member and Viewer, each with its description, permissions, whether the plan offers it (`available`: Member and Viewer are on Pro and Business, so on Essential people join as Admins) and how many people have it. '
-            .'Then the workspace’s own roles (`customRoles`, a Business feature) with their permissions and how many people have each; off Business they’re kept but not in use, and the people given them have Viewer access. Everyone in a workspace can view it; permissions are what a role may change. Pass a role’s `value` as the role to invite_member or change_member_role.';
+        return 'Lists the roles in the workspace and what each may do. Built-in: Owner (everything, including billing; one per workspace, can’t be given), Admin, Member and Viewer, each with its description, permissions, whether the plan offers it (`available`: Member and Viewer are on Pro and Scale, so on Essential people join as Admins) and how many people have it. '
+            .'Then the workspace’s own roles (`customRoles`, a Scale feature) with their permissions and how many people have each; off Scale they’re kept but not in use, and the people given them have Viewer access. Everyone in a workspace can view it; permissions are what a role may change. Pass a role’s `value` as the role to invite_member or change_member_role.';
     }
 
     public function handle(McpContext $context, array $arguments): array
@@ -68,12 +68,12 @@ final class ListRoles extends Tool
 
         $notes = ['Everyone in a workspace can view everything in it; a role’s permissions are what it may change.'];
         if (! $hasStaff) {
-            $notes[] = 'Member and Viewer roles are on Pro and Business. On this plan, people join as Admins.';
+            $notes[] = 'Member and Viewer roles are on Pro and Scale. On this plan, people join as Admins.';
         }
         $notes[] = match (true) {
             $hasCustom && Edition::selfHosted() => 'Custom roles replace the base role’s permissions. If the workspace’s license is removed, people with them become Viewers.',
-            $hasCustom => 'Custom roles replace the base role’s permissions. If the workspace leaves Business, people with them become Viewers.',
-            default => (Edition::selfHosted() ? 'Custom roles need a ServerOS license (Settings › License).' : 'Custom roles are on Business.').($customRoles === [] ? '' : ' The ones listed are kept, but not in use: people given them have Viewer access.'),
+            $hasCustom => 'Custom roles replace the base role’s permissions. If the workspace leaves Scale, people with them become Viewers.',
+            default => (Edition::selfHosted() ? 'Custom roles need a ServerOS license (Settings › License).' : 'Custom roles are on Scale.').($customRoles === [] ? '' : ' The ones listed are kept, but not in use: people given them have Viewer access.'),
         };
 
         $yours = $workspace->roleOf($context->user) ?? WorkspaceRole::Viewer;

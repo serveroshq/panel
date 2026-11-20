@@ -92,7 +92,7 @@ class WorkspaceEmailDomainController extends Controller
     {
         Gate::authorize('manageSettings', $workspace);
         if (! $workspace->hasGoogleTeamAccess()) {
-            throw ValidationException::withMessages(['domain' => 'Verified domains are on Pro and Business.']);
+            throw ValidationException::withMessages(['domain' => 'Verified domains are on Pro and Scale.']);
         }
     }
 }

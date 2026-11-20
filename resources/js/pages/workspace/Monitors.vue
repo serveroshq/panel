@@ -258,7 +258,7 @@ const focusRing =
                             ? $t('Live')
                             : statusPage.available
                               ? $t('Off')
-                              : $t('Business')
+                              : $t('Scale')
                     }}
                 </span>
             </Link>

@@ -30,6 +30,12 @@ abstract class Tool
         return Scopes::READ;
     }
 
+    /** Whether the tool is switched on here at all: off, it isn't listed and can't be called. */
+    public function enabled(): bool
+    {
+        return true;
+    }
+
     public function permission(): ?WorkspacePermission
     {
         return $this->scope() === Scopes::READ ? null : WorkspacePermission::ManageMachines;

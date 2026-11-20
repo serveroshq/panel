@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/vue3';
 import { trans } from 'laravel-vue-i18n';
 import { computed, nextTick, ref, watch } from 'vue';
+import { errorMessage, reasonIn, statusMessage } from '@/lib/errors';
 
 export type StepState =
     | 'running'
@@ -27,7 +28,7 @@ export type AssistantStep = {
 };
 
 export type AssistantItem =
-    | { kind: 'user'; text: string }
+    | { kind: 'user'; text: string; images?: string[] }
     | { kind: 'text'; text: string }
     | { kind: 'error'; text: string }
     | AssistantStep;
@@ -190,6 +191,11 @@ function busyOnPage(): boolean {
     );
 }
 
+const THEME_TOOLS = ['update_dashboard_theme', 'publish_dashboard_theme'];
+
+/** What's typed in the chat box, so other pages can start a message. */
+const composer = ref('');
+
 function samePage(url: string): string | null {
     try {
         const target = new URL(url, window.location.href);
@@ -240,6 +246,18 @@ function handle(event: AgentEvent): void {
                 s.state = event.state;
                 s.summary = event.summary;
                 s.url = event.url ?? null;
+                if (event.ok && THEME_TOOLS.includes(s.tool)) {
+                    // Show the theme Ask AI just changed, without leaving the page.
+                    router.reload({
+                        only: [
+                            'workspaceTheme',
+                            'css',
+                            'hasDraft',
+                            'publishedCss',
+                            'publishedAt',
+                        ],
+                    });
+                }
             }
             break;
         }
@@ -308,11 +326,10 @@ async function post(url: string, body: Record<string, unknown>): Promise<void> {
             items.value.push({
                 kind: 'error',
                 text:
-                    json.error ??
+                    reasonIn(json) ??
                     (response.status === 429
                         ? trans('That’s a lot of messages. Give it a minute.')
-                        : (json.message ??
-                          trans('Couldn’t get an answer. Try again.'))),
+                        : statusMessage(response.status)),
             });
             return;
         }
@@ -360,7 +377,10 @@ async function post(url: string, body: Record<string, unknown>): Promise<void> {
         if ((cause as Error).name !== 'AbortError') {
             items.value.push({
                 kind: 'error',
-                text: trans('Couldn’t reach Ask AI. Try again.'),
+                text: errorMessage(
+                    cause,
+                    trans('Couldn’t reach Ask AI. Try again.'),
+                ),
             });
         }
     } finally {
@@ -379,19 +399,20 @@ async function post(url: string, body: Record<string, unknown>): Promise<void> {
     }
 }
 
-async function send(text: string): Promise<void> {
+async function send(text: string, images: string[] = []): Promise<void> {
     const message = text.trim();
-    if (!message || streaming.value) return;
+    if ((!message && images.length === 0) || streaming.value) return;
     for (const item of items.value) {
         if (item.kind === 'step' && item.state === 'waiting') {
             item.state = 'skipped';
             item.summary = trans('Skipped');
         }
     }
-    items.value.push({ kind: 'user', text: message });
+    items.value.push({ kind: 'user', text: message, images });
     await post('/assistant', {
         chat: chatId.value,
         message,
+        images,
         path: window.location.pathname,
         model: chosenModel(),
     });
@@ -472,6 +493,7 @@ export function useAssistant() {
         allowance,
         send,
         askAbout,
+        composer,
         model,
         modelOptions,
         activeModel,

@@ -282,7 +282,7 @@ class MachineSettingsController extends Controller
         ]);
 
         if ($data['enabled'] && ! $workspace->hasStatusPages()) {
-            return back()->withErrors(['enabled' => 'Status pages come with Pro. Choose Pro or Business to turn one on.']);
+            return back()->withErrors(['enabled' => 'Status pages come with Pro. Choose Pro or Scale to turn one on.']);
         }
 
         $services = [];

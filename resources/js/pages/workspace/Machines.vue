@@ -48,6 +48,7 @@ import { SelectMenu } from '@/components/ui/select';
 import type { SelectMenuOption } from '@/components/ui/select';
 import SubmitButton from '@/components/workspace/SubmitButton.vue';
 import { fieldLabel } from '@/lib/machinePolicies';
+import { fixed } from '@/lib/formatting';
 import { onWorkspace } from '@/lib/workspaceRoute';
 import machinesRoutes from '@/routes/workspace/machines';
 import { useWhenVisible } from '@/composables/useWhenVisible';
@@ -471,7 +472,7 @@ const focusRing =
 
 function formatBytes(bytes: number | undefined): string {
     if (!bytes || bytes < 0) return trans('Unknown');
-    return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+    return `${fixed(bytes / 1024 ** 3)} GiB`;
 }
 </script>
 

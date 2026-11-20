@@ -4,6 +4,7 @@ namespace App\Mcp;
 
 use App\Models\DaemonJob;
 use App\Models\Machine;
+use App\Support\Deploys\DeployFailure;
 
 final class Present
 {
@@ -82,6 +83,7 @@ final class Present
             'logLines' => count($log),
             'result' => $job->result,
             'error' => $job->error,
+            'explanation' => DeployFailure::explain($job),
             'createdAt' => $job->created_at?->toIso8601String(),
             'finishedAt' => $job->finished_at?->toIso8601String(),
         ];

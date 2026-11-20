@@ -27,6 +27,7 @@ import AppButton from '@/components/workspace/AppButton.vue';
 import PickerMenu from '@/components/workspace/PickerMenu.vue';
 import SubmitButton from '@/components/workspace/SubmitButton.vue';
 import { edit as securityEdit } from '@/routes/security';
+import { describe, errorMessage, jobReason } from '@/lib/errors';
 
 const props = defineProps<{
     machineId: number;
@@ -86,10 +87,18 @@ async function post(url: string, body: Record<string, unknown> = {}) {
             'X-CSRF-TOKEN': csrf(),
         },
         body: JSON.stringify(body),
-    });
+    }).catch((cause: unknown) => cause);
+    if (!(response instanceof Response)) {
+        return {
+            ok: false,
+            status: 0,
+            body: { error: errorMessage(response) },
+        };
+    }
 
     return {
         ok: response.ok,
+        status: response.status,
         body: (await response.json().catch(() => ({}))) as Record<
             string,
             unknown
@@ -105,16 +114,12 @@ async function unlock(): Promise<void> {
     if (unlockCode.value.length !== 6 || unlocking.value) return;
     unlocking.value = true;
     unlockError.value = null;
-    const { ok, body } = await post('/console/unlock', {
+    const { ok, status, body } = await post('/console/unlock', {
         code: unlockCode.value,
     });
     unlocking.value = false;
     if (!ok) {
-        const errors = body.errors as Record<string, string[]> | undefined;
-        unlockError.value =
-            errors?.code?.[0] ??
-            (body.error as string | undefined) ??
-            trans('Couldn’t unlock.');
+        unlockError.value = describe(status, body);
         unlockCode.value = '';
         return;
     }
@@ -159,7 +164,7 @@ async function run(): Promise<void> {
     if (!text || sending.value || !container.value) return;
     sending.value = true;
     commandError.value = null;
-    const { ok, body } = await post(
+    const { ok, status, body } = await post(
         `/machines/${props.machineId}/services/${encodeURIComponent(container.value)}/actions`,
         { action: 'exec', command: text },
     );
@@ -171,11 +176,7 @@ async function run(): Promise<void> {
     } else if (body.code === 'console_locked') {
         router.reload({ only: ['consoleLock'] });
     } else {
-        const errors = body.errors as Record<string, string[]> | undefined;
-        commandError.value =
-            Object.values(errors ?? {})[0]?.[0] ??
-            (body.error as string | undefined) ??
-            trans('That didn’t work.');
+        commandError.value = describe(status, body);
     }
 }
 
@@ -474,7 +475,13 @@ onBeforeUnmount(() => {
                                     {{ line }}
                                 </div>
                                 <p v-if="job.error" class="text-(--ds-red)">
-                                    {{ job.error.message }}
+                                    {{
+                                        jobReason(
+                                            job.error,
+                                            $t('That didn’t finish.'),
+                                            false,
+                                        )
+                                    }}
                                 </p>
                             </div>
                         </div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { themeColour } from '@/lib/themeColour';
 // Lit-ridge dot field after caffeine-day by Charles Postiaux (MIT).
 import {
     computed,
@@ -87,7 +88,7 @@ function palette() {
         line: dark ? '#3a3a3a' : '#c9c9c4',
         dim: dark ? '#5e5e5e' : '#8e8e88',
         ink: dark ? '#d4d4d4' : '#3f3f3c',
-        accent: '#3b7bff',
+        accent: themeColour('--ds-chart', '#3b7bff'),
     };
 }
 

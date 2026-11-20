@@ -1,0 +1,62 @@
+/*
+ * name: Standard
+ * description: How ServerOS looks out of the box, with every setting listed to change.
+ * credit: ServerOS
+ */
+
+/*
+ * Everything on the dashboard can be restyled. The quickest way is the
+ * --ds-* variables: set them on html:root for light mode and html.dark
+ * for dark mode, and every page follows.
+ *
+ * Backgrounds  --ds-panel  --ds-sidebar  --ds-frame  --ds-card  --ds-field
+ *              --ds-subtle  --ds-hover  --ds-row-hover  --ds-active
+ * Lines        --ds-divider  --ds-border  --ds-border-strong
+ *              --ds-border-stronger  --ds-border-hover
+ * Text         --ds-text  --ds-text-strong  --ds-text-secondary
+ *              --ds-text-muted  --ds-text-faint
+ * Accent       --ds-accent  --ds-accent-strong  --ds-accent-soft
+ *              --ds-accent-bg  --ds-accent-border  --ds-ring
+ * Status       --ds-green  --ds-amber  --ds-red, each with -bg and -border
+ * Buttons      --ds-primary-bg  --ds-primary-bg-hover  --ds-primary-border
+ *              --ds-primary-text  --ds-button-bg  --ds-button-text
+ * Menus        --ds-menu  --ds-menu-hover  --ds-menu-rule  --ds-menu-icon
+ * Other        --ds-modal-bg  --ds-choice-bg  --ds-nav-active-bg
+ *              --ds-segment-track  --ds-segment-thumb  --ds-scrollbar
+ * Charts       --ds-chart  --ds-chart-warn  --ds-chart-hot  --ds-chart-empty
+ * Cards        .ds-tile { --tile-bg  --tile-inner  --tile-edge  --tile-rule }
+ * Fonts        --font-ui  --font-ui-mono
+ *
+ * Parts of the page you can target with [data-theme-part='…']:
+ *   sidebar  topbar  content  main  page  page-header  page-title  assistant
+ * And these classes: .ds-tile (cards), .ds-pill (badges), .ds-segments
+ * (tabs), .ds-modal (dialogs), .ds-raised-button, .sidebar-pill--active.
+ *
+ * Made for one mode? Add --theme-appearance: dark (or light) to html:root
+ * and everyone sees that mode, whatever their own setting.
+ *
+ * Fonts: @import from Google Fonts or Bunny Fonts at the top, then set
+ * --font-ui. Images: upload them under Images on this page and use the
+ * url() it gives you, or a data: URL.
+ *
+ *   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap');
+ *   html:root { --font-ui: 'Space Grotesk', sans-serif; }
+ *
+ *   [data-theme-part='content'] {
+ *       background: var(--ds-frame) url(/storage/…/your-image.jpg) center / cover;
+ *   }
+ */
+
+html:root {
+    --ds-accent: #1c4bb0;
+    --ds-ring: #1c4bb0;
+    --ds-primary-bg: #1c4bb0;
+    --ds-primary-bg-hover: #2257c7;
+}
+
+html.dark {
+    --ds-accent: #3b7bff;
+    --ds-ring: #6a9bff;
+    --ds-primary-bg: #2f6bf0;
+    --ds-primary-bg-hover: #3b7bff;
+}

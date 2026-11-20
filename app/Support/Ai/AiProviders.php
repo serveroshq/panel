@@ -37,6 +37,30 @@ class AiProviders
             + ($provider === 'custom' ? ['url' => (string) $key->base_url] : []);
     }
 
+    /** @param  array{provider: string, model: string}  $ai */
+    public static function seesImages(array $ai): bool
+    {
+        return match ($ai['provider']) {
+            'anthropic' => true,
+            // Every current OpenAI chat model reads images; only old text-only ones don't.
+            'openai' => preg_match('/^(gpt-3\.5|gpt-4-|gpt-4$|o1-mini|o3-mini)/', $ai['model']) !== 1,
+            default => $ai['model'] === config('services.groq.vision_model') || preg_match('/(llama-4|vision|qwen3\.[6-9])/i', $ai['model']) === 1,
+        };
+    }
+
+    /**
+     * The model for a message with images: Ask AI's own model moves to one that can see them.
+     *
+     * @param  array{provider: string, key: string, model: string, own: bool, url?: string}  $ai
+     * @return array{provider: string, key: string, model: string, own: bool, url?: string}
+     */
+    public static function forImages(array $ai): array
+    {
+        $vision = (string) config('services.groq.vision_model');
+
+        return ! $ai['own'] && ! self::seesImages($ai) && $vision !== '' ? [...$ai, 'model' => $vision] : $ai;
+    }
+
     public function key(Workspace|int $workspace, string $provider): ?WorkspaceAiKey
     {
         return WorkspaceAiKey::query()
@@ -151,7 +175,7 @@ class AiProviders
                     ->post(CompatibleEndpoint::url((string) ($ai['url'] ?? ''), 'chat/completions'), [
                         'model' => $ai['model'],
                         'temperature' => 0.2,
-                        'max_tokens' => $maxTokens,
+                        'max_completion_tokens' => $maxTokens,
                         'messages' => [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $user]],
                     ]),
                 'anthropic' => Http::withHeaders(['x-api-key' => $ai['key'], 'anthropic-version' => '2023-06-01'])
@@ -159,7 +183,7 @@ class AiProviders
                     ->post('https://api.anthropic.com/v1/messages', [
                         'model' => $ai['model'],
                         'max_tokens' => $maxTokens,
-                        'temperature' => 0.2,
+                        // No temperature: newer Claude models (Haiku 5.5 and up) refuse it.
                         'system' => $system,
                         'messages' => [['role' => 'user', 'content' => $user]],
                     ]),
@@ -262,11 +286,16 @@ class AiProviders
         if ($provider === 'custom' && $response->redirect()) {
             throw new RuntimeException($name.' sent the request somewhere else. Use the address it ends up at.');
         }
+        $missing = 'There’s no OpenAI-compatible API at that address. It usually ends in /v1.';
         if ($provider === 'custom' && $response->status() === 404) {
-            throw new RuntimeException('There’s no OpenAI-compatible API at that address. It usually ends in /v1.');
+            throw new RuntimeException($missing);
         }
         if (! $response->successful()) {
             throw new RuntimeException($name.' couldn’t check the key right now ('.$response->status().'). Try again.');
+        }
+        // A site that serves a page for every path answers 200 too; an API lists its models.
+        if ($provider === 'custom' && (! is_array($response->json()) || ! is_array($response->json('data')))) {
+            throw new RuntimeException($missing);
         }
     }
 }

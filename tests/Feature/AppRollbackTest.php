@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AppVersionController;
 use App\Models\Activity;
 use App\Models\Backup;
 use App\Models\DaemonJob;
@@ -12,6 +13,7 @@ use App\Support\DaemonJobQueue;
 use App\Support\Deploys\AppDatabase;
 use App\Support\Deploys\AppReleases;
 use App\Support\Deploys\AppVersions;
+use App\Support\Projects\Placement;
 use Illuminate\Http\Client\Request as GatewayRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -252,4 +254,33 @@ test('a deploy of an uploaded zip names the file, not our git address', function
     $entry = Activity::query()->where('action', 'service.deploy')->sole();
     expect($entry->meta['upload'])->toBe('shop.zip')
         ->and(ActivityLine::describe($entry, false)['after'])->toBe('from shop.zip');
+});
+
+test('a Compose app rolls back by deploying the earlier version again', function () {
+    [$workspace, $machine] = rollbackSetup();
+    DaemonJob::query()->where('kind', 'deploy')->get()->each(function (DaemonJob $job) {
+        $job->forceFill(['command' => ['job' => [...$job->command['job'], 'compose_file' => 'compose.yaml', 'env' => ['A' => $job->command['job']['commit']]]]])->save();
+    });
+
+    $versions = AppVersions::for($machine, 'shop');
+    expect(collect($versions)->pluck('restore')->flatten()->all())->toBe([]);
+
+    expect(fn () => app(AppVersions::class)->rollback($machine, $workspace->owner, 'shop', ROLLBACK_OLD, true))
+        ->toThrow(RuntimeException::class, 'rolls back its code only');
+
+    $job = app(AppVersions::class)->rollback($machine, $workspace->owner, 'shop', ROLLBACK_OLD, false);
+    expect($job->kind)->toBe('deploy');
+    $sent = collect(rollbackCommands())->last();
+    expect($sent)->type->toBe('deploy')->commit->toBe(ROLLBACK_OLD)->compose_file->toBe('compose.yaml')
+        ->and($sent['env'])->toBe(['A' => ROLLBACK_OLD]);
+});
+
+test('an app redeployed beside itself is still recognised by its container', function () {
+    expect(AppReleases::parse('serveros-shop-aaaaaaaaaaaa-b'))->toBe(['app' => 'shop', 'commit' => 'aaaaaaaaaaaa'])
+        ->and(AppReleases::parse('/serveros-my-shop-aaaaaaaaaaaa'))->toBe(['app' => 'my-shop', 'commit' => 'aaaaaaaaaaaa'])
+        ->and(AppReleases::parse('serveros-shop-aaaaaaaaaaaa-c'))->toBeNull();
+
+    [, $machine] = rollbackSetup();
+    expect(AppVersionController::lastDeploy($machine, 'serveros-shop-bbbbbbbbbbbb-b')?->service)->toBe('shop')
+        ->and(Placement::containers($machine, 'shop'))->not->toBeEmpty();
 });

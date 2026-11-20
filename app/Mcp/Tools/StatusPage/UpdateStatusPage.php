@@ -27,7 +27,7 @@ final class UpdateStatusPage extends Tool
     public function description(): string
     {
         return 'Changes a machine’s status page, like the Status page tab of its settings. Every argument but machine is optional and only what you give changes. '
-            .'`enabled` publishes the page (true) or takes it down (false); turning it on needs Pro or Business. `public` false makes it members-only. `slug` is the address, /status/{slug} on the main ServerOS domain (3–60 lowercase letters, numbers and single dashes, unique across every status page). '
+            .'`enabled` publishes the page (true) or takes it down (false); turning it on needs Pro or Scale. `public` false makes it members-only. `slug` is the address, /status/{slug} on the main ServerOS domain (3–60 lowercase letters, numbers and single dashes, unique across every status page). '
             .'`title` (≤80), `description` (≤280) and `notice` (≤500, a banner at the top; `notice_kind` info, maintenance or incident) take an empty string to clear them. `include_new`: whether services and monitors found later show by default (the ones there now keep showing as they do). `show_uptime`: the 90-day uptime bars. '
             .'`services`: per-service or per-monitor changes, [{service, shown?, label?}], where service is a service key/name/label/app:<name> or monitor:<id>; label is the name on the page (≤60; empty to go back to the suggested name); section, for a monitor only, puts it in a section of its own named that (≤60, like “Cloud (UK)”; empty to put it back with the other monitors). Services and monitors you don’t list keep their settings. '
             .'If the machine has no page yet, one is created (switched off unless you set enabled). Publishing makes the page visible to anyone with the link when it’s public: check with the person before publishing or changing the address of a live page. '
@@ -38,7 +38,7 @@ final class UpdateStatusPage extends Tool
     {
         return Schema::object([
             'machine' => Schema::machine(),
-            'enabled' => Schema::boolean('Publish the page (true) or take it down (false). Needs Pro or Business to turn on.'),
+            'enabled' => Schema::boolean('Publish the page (true) or take it down (false). Needs Pro or Scale to turn on.'),
             'public' => Schema::boolean('true: anyone with the link. false: only members of this workspace, signed in.'),
             'slug' => Schema::string('The address: /status/{slug}. 3–60 lowercase letters, numbers and single dashes.', maxLength: 60),
             'title' => Schema::string('The page’s title (≤80). Empty: the machine’s name.', maxLength: 80),
@@ -165,7 +165,7 @@ final class UpdateStatusPage extends Tool
             $notes[] = 'notice_kind only applies with a notice; there’s none.';
         }
         if ($page->enabled && ! $page->live()) {
-            $notes[] = 'The page is switched on but isn’t served: status pages need Pro or Business.';
+            $notes[] = 'The page is switched on but isn’t served: status pages need Pro or Scale.';
         }
         if (! $page->enabled) {
             $notes[] = 'The page is switched off: visitors get “not found”. Set enabled to true to publish it.';

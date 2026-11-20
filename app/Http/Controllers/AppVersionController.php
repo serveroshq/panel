@@ -12,6 +12,7 @@ use App\Support\Audit\Audited;
 use App\Support\DaemonJobQueue;
 use App\Support\Deploys\AppDatabase;
 use App\Support\Deploys\AppVersions;
+use App\Support\Deploys\DeployOnPush;
 use App\Support\Deploys\DeployRequest;
 use App\Support\Deploys\ServiceLabels;
 use App\Support\DeploySources\DeploySourcePacker;
@@ -27,7 +28,7 @@ class AppVersionController extends Controller
 {
     public static function lastDeploy(Machine $machine, ?string $container): ?DaemonJob
     {
-        if (! preg_match('/^\/?serveros-(.+)-[0-9a-f]{12}$/', (string) $container, $match)) {
+        if (! preg_match('/^\/?serveros-(.+)-[0-9a-f]{12}(?:-b)?$/', (string) $container, $match)) {
             return null;
         }
 
@@ -144,21 +145,30 @@ class AppVersionController extends Controller
         $data = $request->validate([
             'snapshot_before' => ['sometimes', 'boolean'],
             'database' => ['sometimes', 'string', Rule::in(['auto', 'none', ...$databases])],
-        ], ['database.in' => 'That database isn’t on this machine.']);
+            'deploy_on_push' => ['sometimes', 'boolean'],
+            'push_branch' => ['sometimes', 'string', 'max:200', 'regex:'.DeployOnPush::BRANCH_PATTERN],
+        ], ['database.in' => 'That database isn’t on this machine.', 'push_branch.regex' => 'That isn’t a branch name.']);
+
+        if (($data['deploy_on_push'] ?? false) && DeployOnPush::repoName(self::lastDeployOf($machine, $service)?->command['job']['repo'] ?? null) === null) {
+            return response()->json(['errors' => ['deploy_on_push' => ['Deploying each push works for apps deployed from a GitHub repository.']]], 422);
+        }
 
         $settings = $machine->app_settings ?? [];
         $before = $settings[$service] ?? [];
-        $settings[$service] = [...$before, ...array_intersect_key($data, array_flip(['snapshot_before', 'database']))];
+        $settings[$service] = [...$before, ...array_intersect_key($data, array_flip(['snapshot_before', 'database', 'deploy_on_push', 'push_branch']))];
+        if ($data['deploy_on_push'] ?? false) {
+            $settings[$service]['push_user_id'] = $request->user()->id;
+        }
         $machine->forceFill(['app_settings' => $settings])->save();
 
-        $changed = array_filter($settings[$service], fn ($value, $key) => ($before[$key] ?? null) !== $value, ARRAY_FILTER_USE_BOTH);
+        $changed = array_diff_key(array_filter($settings[$service], fn ($value, $key) => ($before[$key] ?? null) !== $value, ARRAY_FILTER_USE_BOTH), ['push_user_id' => true]);
         if ($changed !== []) {
             Activity::record($workspace, 'app.settings', $service, $machine, meta: $changed);
         } else {
             AuditContext::nothingChanged();
         }
 
-        return response()->json(['snapshotBefore' => $machine->snapshotsBeforeDeploy($service), 'database' => AppDatabase::setting($machine, $service)]);
+        return response()->json(['snapshotBefore' => $machine->snapshotsBeforeDeploy($service), 'database' => AppDatabase::setting($machine, $service), 'deployOnPush' => DeployOnPush::setting($machine, $service)]);
     }
 
     /** @return array{setting: string, current: array{name: string, display: string}|null, options: list<array{value: string, label: string}>} */

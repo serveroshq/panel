@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import AppButton from '@/components/workspace/AppButton.vue';
 import TickBox from '@/components/workspace/TickBox.vue';
+import { errorMessage, failIfBad, jobReason } from '@/lib/errors';
 
 const props = defineProps<{ machineId: number; machineName: string }>();
 const open = defineModel<boolean>('open', { required: true });
@@ -126,12 +127,8 @@ async function post(path: string, body: object = {}): Promise<string | null> {
         },
         body: JSON.stringify(body),
     });
+    await failIfBad(response);
     const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(
-            json.error ?? json.message ?? trans('That didn’t work. Try again.'),
-        );
-    }
     return json.jobId ?? null;
 }
 
@@ -169,11 +166,7 @@ function failure(status: JobStatus): string {
         return trans(
             'The machine stopped answering. Check it’s online and try again.',
         );
-    return (
-        [status.error?.message, status.error?.next_step]
-            .filter(Boolean)
-            .join(' ') || trans('That didn’t finish. Try again.')
-    );
+    return jobReason(status.error, trans('That didn’t finish. Try again.'));
 }
 
 async function snapshot(): Promise<Snapshot | null> {
@@ -230,9 +223,9 @@ async function check(): Promise<void> {
     } catch (cause) {
         if (!active) return;
         if (refreshing.value && step.value === 'ready') {
-            refreshError.value = (cause as Error).message;
+            refreshError.value = errorMessage(cause);
         } else {
-            error.value = (cause as Error).message;
+            error.value = errorMessage(cause);
             step.value = 'failed';
         }
     } finally {
@@ -270,7 +263,7 @@ async function install(): Promise<void> {
         );
     } catch (cause) {
         if (!active) return;
-        error.value = (cause as Error).message;
+        error.value = errorMessage(cause);
         step.value = 'failed';
     }
 }
@@ -285,7 +278,7 @@ async function reboot(): Promise<void> {
             }),
         );
     } catch (cause) {
-        toast.error((cause as Error).message);
+        toast.error(errorMessage(cause));
     }
 }
 

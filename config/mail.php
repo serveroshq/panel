@@ -82,4 +82,11 @@ return [
         'name' => env('MAIL_SUPPORT_NAME', 'ServerOS Support'),
     ],
 
+    'markdown' => [
+        'theme' => env('MAIL_MARKDOWN_THEME', 'serveros'),
+        'paths' => [
+            resource_path('views/vendor/mail'),
+        ],
+    ],
+
 ];

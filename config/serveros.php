@@ -11,6 +11,10 @@ return [
 
     'sign_ups' => env('SERVEROS_SIGN_UPS', 'closed'),
 
+    // The Agents page (coding agents on your own machines). A preview: off
+    // unless SERVEROS_AGENTS is set.
+    'agents' => (bool) env('SERVEROS_AGENTS', false),
+
     // Self-hosted behind a Cloudflare Tunnel (SERVEROS_TUNNEL=cloudflare):
     // cloudflared hands the panel plain HTTP from inside the server, so the
     // visitor's address comes from Cloudflare's headers.
@@ -34,6 +38,14 @@ return [
     'updates' => [
         'version_file' => base_path('VERSION'),
         'feed_url' => env('SERVEROS_UPDATE_FEED_URL', 'https://api.github.com/repos/serveroshq/panel/releases/latest'),
+    ],
+
+    // The card on a self-hosted install's home page asking its admins to
+    // donate or get a Business license. SERVEROS_SUPPORT_ASK=false hides it.
+    'support_ask' => [
+        'enabled' => (bool) env('SERVEROS_SUPPORT_ASK', true),
+        'donate_url' => env('SERVEROS_DONATE_URL', 'https://serveros.com/donate'),
+        'license_url' => env('SERVEROS_LICENSE_URL', 'https://serveros.com/pricing'),
     ],
 
     'telemetry' => [

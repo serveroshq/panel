@@ -7,12 +7,14 @@ use App\Models\Workspace;
 use App\Models\WorkspaceAiKey;
 use App\Support\Ai\AiProviders;
 use App\Support\Ai\CompatibleEndpoint;
+use App\Support\Audit\AuditContext;
 use App\Support\Audit\Audited;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
 use RuntimeException;
 
 class WorkspaceAiController extends Controller
@@ -77,7 +79,8 @@ class WorkspaceAiController extends Controller
 
         WorkspaceAiKey::query()->updateOrCreate(['workspace_id' => $workspace->id, 'provider' => $provider], array_filter([
             'key' => $key !== '' ? $key : null,
-            'hint' => $key !== '' ? '…'.substr($key, -4) : null,
+            // A short key, like a local Ollama's, would be shown almost whole: keep no hint.
+            'hint' => $key !== '' ? (strlen($key) >= 8 ? '…'.substr($key, -4) : '') : null,
             'model' => trim((string) ($data['model'] ?? '')) ?: null,
             'base_url' => $url,
             'user_id' => $key !== '' ? $request->user()->id : null,
@@ -96,6 +99,9 @@ class WorkspaceAiController extends Controller
         $deleted = WorkspaceAiKey::query()->where('workspace_id', $workspace->id)->where('provider', $provider)->delete();
         if ($deleted > 0) {
             Activity::record($workspace, 'ai.disconnect', AiProviders::PROVIDERS[$provider]['label'], null, $request->user());
+            Inertia::flash('toast', ['type' => 'success', 'message' => 'Removed the '.AiProviders::PROVIDERS[$provider]['label'].' key.']);
+        } else {
+            AuditContext::nothingChanged();
         }
 
         return back();

@@ -12,6 +12,7 @@ import CheckLines from './CheckLines.vue';
 import StepHeading from './StepHeading.vue';
 import { stepUrl } from './types';
 import type { AddressProps } from './types';
+import { errorMessage } from '@/lib/errors';
 
 const props = defineProps<{ address: AddressProps; docker: boolean }>();
 
@@ -30,7 +31,7 @@ async function check(): Promise<void> {
             })
         ).lines;
     } catch (error) {
-        lines.value = [{ status: 'fail', text: (error as Error).message }];
+        lines.value = [{ status: 'fail', text: errorMessage(error) }];
     } finally {
         checking.value = false;
     }

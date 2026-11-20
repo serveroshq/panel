@@ -16,12 +16,12 @@ const isHot = computed(() => props.cpu >= 80);
 const barColor = computed(() => {
     if (props.themed) {
         if (props.cpu >= 80) {
-            return 'bg-[#EF4444] dark:bg-[#F87171]';
+            return 'bg-[color:var(--ds-chart-hot,#EF4444)] dark:bg-[color:var(--ds-chart-hot,#F87171)]';
         }
 
         return props.cpu >= 60
-            ? 'bg-[#F59E0B] dark:bg-[#FBBF24]'
-            : 'bg-[#3B7BFF] dark:bg-[#60A5FA]';
+            ? 'bg-[color:var(--ds-chart-warn,#F59E0B)] dark:bg-[color:var(--ds-chart-warn,#FBBF24)]'
+            : 'bg-[color:var(--ds-chart,#3B7BFF)] dark:bg-[color:var(--ds-chart,#60A5FA)]';
     }
 
     if (props.cpu >= 80) {
@@ -32,7 +32,9 @@ const barColor = computed(() => {
 });
 
 const emptyBar = computed(() =>
-    props.themed ? 'bg-[#E7E7E4] dark:bg-[#222222]' : 'bg-[#2A2A28]',
+    props.themed
+        ? 'bg-[color:var(--ds-chart-empty,#E7E7E4)] dark:bg-[color:var(--ds-chart-empty,#222222)]'
+        : 'bg-[#2A2A28]',
 );
 
 const valueClass = computed(() => {

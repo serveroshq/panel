@@ -36,10 +36,13 @@ class AgentChat
                 'openai' => $this->responses($ai, $system, $messages, $tools, $maxTokens),
                 'custom' => $this->endpoint->request((string) ($ai['url'] ?? ''), $ai['key'], 90)->post(
                     CompatibleEndpoint::url((string) ($ai['url'] ?? ''), 'chat/completions'),
-                    array_filter(self::chatCompletions($ai['model'], $system, $messages, $tools), fn ($v) => $v !== []) + ['temperature' => 0.2, 'max_tokens' => $maxTokens * 2],
+                    array_filter(self::chatCompletions($ai['model'], $system, $messages, $tools), fn ($v) => $v !== []) + ['temperature' => 0.2, 'max_completion_tokens' => $maxTokens * 2],
                 ),
                 default => $this->groq($ai, $ai['model'], $system, $messages, $tools, $maxTokens),
             };
+            if ($ai['provider'] === 'groq' && $response->serverError()) {
+                $response = $this->groq($ai, $ai['model'], $system, $messages, $tools, $maxTokens);
+            }
             if ($ai['provider'] === 'groq' && self::malformedCall($response)) {
                 $response = $this->groq($ai, $ai['model'], $system, $messages, $tools, $maxTokens);
             }
@@ -135,7 +138,10 @@ class AgentChat
                     ], $m['calls'] ?? []) ?: null,
                 ], fn ($v) => $v !== null),
                 'tool' => ['role' => 'tool', 'tool_call_id' => $m['id'], 'content' => $m['content']],
-                default => ['role' => 'user', 'content' => $m['content']],
+                default => ['role' => 'user', 'content' => ($m['image_data'] ?? []) === [] ? $m['content'] : [
+                    ['type' => 'text', 'text' => $m['content']],
+                    ...array_map(fn (array $image) => ['type' => 'image_url', 'image_url' => ['url' => "data:{$image['type']};base64,{$image['data']}"]], $m['image_data']),
+                ]],
             };
         }
 
@@ -170,6 +176,11 @@ class AgentChat
                 }
             } elseif ($m['role'] === 'tool') {
                 $input[] = ['type' => 'function_call_output', 'call_id' => $m['id'], 'output' => $m['content']];
+            } elseif (($m['image_data'] ?? []) !== []) {
+                $input[] = ['role' => 'user', 'content' => [
+                    ['type' => 'input_text', 'text' => $m['content']],
+                    ...array_map(fn (array $image) => ['type' => 'input_image', 'image_url' => "data:{$image['type']};base64,{$image['data']}"], $m['image_data']),
+                ]];
             } else {
                 $input[] = ['role' => 'user', 'content' => $m['content']];
             }
@@ -250,7 +261,10 @@ class AgentChat
 
                 continue;
             }
-            $wire[] = ['role' => 'user', 'content' => (string) $m['content']];
+            $wire[] = ['role' => 'user', 'content' => ($m['image_data'] ?? []) === [] ? (string) $m['content'] : [
+                ...array_map(fn (array $image) => ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $image['type'], 'data' => $image['data']]], $m['image_data']),
+                ['type' => 'text', 'text' => (string) $m['content']],
+            ]];
         }
 
         return Http::withHeaders(['x-api-key' => $ai['key'], 'anthropic-version' => '2023-06-01'])

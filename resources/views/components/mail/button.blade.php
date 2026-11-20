@@ -1,0 +1,8 @@
+@props(['url'])
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px;">
+    <tr>
+        <td bgcolor="#1F3BDB" style="background-color:#1F3BDB; background-image:linear-gradient(180deg,#3D5EF0 0%,#1621D1 100%); border-radius:8px; padding:12px 20px;">
+            <a href="{{ $url }}" style="display:inline-block; font-size:15px; line-height:20px; font-weight:600; color:#FFFFFF; text-decoration:none;">{{ $slot }}</a>
+        </td>
+    </tr>
+</table>

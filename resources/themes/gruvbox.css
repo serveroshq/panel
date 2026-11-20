@@ -1,0 +1,203 @@
+/*
+ * name: Gruvbox
+ * description: Warm retro browns and creams with an orange accent, in light and dark.
+ * credit: github.com/morhetz/gruvbox, MIT
+ */
+
+/* Light mode */
+
+html:root {
+    --ds-panel: #ebdbb2;
+    --ds-sidebar: #ebdbb2;
+    --ds-frame: #fbf1c7;
+    --ds-card: #f9f5d7;
+    --ds-field: #f9f5d7;
+    --ds-subtle: #fbf1c7;
+    --ds-hover: #f2e5bc;
+    --ds-row-hover: color-mix(in srgb, #f2e5bc 50%, #f9f5d7);
+    --ds-active: #ebdbb2;
+    --ds-avatar: #ebdbb2;
+    --ds-segment-track: #ebdbb2;
+    --ds-segment-thumb: #f9f5d7;
+    --ds-divider: #d5c4a1;
+    --ds-border: #d5c4a1;
+    --ds-border-strong: #bdae93;
+    --ds-border-stronger: #a89984;
+    --ds-border-hover: #a89984;
+    --ds-border-focus: #a89984;
+    --ds-panel-ring: #d5c4a1;
+    --ds-text: #3c3836;
+    --ds-text-strong: #3c3836;
+    --ds-text-secondary: #504945;
+    --ds-text-muted: #665c54;
+    --ds-text-faint: #7c6f64;
+    --ds-text-subtle: #7c6f64;
+    --ds-inverse: #3c3836;
+    --ds-inverse-text: #f9f5d7;
+    --ds-code: #fbf1c7;
+    --ds-ring: #af3a03;
+    --ds-accent: #af3a03;
+    --ds-accent-strong: color-mix(in srgb, #af3a03 82%, #3c3836);
+    --ds-accent-soft: color-mix(in srgb, #af3a03 60%, #f9f5d7);
+    --ds-accent-bg: color-mix(in srgb, #af3a03 14%, #f9f5d7);
+    --ds-accent-border: color-mix(in srgb, #af3a03 40%, #f9f5d7);
+    --ds-accent-glow: color-mix(in srgb, #af3a03 45%, transparent);
+    --ds-blue: #af3a03;
+    --ds-blue-strong: color-mix(in srgb, #af3a03 82%, #3c3836);
+    --ds-blue-bg: color-mix(in srgb, #af3a03 14%, #f9f5d7);
+    --ds-blue-border: color-mix(in srgb, #af3a03 40%, #f9f5d7);
+    --ds-green: #79740e;
+    --ds-green-strong: color-mix(in srgb, #79740e 82%, #3c3836);
+    --ds-green-bg: color-mix(in srgb, #79740e 14%, #f9f5d7);
+    --ds-green-border: color-mix(in srgb, #79740e 38%, #f9f5d7);
+    --ds-amber: #b57614;
+    --ds-amber-strong: color-mix(in srgb, #b57614 82%, #3c3836);
+    --ds-amber-bg: color-mix(in srgb, #b57614 14%, #f9f5d7);
+    --ds-amber-border: color-mix(in srgb, #b57614 38%, #f9f5d7);
+    --ds-red: #9d0006;
+    --ds-red-strong: color-mix(in srgb, #9d0006 82%, #3c3836);
+    --ds-red-bg: color-mix(in srgb, #9d0006 14%, #f9f5d7);
+    --ds-red-border: color-mix(in srgb, #9d0006 38%, #f9f5d7);
+    --ds-scrollbar: #a89984;
+    --ds-shimmer-base: #f2e5bc;
+    --ds-shimmer-sheen: color-mix(in srgb, #3c3836 8%, transparent);
+    --ds-menu: #f9f5d7;
+    --ds-menu-icon: #665c54;
+    --ds-menu-rule: #d5c4a1;
+    --ds-menu-hover: #f2e5bc;
+    --ds-choice-bg: #f9f5d7;
+    --ds-choice-text: #504945;
+    --ds-choice-text-hover: #3c3836;
+    --ds-choice-selected-bg: #f2e5bc;
+    --ds-button-bg: #f9f5d7;
+    --ds-button-text: #504945;
+    --ds-button-text-hover: #3c3836;
+    --ds-modal-bg: #f9f5d7;
+    --ds-tray-bg: #fbf1c7;
+    --ds-tray-tile-bg: #f9f5d7;
+    --ds-nav-active-bg: #f9f5d7;
+    --ds-bar-bg: #d5c4a1;
+    --ds-primary-bg: #af3a03;
+    --ds-primary-bg-hover: color-mix(in srgb, #af3a03 85%, #3c3836);
+    --ds-primary-border: color-mix(in srgb, #af3a03 80%, #3c3836);
+    --ds-primary-border-hover: color-mix(in srgb, #af3a03 70%, #3c3836);
+    --ds-primary-text: #fbf1c7;
+    --ds-chart: #af3a03;
+    --ds-chart-warn: #b57614;
+    --ds-chart-hot: #9d0006;
+    --ds-chart-empty: #d5c4a1;
+}
+
+html:root .ds-tile,
+html:root .ds-tray > .ds-tile {
+    --tile-bg: #f9f5d7;
+    --tile-head: #f9f5d7;
+    --tile-inner: #fbf1c7;
+    --tile-edge: #d5c4a1;
+    --tile-rule: #d5c4a1;
+    --tile-inset: transparent;
+}
+
+html:root .workspace-panel {
+    --primary: #af3a03;
+    --primary-foreground: #fbf1c7;
+}
+
+/* Dark mode */
+
+html.dark {
+    --ds-panel: #1d2021;
+    --ds-sidebar: #1d2021;
+    --ds-frame: #282828;
+    --ds-card: #32302f;
+    --ds-field: #282828;
+    --ds-subtle: #282828;
+    --ds-hover: #3c3836;
+    --ds-row-hover: color-mix(in srgb, #3c3836 50%, #32302f);
+    --ds-active: #504945;
+    --ds-avatar: #504945;
+    --ds-segment-track: #1d2021;
+    --ds-segment-thumb: #504945;
+    --ds-divider: #3c3836;
+    --ds-border: #3c3836;
+    --ds-border-strong: #504945;
+    --ds-border-stronger: #665c54;
+    --ds-border-hover: #665c54;
+    --ds-border-focus: #665c54;
+    --ds-panel-ring: #3c3836;
+    --ds-text: #ebdbb2;
+    --ds-text-strong: #ebdbb2;
+    --ds-text-secondary: #d5c4a1;
+    --ds-text-muted: #bdae93;
+    --ds-text-faint: #928374;
+    --ds-text-subtle: #928374;
+    --ds-inverse: #ebdbb2;
+    --ds-inverse-text: #32302f;
+    --ds-code: #282828;
+    --ds-ring: #fe8019;
+    --ds-accent: #fe8019;
+    --ds-accent-strong: color-mix(in srgb, #fe8019 82%, #ebdbb2);
+    --ds-accent-soft: color-mix(in srgb, #fe8019 60%, #32302f);
+    --ds-accent-bg: color-mix(in srgb, #fe8019 14%, #32302f);
+    --ds-accent-border: color-mix(in srgb, #fe8019 40%, #32302f);
+    --ds-accent-glow: color-mix(in srgb, #fe8019 45%, transparent);
+    --ds-blue: #fe8019;
+    --ds-blue-strong: color-mix(in srgb, #fe8019 82%, #ebdbb2);
+    --ds-blue-bg: color-mix(in srgb, #fe8019 14%, #32302f);
+    --ds-blue-border: color-mix(in srgb, #fe8019 40%, #32302f);
+    --ds-green: #b8bb26;
+    --ds-green-strong: color-mix(in srgb, #b8bb26 82%, #ebdbb2);
+    --ds-green-bg: color-mix(in srgb, #b8bb26 14%, #32302f);
+    --ds-green-border: color-mix(in srgb, #b8bb26 38%, #32302f);
+    --ds-amber: #fabd2f;
+    --ds-amber-strong: color-mix(in srgb, #fabd2f 82%, #ebdbb2);
+    --ds-amber-bg: color-mix(in srgb, #fabd2f 14%, #32302f);
+    --ds-amber-border: color-mix(in srgb, #fabd2f 38%, #32302f);
+    --ds-red: #fb4934;
+    --ds-red-strong: color-mix(in srgb, #fb4934 82%, #ebdbb2);
+    --ds-red-bg: color-mix(in srgb, #fb4934 14%, #32302f);
+    --ds-red-border: color-mix(in srgb, #fb4934 38%, #32302f);
+    --ds-scrollbar: #665c54;
+    --ds-shimmer-base: #3c3836;
+    --ds-shimmer-sheen: color-mix(in srgb, #ebdbb2 8%, transparent);
+    --ds-menu: #32302f;
+    --ds-menu-icon: #bdae93;
+    --ds-menu-rule: #3c3836;
+    --ds-menu-hover: #3c3836;
+    --ds-choice-bg: #32302f;
+    --ds-choice-text: #d5c4a1;
+    --ds-choice-text-hover: #ebdbb2;
+    --ds-choice-selected-bg: #3c3836;
+    --ds-button-bg: #32302f;
+    --ds-button-text: #d5c4a1;
+    --ds-button-text-hover: #ebdbb2;
+    --ds-modal-bg: #32302f;
+    --ds-tray-bg: #282828;
+    --ds-tray-tile-bg: #32302f;
+    --ds-nav-active-bg: #504945;
+    --ds-bar-bg: #3c3836;
+    --ds-primary-bg: #fe8019;
+    --ds-primary-bg-hover: color-mix(in srgb, #fe8019 85%, #ebdbb2);
+    --ds-primary-border: color-mix(in srgb, #fe8019 80%, #ebdbb2);
+    --ds-primary-border-hover: color-mix(in srgb, #fe8019 70%, #ebdbb2);
+    --ds-primary-text: #1d2021;
+    --ds-chart: #fe8019;
+    --ds-chart-warn: #fabd2f;
+    --ds-chart-hot: #fb4934;
+    --ds-chart-empty: #3c3836;
+}
+
+html.dark .ds-tile,
+html.dark .ds-tray > .ds-tile {
+    --tile-bg: #32302f;
+    --tile-head: #32302f;
+    --tile-inner: #282828;
+    --tile-edge: #3c3836;
+    --tile-rule: #3c3836;
+    --tile-inset: transparent;
+}
+
+html.dark .workspace-panel {
+    --primary: #fe8019;
+    --primary-foreground: #1d2021;
+}

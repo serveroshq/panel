@@ -106,7 +106,7 @@ final class Team
         $custom = null;
         if (preg_match('/^custom:(\d+)$/', $lower, $m) === 1) {
             if (! $workspace->hasCustomRoles()) {
-                throw new ToolError(Edition::selfHosted() ? 'Custom roles need a ServerOS license (Settings › License).' : 'Custom roles are on Business.');
+                throw new ToolError(Edition::selfHosted() ? 'Custom roles need a ServerOS license (Settings › License).' : 'Custom roles are on Scale.');
             }
             $custom = $workspace->customRoles()->find((int) $m[1]);
             if ($custom === null) {
@@ -118,7 +118,7 @@ final class Team
                 throw new ToolError('Pick a role: admin, member or viewer, or one of the workspace’s own roles (list_roles shows them).');
             }
             if (! $workspace->hasCustomRoles()) {
-                throw new ToolError(Edition::selfHosted() ? 'Custom roles need a ServerOS license (Settings › License).' : 'Custom roles are on Business.');
+                throw new ToolError(Edition::selfHosted() ? 'Custom roles need a ServerOS license (Settings › License).' : 'Custom roles are on Scale.');
             }
         }
 
@@ -230,7 +230,7 @@ final class Team
     /** @return array<string, mixed> */
     public static function roleSchema(): array
     {
-        return Schema::string('The role: admin, member or viewer, or one of the workspace’s own roles (Business) by its name or as custom:<id>. list_roles shows them and what each can do. The owner role can’t be given.', maxLength: 60);
+        return Schema::string('The role: admin, member or viewer, or one of the workspace’s own roles (Scale) by its name or as custom:<id>. list_roles shows them and what each can do. The owner role can’t be given.', maxLength: 60);
     }
 
     /** @param  BelongsToMany<User, Workspace, Membership>  $query */

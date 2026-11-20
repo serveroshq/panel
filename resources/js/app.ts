@@ -14,9 +14,12 @@ import ViewingAsFrame from '@/layouts/ViewingAsFrame.vue';
 import WorkspaceLayout from '@/layouts/WorkspaceLayout.vue';
 import WorkspaceSettingsLayout from '@/layouts/workspace/WorkspaceSettingsLayout.vue';
 import { initializeCelebrate } from '@/lib/celebrate';
+import { errorMessage, isNetworkError } from '@/lib/errors';
 import { initErrorTracking } from '@/lib/errorTracking';
 import { initializeFlashToast } from '@/lib/flashToast';
 import { resolvePanelPage } from '@/lib/pages';
+import { toast } from '@/lib/toast';
+import { initializeWorkspaceTheme } from '@/lib/workspaceTheme';
 
 const appName = import.meta.env.VITE_APP_NAME || 'ServerOS';
 
@@ -24,6 +27,7 @@ function pickLayout(name: string): Component | Component[] | null {
     switch (true) {
         case name.startsWith('errors/'):
         case name.startsWith('status/'):
+        case name.startsWith('themes/'):
         case name.startsWith('survey/'):
         case name.startsWith('welcome/'):
         case name.startsWith('install/'):
@@ -61,6 +65,7 @@ void createInertiaApp({
             : [ViewingAsFrame, ...(Array.isArray(layout) ? layout : [layout])];
     },
     withApp: (app, { page }) => {
+        initializeWorkspaceTheme(page.props);
         installI18n(
             app,
             typeof page.props.locale === 'string' ? page.props.locale : 'en',
@@ -87,6 +92,11 @@ initializeTheme();
 initializeFlashToast();
 
 initializeCelebrate();
+
+router.on('networkError', (event) => {
+    if (isNetworkError(event.detail.error))
+        toast.error(errorMessage(event.detail.error), { id: 'network' });
+});
 
 initAnalytics('panel');
 router.on('navigate', (event) => {

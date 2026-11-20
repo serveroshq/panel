@@ -39,7 +39,7 @@ function vdVerify(Workspace $workspace, string $name = 'acme.com'): WorkspaceEma
     return $domain->fresh();
 }
 
-test('verified domains show on Pro and Business without Google sign-in set up', function (Plan $plan) {
+test('verified domains show on Pro and Scale without Google sign-in set up', function (Plan $plan) {
     $workspace = Workspace::factory()->onPlan($plan)->create();
     $workspace->emailDomains()->create(['domain' => 'acme.com']);
 

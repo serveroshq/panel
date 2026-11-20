@@ -35,6 +35,7 @@ const page = usePage<{
     workspace: Workspace;
     machine?: Machine;
     service?: { name: string };
+    task?: { title: string };
     monitor?: { name: string };
     workflow?: { name: string };
     ticket?: { reference: string };
@@ -48,6 +49,7 @@ const assistant = useAssistant();
 
 const tabOrder = [
     'Home',
+    'Agents',
     'Machines',
     'Updates',
     'Services',
@@ -78,7 +80,10 @@ const tabs = computed(() =>
 );
 
 const section = computed(
-    () => tabs.value.find((tab) => tab.active)?.label ?? null,
+    () =>
+        tabs.value.find((tab) => tab.active)?.label ??
+        items.value.find((item) => item.active)?.label ??
+        null,
 );
 
 const inSidebar = computed(() => (sidebar ? 'lg:hidden' : ''));
@@ -115,6 +120,10 @@ const crumbs = computed<Crumb[]>(() => {
 
     if (component === 'workspace/WorkflowEditor' && props.workflow) {
         return [{ label: props.workflow.name }];
+    }
+
+    if (component === 'workspace/AgentTaskShow' && props.task) {
+        return [{ label: props.task.title }];
     }
 
     if (component === 'workspace/MonitorShow' && props.monitor) {

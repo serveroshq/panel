@@ -12,7 +12,7 @@ function onHost(Workspace $workspace, string $path): string
     return 'https://'.$workspace->host().$path;
 }
 
-test('a Business workspace can make a role and give it to someone', function () {
+test('a Scale workspace can make a role and give it to someone', function () {
     $workspace = Workspace::factory()->onPlan(Plan::Business)->create();
     $sam = User::factory()->create();
     $workspace->members()->attach($sam, ['role' => 'viewer']);
@@ -32,7 +32,7 @@ test('a Business workspace can make a role and give it to someone', function () 
         ->and($workspace->fresh()->allows($sam, WorkspacePermission::ManageMachines))->toBeFalse();
 });
 
-test('custom roles need Business, and fall back to the base role off it', function () {
+test('custom roles need Scale, and fall back to the base role off it', function () {
     $workspace = Workspace::factory()->onPlan(Plan::Pro)->create();
 
     $this->actingAs($workspace->owner)->post(onHost($workspace, '/settings/roles'), [

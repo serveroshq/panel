@@ -27,7 +27,7 @@ final class ListMembers extends Tool
 
     public function description(): string
     {
-        return 'Lists the people in the workspace as the Members page does: owner first, then admins, members and viewers, each by name. For each: id, name, email, `role` (owner, admin, member or viewer: the base role) and `roleLabel` (what the page shows, which is the custom role’s name for someone given one of the workspace’s own roles on Business), when they joined, `twoFactor` (an authenticator app or a passkey is set up) and `needsTwoFactor` (the workspace requires two-factor sign-in and they haven’t set it up, so they’re locked out until they do), whether it’s you, and whether you may change their role or remove them. '
+        return 'Lists the people in the workspace as the Members page does: owner first, then admins, members and viewers, each by name. For each: id, name, email, `role` (owner, admin, member or viewer: the base role) and `roleLabel` (what the page shows, which is the custom role’s name for someone given one of the workspace’s own roles on Scale), when they joined, `twoFactor` (an authenticator app or a passkey is set up) and `needsTwoFactor` (the workspace requires two-factor sign-in and they haven’t set it up, so they’re locked out until they do), whether it’s you, and whether you may change their role or remove them. '
             .'Also the pending invites (email, role, who sent it, when it expires and whether it already has). Use `search` to filter by name or email. To change someone’s role use change_member_role; to remove someone, remove_member; to invite, invite_member; list_roles explains the roles.';
     }
 

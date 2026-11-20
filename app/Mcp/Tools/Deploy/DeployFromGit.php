@@ -8,6 +8,7 @@ use App\Mcp\Schema;
 use App\Mcp\Scopes;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
+use App\Models\Machine;
 use App\Support\Deploys\DeployRequest;
 
 final class DeployFromGit extends Tool
@@ -48,6 +49,8 @@ final class DeployFromGit extends Tool
             'health_path' => Schema::string('A path that answers 200 once the app is up, like /health (default /).', maxLength: 200),
             'domain' => Schema::string('The domain to serve it at, like app.example.com. Leave out for none.', maxLength: 253),
             'wildcard' => Schema::boolean('Also serve every subdomain one level under the domain (*.domain), each getting its own certificate the first time it’s visited. Needs domain, and a wildcard DNS record (*.domain) pointing at the machine.'),
+            'proxy' => Schema::string('The reverse proxy that serves the domain: caddy (the default), nginx, apache or traefik. Picking one the machine doesn’t use yet moves every site on it over first. nginx, Apache and Traefik serve wildcard subdomains over plain HTTP. Only with domain.', array_keys(Machine::PROXIES)),
+            'https' => Schema::boolean('Serve the domain over HTTPS (default true): a certificate and HTTP redirected to it. false serves plain HTTP, for a CDN or proxy in front that does HTTPS. Only with domain.'),
             'replace' => Schema::boolean('Deploy even though something is already deployed under this name on the machine, replacing it. Only after the person agrees.'),
             'wait' => Deploys::waitSchema(),
         ], ['machine', 'repo', 'port']);
@@ -74,6 +77,8 @@ final class DeployFromGit extends Tool
             'health_path' => ['sometimes', 'nullable', 'string', 'max:200'],
             'domain' => ['sometimes', 'nullable', 'string', 'max:300'],
             'wildcard' => ['sometimes', 'boolean'],
+            'proxy' => ['sometimes', 'nullable', 'string', 'in:caddy,nginx,apache,traefik'],
+            'https' => ['sometimes', 'nullable', 'boolean'],
             'replace' => ['sometimes', 'boolean'],
             'wait' => Deploys::waitRules(),
         ]);
@@ -105,7 +110,9 @@ final class DeployFromGit extends Tool
         Deploys::check(fn () => DeployRequest::assertDocker($machine, $context->user));
         Deploys::check(fn () => DeployRequest::assertWildcard($machine, $data['domain'] ?? null, (bool) ($data['wildcard'] ?? false)));
 
-        $spec = DeployRequest::gitJob($data);
+        $proxy = Deploys::check(fn () => DeployRequest::proxy($machine, $data['domain'] ?? null, $args['proxy'] ?? null));
+        $https = Deploys::check(fn () => DeployRequest::https($machine, $data['domain'] ?? null, $args['https'] ?? null));
+        $spec = DeployRequest::withHttps(DeployRequest::withProxy(DeployRequest::gitJob($data), is_string($proxy) ? $proxy : null), is_bool($https) ? $https : null);
         $job = $this->deploys->deploy($context, $machine, $spec);
         $job = $context->waitForJob($job, (int) ($args['wait'] ?? 0));
 
@@ -121,7 +128,7 @@ final class DeployFromGit extends Tool
             'healthPath' => $spec['health']['path'],
             'domain' => $spec['domains'][0] ?? null,
             'wildcard' => DeployRequest::isWildcard($spec['domains']),
-            'url' => isset($spec['domains'][0]) ? "https://{$spec['domains'][0]}" : $machine->localAddress($spec['port']),
+            'url' => isset($spec['domains'][0]) ? (($spec['https'] ?? true) ? 'https://' : 'http://').$spec['domains'][0] : $machine->localAddress($spec['port']),
             'job' => Present::job($job, 20),
             'deploymentsUrl' => $context->url("/machines/{$machine->id}?job={$job->id}"),
             'next' => 'It builds on the machine and passes its health check before it goes live; that takes a few minutes. Follow it with get_job (id '.$job->id.') or list_deploys.',

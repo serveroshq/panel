@@ -1,5 +1,6 @@
 import { trans } from 'laravel-vue-i18n';
 import type { Tone } from '@/lib/jobStatus';
+import { failIfBad } from '@/lib/errors';
 
 export type UpdatesSummary = {
     updates: number;
@@ -182,19 +183,7 @@ export async function sendJson<T>(
     if (body && method !== 'GET') {
         init.body = JSON.stringify(body);
     }
-    const response = await fetch(url, init);
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        const errors = json.errors
-            ? (Object.values(json.errors).flat() as string[])
-            : [];
-        throw new Error(
-            errors.join(' ') ||
-                json.error ||
-                json.message ||
-                trans('That didn’t work. Try again.'),
-        );
-    }
+    const response = await failIfBad(await fetch(url, init));
 
-    return json as T;
+    return (await response.json().catch(() => ({}))) as T;
 }

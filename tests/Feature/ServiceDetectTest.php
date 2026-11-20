@@ -127,3 +127,40 @@ test('viewers cannot detect repositories', function () {
         ->postJson(detectUrl($workspace), ['repository' => 'acme/app'])
         ->assertForbidden();
 });
+
+test('a /tree/ link to a folder detects the app in that folder', function () {
+    $sha = str_repeat('a', 40);
+    Http::fake([
+        'api.github.com/repos/acme/app' => Http::response(['default_branch' => 'main']),
+        'api.github.com/repos/acme/app/commits/release%2Fv2' => Http::response(['sha' => $sha]),
+        "api.github.com/repos/acme/app/contents/apps/web?ref={$sha}" => Http::response([
+            ['name' => 'package.json', 'type' => 'file'], ['name' => 'src', 'type' => 'dir'],
+        ]),
+        "raw.githubusercontent.com/acme/app/{$sha}/apps/web/package.json" => Http::response('{"dependencies":{"next":"15"}}'),
+        '*' => Http::response(null, 404),
+    ]);
+    $workspace = Workspace::factory()->create();
+
+    $this->actingAs($workspace->owner)
+        ->postJson(detectUrl($workspace), ['repository' => 'https://github.com/acme/app/tree/release/v2/apps/web'])
+        ->assertOk()
+        ->assertJson(['detected' => true, 'template' => 'nextjs', 'branch' => 'release/v2', 'baseDir' => 'apps/web', 'commit' => $sha]);
+
+    $this->actingAs($workspace->owner)
+        ->postJson(detectUrl($workspace), ['repository' => 'https://github.com/acme/app/tree/release/v2/apps/missing'])
+        ->assertStatus(422)->assertJsonValidationErrors(['repository' => 'Couldn’t find the folder apps/missing']);
+});
+
+test('a Compose file in a folder is named by its path from the root', function () {
+    $sha = str_repeat('a', 40);
+    Http::fake([
+        'api.github.com/repos/acme/app' => Http::response(['default_branch' => 'main']),
+        'api.github.com/repos/acme/app/commits/main' => Http::response(['sha' => $sha]),
+        "api.github.com/repos/acme/app/contents/deploy?ref={$sha}" => Http::response([['name' => 'compose.yaml', 'type' => 'file']]),
+        "raw.githubusercontent.com/acme/app/{$sha}/deploy/compose.yaml" => Http::response("services:\n  web:\n    build: .\n    ports:\n      - \"8080:80\"\n"),
+        '*' => Http::response(null, 404),
+    ]);
+
+    $found = app(RepositoryDetector::class)->detect('https://github.com/acme/app/tree/main/deploy');
+    expect($found)->template->toBe('compose-file')->composeFile->toBe('deploy/compose.yaml')->baseDir->toBe('deploy');
+});

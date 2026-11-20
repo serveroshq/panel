@@ -26,6 +26,7 @@ import TickBox from '@/components/workspace/TickBox.vue';
 import { useStepFrame } from '@/composables/useStepFrame';
 import { useZipUpload } from '@/composables/useZipUpload';
 import { toast } from '@/lib/toast';
+import { describe, errorMessage } from '@/lib/errors';
 
 export type TemplateField = {
     key: string;
@@ -64,11 +65,16 @@ type DeployResult = {
     tunnel: string | null;
     port: number;
     notes: string | null;
+    commit?: string | null;
 };
 
 const props = defineProps<{
     templates: ServiceTemplate[];
     machineId: number;
+    /** A template's slug to open on, like coding-agent from ?deploy=coding-agent. */
+    startWith?: string | null;
+    /** Opened from somewhere else (like the Agents machine picker): back closes it, so you land where you came from. */
+    backCloses?: boolean;
 }>();
 
 const emit = defineEmits<{ deployed: [result: DeployResult] }>();
@@ -108,6 +114,7 @@ type Detection = {
     repo: string;
     branch: string;
     commit: string;
+    baseDir?: string | null;
     reasons: string[];
     composeFile?: string | null;
     composePort?: number | null;
@@ -235,7 +242,23 @@ function switchBranch(branch: string): void {
         return;
     }
 
-    query.value = `${detection.value.repo.replace(/\.git$/, '')}/tree/${branch}`;
+    const folder = detection.value.baseDir;
+    query.value = `${detection.value.repo.replace(/\.git$/, '')}/tree/${branch}${folder ? `/${folder}` : ''}`;
+    void detect();
+}
+
+// The app's folder in a monorepo: detection runs again for that folder.
+const folderInput = ref('');
+watch(
+    () => detection.value?.baseDir,
+    (folder) => (folderInput.value = folder ?? ''),
+);
+
+function switchFolder(): void {
+    if (!detection.value || detection.value.upload) return;
+    const folder = folderInput.value.trim().replace(/^\/+|\/+$/g, '');
+    if (folder === (detection.value.baseDir ?? '')) return;
+    query.value = `${detection.value.repo.replace(/\.git$/, '')}/tree/${detection.value.branch}${folder ? `/${folder}` : ''}`;
     void detect();
 }
 
@@ -245,6 +268,11 @@ async function detect(): Promise<void> {
     if (!repository || detecting.value) {
         return;
     }
+    if (SSH_REPO.test(repository)) {
+        startSsh(repository);
+        return;
+    }
+    ssh.value = null;
 
     detecting.value = true;
     detectError.value = null;
@@ -264,13 +292,10 @@ async function detect(): Promise<void> {
             },
             body: JSON.stringify({ repository }),
         });
-        const body = await response.json();
+        const body = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            detectError.value =
-                body.errors?.repository?.[0] ??
-                body.message ??
-                trans('Couldn’t check that repository.');
+            detectError.value = describe(response.status, body);
 
             return;
         }
@@ -278,11 +303,159 @@ async function detect(): Promise<void> {
         detection.value = body as Detection;
         customSlug.value = body.template ?? '';
         void loadBranches(body as Detection);
-    } catch {
-        detectError.value = trans('Couldn’t reach the panel. Try again.');
+    } catch (cause) {
+        detectError.value = errorMessage(cause);
     } finally {
         detecting.value = false;
     }
+}
+
+// A private repository on another git host, over SSH: the machine makes a
+// deploy key for the app, the person adds it to the repository, and the
+// machine looks up the branch's commit with it, so the deploy is pinned.
+const SSH_REPO = /^(?:[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:|ssh:\/\/)/;
+type SshSource = {
+    repo: string;
+    service: string;
+    publicKey: string | null;
+    branch: string;
+    commit: string | null;
+    ref: string | null;
+    busy: 'key' | 'resolve' | null;
+    error: string | null;
+};
+const ssh = ref<SshSource | null>(null);
+const sshSetup = ref('');
+// The deploy key belongs to the app's name, so it can't change after.
+const lockedService = ref(false);
+
+function startSsh(repo: string): void {
+    detection.value = null;
+    detectError.value = null;
+    sshSetup.value = '';
+    ssh.value = {
+        repo,
+        service: freeName(repoServiceName(repo) || 'app'),
+        publicKey: null,
+        branch: '',
+        commit: null,
+        ref: null,
+        busy: null,
+        error: null,
+    };
+}
+
+type KeyAnswer = {
+    jobId?: string;
+    state?: string;
+    publicKey?: string;
+    commit?: string;
+    ref?: string | null;
+    error?: string;
+    nextStep?: string;
+};
+
+async function runKeyJob(
+    path: 'key' | 'resolve',
+    body: Record<string, string>,
+): Promise<KeyAnswer | null> {
+    const source = ssh.value;
+    if (!source) return null;
+    source.error = null;
+    const response = await fetch(
+        `/machines/${props.machineId}/deploy/${path}`,
+        {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN':
+                    document.querySelector<HTMLMetaElement>(
+                        'meta[name="csrf-token"]',
+                    )?.content ?? '',
+            },
+            body: JSON.stringify(body),
+        },
+    ).catch(() => null);
+    if (!response) {
+        source.error = trans('Couldn’t reach ServerOS. Try again.');
+        return null;
+    }
+    let answer = (await response.json().catch(() => ({}))) as KeyAnswer;
+    if (!response.ok) {
+        source.error = describe(response.status, answer);
+        return null;
+    }
+
+    const deadline = Date.now() + 60_000;
+    while (
+        (answer.state === 'queued' || answer.state === 'running') &&
+        answer.jobId &&
+        Date.now() < deadline
+    ) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const next = await fetch(
+            `/machines/${props.machineId}/deploy/jobs/${answer.jobId}`,
+            {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+            },
+        ).catch(() => null);
+        if (next?.ok) answer = (await next.json()) as KeyAnswer;
+    }
+    if (answer.state === 'queued' || answer.state === 'running') {
+        source.error = trans(
+            'The machine hasn’t answered yet. Check it’s online, then try again.',
+        );
+        return null;
+    }
+    if (answer.error) {
+        source.error = [answer.error, answer.nextStep]
+            .filter(Boolean)
+            .join('. ');
+        return null;
+    }
+
+    return answer;
+}
+
+async function makeKey(): Promise<void> {
+    const source = ssh.value;
+    if (!source || source.busy) return;
+    source.busy = 'key';
+    const answer = await runKeyJob('key', { service: source.service });
+    source.busy = null;
+    if (answer?.publicKey) source.publicKey = answer.publicKey;
+}
+
+async function lookUpBranch(): Promise<void> {
+    const source = ssh.value;
+    if (!source || source.busy) return;
+    source.busy = 'resolve';
+    const body: Record<string, string> = {
+        service: source.service,
+        repo: source.repo,
+    };
+    if (source.branch) body.ref = source.branch;
+    const answer = await runKeyJob('resolve', body);
+    source.busy = null;
+    if (answer?.commit) {
+        source.commit = answer.commit;
+        source.ref = answer.ref ?? null;
+    }
+}
+
+function continueSsh(): void {
+    const source = ssh.value;
+    const template = appTemplates.value.find(
+        (candidate) => candidate.slug === sshSetup.value,
+    );
+    if (!source?.commit || !template) return;
+    choose(template, { repo: source.repo, commit: source.commit });
+    form.value.service = source.service;
+    suggested.value = { service: source.service, port: form.value.port };
+    lockedService.value = true;
 }
 
 const zip = useZipUpload();
@@ -322,7 +495,7 @@ function sourceLabel(found: Detection): string {
         .replace(
             /\.git$/,
             '',
-        )} · ${found.branch} @ ${found.commit.slice(0, 7)}`;
+        )}${found.baseDir ? `/${found.baseDir}` : ''} · ${found.branch} @ ${found.commit.slice(0, 7)}`;
 }
 
 function continueCustom(): void {
@@ -333,6 +506,10 @@ function continueCustom(): void {
     choose(customTemplate.value, {
         repo: detection.value.repo,
         commit: detection.value.commit,
+        // A Compose file is named by its path from the root instead.
+        baseDir: customTemplate.value.compose
+            ? null
+            : (detection.value.baseDir ?? null),
     });
 
     if (customTemplate.value.compose) {
@@ -397,6 +574,7 @@ watch(category, (next, previous) => {
     if (next === 'Custom' || previous === 'Custom') {
         query.value = '';
         detection.value = null;
+        ssh.value = null;
         detectError.value = null;
         nextTick(() => searchInput.value?.focus());
     }
@@ -456,10 +634,13 @@ const form = ref({
     port: '' as string | number,
     repo: '',
     commit: '',
+    base_dir: '',
     health_path: '',
     compose_file: '',
     domain: '',
     wildcard: false,
+    proxy: '',
+    https: true,
     env: {} as Record<string, string | boolean>,
     extra_env: '',
 });
@@ -480,6 +661,54 @@ const taken = ref<{ services: string[]; ports: number[] }>({
     services: [],
     ports: [],
 });
+
+type Proxy = 'caddy' | 'nginx' | 'apache' | 'traefik';
+
+const proxyNames: Record<Proxy, string> = {
+    caddy: 'Caddy',
+    nginx: 'nginx',
+    apache: 'Apache',
+    traefik: 'Traefik',
+};
+const machineProxy = ref<string | null>(null);
+const canChooseProxy = ref(false);
+const canChooseHttps = ref(false);
+// Like 203-0-113-5.sslip.io: names under it resolve to the machine's public address.
+const freeAddress = ref<string | null>(null);
+const deployedProxy = ref<Proxy>('caddy');
+
+const currentProxy = computed<Proxy>(() =>
+    machineProxy.value && machineProxy.value in proxyNames
+        ? (machineProxy.value as Proxy)
+        : 'caddy',
+);
+const chosenProxy = computed<Proxy>(() =>
+    form.value.proxy in proxyNames
+        ? (form.value.proxy as Proxy)
+        : currentProxy.value,
+);
+const proxyOptions = computed<SelectMenuOption<Proxy>[]>(() => [
+    {
+        value: 'caddy',
+        label: 'Caddy',
+        hint: trans('HTTPS on its own, wildcard subdomains too'),
+    },
+    {
+        value: 'nginx',
+        label: 'nginx',
+        hint: trans('HTTPS from Let’s Encrypt, through certbot'),
+    },
+    {
+        value: 'apache',
+        label: 'Apache',
+        hint: trans('HTTPS from Let’s Encrypt, through certbot'),
+    },
+    {
+        value: 'traefik',
+        label: 'Traefik',
+        hint: trans('HTTPS on its own'),
+    },
+]);
 const suggested = ref<{ service: string; port: string | number } | null>(null);
 
 function freeName(base: string): string {
@@ -520,7 +749,19 @@ async function loadTaken(): Promise<void> {
             return;
         }
 
-        taken.value = await response.json();
+        const body = (await response.json()) as {
+            services: string[];
+            ports: number[];
+            proxy?: string | null;
+            canChooseProxy?: boolean;
+            canChooseHttps?: boolean;
+            freeAddress?: string | null;
+        };
+        taken.value = { services: body.services, ports: body.ports };
+        freeAddress.value = body.freeAddress ?? null;
+        machineProxy.value = body.proxy ?? null;
+        canChooseProxy.value = Boolean(body.canChooseProxy);
+        canChooseHttps.value = Boolean(body.canChooseHttps);
     } catch {
         return;
     }
@@ -584,13 +825,18 @@ function serviceNameFor(template: ServiceTemplate): string {
 
 function choose(
     template: ServiceTemplate | undefined,
-    source: { repo: string; commit: string } | null = null,
+    source: {
+        repo: string;
+        commit: string;
+        baseDir?: string | null;
+    } | null = null,
 ): void {
     if (!template) {
         return;
     }
 
     selected.value = template;
+    lockedService.value = false;
     form.value = {
         service: freeName(
             source
@@ -603,10 +849,13 @@ function choose(
                 : template.port,
         repo: source?.repo ?? '',
         commit: source?.commit ?? '',
+        base_dir: source?.baseDir ?? '',
         health_path: template.health ?? '/',
         compose_file: template.compose ?? '',
         domain: '',
         wildcard: false,
+        proxy: '',
+        https: true,
         env: Object.fromEntries(
             template.env.map((field) => [
                 field.key,
@@ -622,6 +871,11 @@ function choose(
 }
 
 function back(): void {
+    if (props.backCloses) {
+        open.value = false;
+
+        return;
+    }
     step.value = 'pick';
     nextTick(() => searchInput.value?.focus());
 }
@@ -731,6 +985,9 @@ async function deploy(): Promise<void> {
 
     submitting.value = true;
     errors.value = {};
+    deployedProxy.value = canChooseProxy.value
+        ? chosenProxy.value
+        : currentProxy.value;
 
     const env = Object.fromEntries(
         Object.entries(form.value.env).map(([key, value]) => [
@@ -762,6 +1019,10 @@ async function deploy(): Promise<void> {
                 compose_file: template.compose
                     ? form.value.compose_file || null
                     : null,
+                base_dir:
+                    template.kind === 'app' && !template.compose
+                        ? form.value.base_dir || null
+                        : null,
                 domain:
                     template.web && form.value.domain
                         ? bareDomain(form.value.domain)
@@ -769,11 +1030,22 @@ async function deploy(): Promise<void> {
                 wildcard: Boolean(
                     template.web && form.value.domain && form.value.wildcard,
                 ),
+                proxy:
+                    template.web &&
+                    form.value.domain &&
+                    canChooseProxy.value &&
+                    chosenProxy.value !== currentProxy.value
+                        ? chosenProxy.value
+                        : null,
+                https:
+                    template.web && form.value.domain && canChooseHttps.value
+                        ? form.value.https
+                        : null,
                 env,
                 extra_env: form.value.extra_env || null,
             }),
         });
-        const body = await response.json();
+        const body = await response.json().catch(() => ({}));
 
         if (response.status === 422 && body.errors) {
             errors.value = Object.fromEntries(
@@ -786,9 +1058,7 @@ async function deploy(): Promise<void> {
         }
 
         if (!response.ok) {
-            errors.value = {
-                form: body.error ?? trans('Couldn’t queue the deployment.'),
-            };
+            errors.value = { form: describe(response.status, body) };
 
             return;
         }
@@ -796,8 +1066,8 @@ async function deploy(): Promise<void> {
         result.value = body as DeployResult;
         step.value = 'done';
         emit('deployed', result.value);
-    } catch {
-        errors.value = { form: trans('Couldn’t reach the panel. Try again.') };
+    } catch (cause) {
+        errors.value = { form: errorMessage(cause) };
     } finally {
         submitting.value = false;
     }
@@ -838,6 +1108,17 @@ watch(
 );
 
 const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
+
+// Opened from a link that names a template: go straight to setting it up.
+watch(
+    open,
+    (isOpen) => {
+        if (isOpen && props.startWith && step.value === 'pick') {
+            choose(props.templates.find((t) => t.slug === props.startWith));
+        }
+    },
+    { immediate: true },
+);
 </script>
 
 <template>
@@ -1074,6 +1355,44 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                 />
                                             </div>
 
+                                            <div
+                                                v-if="!detection.upload"
+                                                class="flex flex-col gap-1.5"
+                                            >
+                                                <label
+                                                    for="custom-folder"
+                                                    :class="labelClass"
+                                                >
+                                                    {{ ' ' + $t('Folder') }}
+                                                    <span
+                                                        class="font-normal text-(--ds-text-faint)"
+                                                    >
+                                                        {{
+                                                            ' ' +
+                                                            $t(
+                                                                '(for an app in a monorepo)',
+                                                            ) +
+                                                            ' '
+                                                        }}
+                                                    </span>
+                                                </label>
+                                                <Input
+                                                    id="custom-folder"
+                                                    v-model="folderInput"
+                                                    class="h-8 font-mono text-xs"
+                                                    :placeholder="
+                                                        $t('apps/web')
+                                                    "
+                                                    autocomplete="off"
+                                                    spellcheck="false"
+                                                    :disabled="detecting"
+                                                    @keydown.enter.prevent="
+                                                        switchFolder
+                                                    "
+                                                    @blur="switchFolder"
+                                                />
+                                            </div>
+
                                             <div class="flex flex-col gap-1.5">
                                                 <label
                                                     for="custom-setup"
@@ -1133,6 +1452,284 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                             </div>
                                         </template>
 
+                                        <template v-else-if="ssh">
+                                            <div
+                                                class="flex flex-col gap-3 rounded-[10px] border border-(--ds-border) bg-(--ds-field)/50 p-3.5 text-[13px]/5"
+                                            >
+                                                <p
+                                                    class="break-all text-(--ds-text-secondary)"
+                                                >
+                                                    {{
+                                                        $t(
+                                                            'Deploying :repo over SSH. The machine makes a deploy key for the app, you add it to the repository, and the machine fetches the code with it.',
+                                                            { repo: ssh.repo },
+                                                        )
+                                                    }}
+                                                </p>
+                                                <div
+                                                    class="flex flex-col gap-1.5"
+                                                >
+                                                    <label
+                                                        for="ssh-service"
+                                                        :class="labelClass"
+                                                    >
+                                                        {{ $t('App name') }}
+                                                    </label>
+                                                    <Input
+                                                        id="ssh-service"
+                                                        v-model.trim="
+                                                            ssh.service
+                                                        "
+                                                        maxlength="63"
+                                                        pattern="[a-z][a-z0-9-]*"
+                                                        class="h-8 font-ui-mono"
+                                                        :disabled="
+                                                            !!ssh.publicKey ||
+                                                            ssh.busy !== null
+                                                        "
+                                                    />
+                                                </div>
+                                                <div
+                                                    v-if="!ssh.publicKey"
+                                                    class="flex justify-end"
+                                                >
+                                                    <AppButton
+                                                        size="sm"
+                                                        variant="primary"
+                                                        :disabled="
+                                                            ssh.busy !== null ||
+                                                            !ssh.service
+                                                        "
+                                                        @click="makeKey"
+                                                    >
+                                                        {{
+                                                            ssh.busy === 'key'
+                                                                ? $t(
+                                                                      'Making the key…',
+                                                                  )
+                                                                : $t(
+                                                                      'Make a deploy key',
+                                                                  )
+                                                        }}
+                                                    </AppButton>
+                                                </div>
+                                                <template v-else>
+                                                    <div
+                                                        class="flex flex-col gap-1.5"
+                                                    >
+                                                        <span
+                                                            :class="labelClass"
+                                                            >{{
+                                                                $t('Deploy key')
+                                                            }}</span
+                                                        >
+                                                        <div
+                                                            class="flex items-start gap-2"
+                                                        >
+                                                            <code
+                                                                class="min-w-0 grow rounded-md bg-(--ds-field) p-2 font-mono text-xs break-all"
+                                                                >{{
+                                                                    ssh.publicKey
+                                                                }}</code
+                                                            >
+                                                            <AppButton
+                                                                size="xs"
+                                                                variant="quiet"
+                                                                :aria-label="
+                                                                    $t(
+                                                                        'Copy the deploy key',
+                                                                    )
+                                                                "
+                                                                @click="
+                                                                    copy(
+                                                                        'ssh-key',
+                                                                        ssh.publicKey,
+                                                                    )
+                                                                "
+                                                            >
+                                                                <Check
+                                                                    v-if="
+                                                                        copied ===
+                                                                        'ssh-key'
+                                                                    "
+                                                                    class="mi-pop size-3.5 text-(--ds-green)"
+                                                                    :stroke-width="
+                                                                        2.25
+                                                                    "
+                                                                />
+                                                                <Copy
+                                                                    v-else
+                                                                    class="mi-copy size-3.5"
+                                                                    :stroke-width="
+                                                                        1.75
+                                                                    "
+                                                                />
+                                                            </AppButton>
+                                                        </div>
+                                                        <p
+                                                            class="text-xs text-(--ds-text-faint)"
+                                                        >
+                                                            {{
+                                                                $t(
+                                                                    'Add it to the repository as a read-only deploy key: Settings → Deploy keys on GitHub and Gitea, Settings → Repository → Deploy keys on GitLab, Repository settings → Access keys on Bitbucket.',
+                                                                )
+                                                            }}
+                                                        </p>
+                                                    </div>
+                                                    <div
+                                                        class="flex flex-col gap-1.5"
+                                                    >
+                                                        <label
+                                                            for="ssh-branch"
+                                                            :class="labelClass"
+                                                        >
+                                                            {{ $t('Branch') }}
+                                                            <span
+                                                                class="font-normal text-(--ds-text-faint)"
+                                                            >
+                                                                {{
+                                                                    ' ' +
+                                                                    $t(
+                                                                        '(empty for the default one)',
+                                                                    )
+                                                                }}
+                                                            </span>
+                                                        </label>
+                                                        <div class="flex gap-2">
+                                                            <Input
+                                                                id="ssh-branch"
+                                                                v-model.trim="
+                                                                    ssh.branch
+                                                                "
+                                                                class="h-8 font-mono text-xs"
+                                                                :placeholder="
+                                                                    $t('main')
+                                                                "
+                                                                autocomplete="off"
+                                                                spellcheck="false"
+                                                                @keydown.enter.prevent="
+                                                                    lookUpBranch
+                                                                "
+                                                            />
+                                                            <AppButton
+                                                                size="sm"
+                                                                :variant="
+                                                                    ssh.commit
+                                                                        ? 'quiet'
+                                                                        : 'primary'
+                                                                "
+                                                                :disabled="
+                                                                    ssh.busy !==
+                                                                    null
+                                                                "
+                                                                class="shrink-0"
+                                                                @click="
+                                                                    lookUpBranch
+                                                                "
+                                                            >
+                                                                {{
+                                                                    ssh.busy ===
+                                                                    'resolve'
+                                                                        ? $t(
+                                                                              'Checking…',
+                                                                          )
+                                                                        : ssh.commit
+                                                                          ? $t(
+                                                                                'Check again',
+                                                                            )
+                                                                          : $t(
+                                                                                'Key added, check',
+                                                                            )
+                                                                }}
+                                                            </AppButton>
+                                                        </div>
+                                                    </div>
+                                                    <template v-if="ssh.commit">
+                                                        <p
+                                                            class="text-(--ds-text-secondary)"
+                                                        >
+                                                            {{
+                                                                $t(
+                                                                    'Found :ref at :commit.',
+                                                                    {
+                                                                        ref: (
+                                                                            ssh.ref ??
+                                                                            ''
+                                                                        ).replace(
+                                                                            /^refs\/(heads|tags)\//,
+                                                                            '',
+                                                                        ),
+                                                                        commit: ssh.commit.slice(
+                                                                            0,
+                                                                            7,
+                                                                        ),
+                                                                    },
+                                                                )
+                                                            }}
+                                                        </p>
+                                                        <div
+                                                            class="flex flex-col gap-1.5"
+                                                        >
+                                                            <label
+                                                                for="ssh-setup"
+                                                                :class="
+                                                                    labelClass
+                                                                "
+                                                            >
+                                                                {{
+                                                                    $t('Setup')
+                                                                }}
+                                                            </label>
+                                                            <SelectMenu
+                                                                id="ssh-setup"
+                                                                v-model="
+                                                                    sshSetup
+                                                                "
+                                                                :options="
+                                                                    appTemplateOptions
+                                                                "
+                                                                :placeholder="
+                                                                    $t(
+                                                                        'Choose a setup',
+                                                                    )
+                                                                "
+                                                                class="h-8 rounded-md border border-input bg-transparent pr-2.5 pl-3 text-[13px]/4 text-(--ds-text) shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                                                            />
+                                                        </div>
+                                                    </template>
+                                                </template>
+                                                <InputError
+                                                    :message="
+                                                        ssh.error ?? undefined
+                                                    "
+                                                />
+                                                <div
+                                                    class="flex justify-end gap-2"
+                                                >
+                                                    <AppButton
+                                                        size="sm"
+                                                        variant="quiet"
+                                                        @click="
+                                                            ssh = null;
+                                                            query = '';
+                                                            searchInput?.focus();
+                                                        "
+                                                    >
+                                                        {{ $t('Try another') }}
+                                                    </AppButton>
+                                                    <AppButton
+                                                        v-if="ssh.commit"
+                                                        size="sm"
+                                                        variant="primary"
+                                                        :disabled="!sshSetup"
+                                                        @click="continueSsh"
+                                                    >
+                                                        {{ $t('Continue') }}
+                                                    </AppButton>
+                                                </div>
+                                            </div>
+                                        </template>
+
                                         <template v-else>
                                             <p
                                                 class="text-[13px]/5 text-(--ds-text-muted)"
@@ -1159,6 +1756,15 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                     $t(
                                                         '. ServerOS checks its latest commit, works out what it is (web app, API, static site…) and sets up Docker for it. If the repository has its own Dockerfile, that gets used instead.',
                                                     ) + ' '
+                                                }}
+                                            </p>
+                                            <p
+                                                class="text-xs/4 text-(--ds-text-faint)"
+                                            >
+                                                {{
+                                                    $t(
+                                                        'On GitLab, Gitea, Bitbucket or your own git server? Paste its SSH address, like git@gitlab.com:you/app.git, to deploy it with a deploy key.',
+                                                    )
                                                 }}
                                             </p>
                                             <div
@@ -1456,7 +2062,11 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                 <button
                                     type="button"
                                     class="flex size-7 cursor-pointer items-center justify-center rounded-md text-(--ds-text-muted) hover:bg-(--ds-hover) hover:text-(--ds-text) focus-visible:outline-2 focus-visible:outline-(--ds-ring)"
-                                    :aria-label="$t('Back to the library')"
+                                    :aria-label="
+                                        backCloses
+                                            ? $t('Back')
+                                            : $t('Back to the library')
+                                    "
                                     @click="back"
                                 >
                                     <ArrowLeft
@@ -1506,6 +2116,14 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                         <Input
                                             id="deploy-service"
                                             v-model.trim="form.service"
+                                            :readonly="lockedService"
+                                            :title="
+                                                lockedService
+                                                    ? $t(
+                                                          'The deploy key belongs to this name.',
+                                                      )
+                                                    : undefined
+                                            "
                                             required
                                             maxlength="63"
                                             pattern="[a-z][a-z0-9-]*"
@@ -1651,17 +2269,21 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                 :class="labelClass"
                                             >
                                                 {{
-                                                    ' ' + $t('Commit SHA') + ' '
+                                                    ' ' +
+                                                    $t(
+                                                        'Branch, tag or commit',
+                                                    ) +
+                                                    ' '
                                                 }}
                                             </label>
                                             <Input
                                                 id="deploy-commit"
                                                 v-model.trim="form.commit"
-                                                required
-                                                pattern="[a-fA-F0-9]{40}"
-                                                maxlength="40"
+                                                maxlength="255"
                                                 :placeholder="
-                                                    $t('40-character commit')
+                                                    $t(
+                                                        'Latest commit on the default branch',
+                                                    )
                                                 "
                                                 class="font-ui-mono"
                                             />
@@ -1729,11 +2351,32 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                             :stroke-width="1.75"
                                             aria-hidden="true"
                                         />
-                                        {{
-                                            $t(
-                                                'Point a domain at this machine and it gets HTTPS automatically, with a certificate that renews itself.',
-                                            ) + ' '
-                                        }}
+                                        <span>
+                                            {{
+                                                $t(
+                                                    'Point a domain at this machine and it gets HTTPS automatically, with a certificate that renews itself.',
+                                                ) + ' '
+                                            }}
+                                            <button
+                                                v-if="
+                                                    freeAddress && form.service
+                                                "
+                                                type="button"
+                                                class="text-(--ds-text-secondary) underline decoration-(--ds-divider) underline-offset-2 hover:text-(--ds-text)"
+                                                @click="
+                                                    form.domain = `${form.service}.${freeAddress}`
+                                                "
+                                            >
+                                                {{
+                                                    $t(
+                                                        'No domain yet? Use :address',
+                                                        {
+                                                            address: `${form.service}.${freeAddress}`,
+                                                        },
+                                                    )
+                                                }}
+                                            </button>
+                                        </span>
                                     </p>
                                     <p
                                         v-else-if="dnsChecking && !dns"
@@ -1919,6 +2562,79 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                             </div>
                                         </template>
                                     </div>
+                                    <div
+                                        v-if="form.domain && canChooseProxy"
+                                        class="mt-1 flex flex-col gap-1.5"
+                                    >
+                                        <label
+                                            for="deploy-proxy"
+                                            :class="labelClass"
+                                        >
+                                            {{ $t('Reverse proxy') }}
+                                        </label>
+                                        <SelectMenu
+                                            id="deploy-proxy"
+                                            :model-value="chosenProxy"
+                                            :options="proxyOptions"
+                                            class="h-8 rounded-md border border-input bg-transparent pr-2.5 pl-3 text-[13px]/4 text-(--ds-text) shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                                            @update:model-value="
+                                                (value) => (form.proxy = value)
+                                            "
+                                        />
+                                        <p
+                                            v-if="chosenProxy !== currentProxy"
+                                            class="text-xs/4 text-(--ds-text-faint)"
+                                        >
+                                            {{
+                                                $t(
+                                                    'This machine uses :from now. Deploying moves every site on it to :to and stops :from, since only one of them can use ports 80 and 443.',
+                                                    {
+                                                        from: proxyNames[
+                                                            currentProxy
+                                                        ],
+                                                        to: proxyNames[
+                                                            chosenProxy
+                                                        ],
+                                                    },
+                                                )
+                                            }}
+                                        </p>
+                                        <InputError
+                                            :message="errorFor('proxy')"
+                                        />
+                                    </div>
+                                    <label
+                                        v-if="form.domain && canChooseHttps"
+                                        class="mt-1 flex cursor-pointer items-start gap-2.5 text-[13px]/5 text-(--ds-text-secondary) select-none"
+                                    >
+                                        <TickBox
+                                            v-model="form.https"
+                                            class="mt-0.5"
+                                        />
+                                        <span class="flex flex-col gap-0.5">
+                                            <span class="text-(--ds-text)">{{
+                                                $t('Serve over HTTPS')
+                                            }}</span>
+                                            <span
+                                                class="text-xs/4 text-(--ds-text-faint)"
+                                                >{{
+                                                    form.https
+                                                        ? $t(
+                                                              ':proxy gets a certificate and sends HTTP to HTTPS, as soon as the domain points here.',
+                                                              {
+                                                                  proxy: proxyNames[
+                                                                      chosenProxy
+                                                                  ],
+                                                              },
+                                                          )
+                                                        : $t(
+                                                              'Plain HTTP, no certificate. For when a CDN or proxy in front does HTTPS.',
+                                                          )
+                                                }}</span
+                                            >
+                                        </span>
+                                    </label>
+                                    <InputError :message="errorFor('https')" />
                                     <label
                                         v-if="form.domain"
                                         class="mt-1 flex cursor-pointer items-start gap-2.5 text-[13px]/5 text-(--ds-text-secondary) select-none"
@@ -1935,7 +2651,11 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                                 class="text-xs/4 text-(--ds-text-faint)"
                                                 >{{
                                                     $t(
-                                                        'Every subdomain, like tenant.:domain, is served by this app and gets its own certificate the first time it’s visited. No DNS provider needed.',
+                                                        chosenProxy ===
+                                                            'caddy' &&
+                                                            form.https
+                                                            ? 'Every subdomain, like tenant.:domain, is served by this app and gets its own certificate the first time it’s visited. No DNS provider needed.'
+                                                            : 'Every subdomain, like tenant.:domain, is served by this app over plain HTTP: a certificate for every subdomain needs Caddy.',
                                                         {
                                                             domain:
                                                                 bareDomain(
@@ -2177,9 +2897,21 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                         <p class="text-sm font-medium">
                                             {{
                                                 ' ' +
-                                                $t('Deploying :service', {
-                                                    service: form.service,
-                                                })
+                                                (result.commit
+                                                    ? $t(
+                                                          'Deploying :service at :commit',
+                                                          {
+                                                              service:
+                                                                  form.service,
+                                                              commit: result.commit.slice(
+                                                                  0,
+                                                                  7,
+                                                              ),
+                                                          },
+                                                      )
+                                                    : $t('Deploying :service', {
+                                                          service: form.service,
+                                                      }))
                                             }}
                                         </p>
                                         <p
@@ -2298,7 +3030,12 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                     />
                                     {{
                                         $t(
-                                            'Caddy on the machine gets the certificate and redirects HTTP to HTTPS, as soon as the domain points here.',
+                                            ':proxy on the machine gets the certificate and redirects HTTP to HTTPS, as soon as the domain points here.',
+                                            {
+                                                proxy: proxyNames[
+                                                    deployedProxy
+                                                ],
+                                            },
                                         ) + ' '
                                     }}
                                 </p>
@@ -2369,6 +3106,7 @@ const labelClass = 'text-[13px]/5 font-medium text-(--ds-text-muted)';
                                 <AppButton
                                     size="sm"
                                     variant="quiet"
+                                    v-if="!backCloses"
                                     @click="back"
                                 >
                                     {{ ' ' + $t('Deploy another') + ' ' }}

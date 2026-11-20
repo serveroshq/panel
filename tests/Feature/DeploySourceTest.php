@@ -4,6 +4,8 @@ use App\Models\DeploySource;
 use App\Models\Machine;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\DeploySources\DeploySourcePacker;
+use App\Support\ServiceTemplates\RepositoryDetector;
 use Illuminate\Support\Facades\File;
 
 function nextZip(array $extra = []): string
@@ -22,6 +24,23 @@ function nextZip(array $extra = []): string
     $zip->close();
 
     return $path;
+}
+
+/** Rewrites an entry's uncompressed size in both zip headers, like a crafted upload would. */
+function lieAboutSize(string $path, string $entry, int $size): void
+{
+    $bytes = file_get_contents($path);
+    // [signature, offset of the size, offset of the name length, offset of the name]
+    foreach ([["PK\x03\x04", 22, 26, 30], ["PK\x01\x02", 24, 28, 46]] as [$signature, $sizeAt, $lengthAt, $nameAt]) {
+        $at = -1;
+        while (($at = strpos($bytes, $signature, $at + 1)) !== false) {
+            $length = unpack('v', substr($bytes, $at + $lengthAt, 2))[1];
+            if (substr($bytes, $at + $nameAt, $length) === $entry) {
+                $bytes = substr_replace($bytes, pack('V', $size), $at + $sizeAt, 4);
+            }
+        }
+    }
+    file_put_contents($path, $bytes);
 }
 
 function upload($test, Workspace $workspace, Machine $machine, string $zip)
@@ -63,6 +82,42 @@ test('zips that climb out of the folder are refused', function () {
 
     upload($this->actingAs($workspace->owner), $workspace, $machine, nextZip(['../escape.txt' => 'x']))
         ->assertUnprocessable()->assertJsonValidationErrors('file');
+});
+
+test('zips are held to the bytes they unpack to, not the sizes their headers claim', function () {
+    $workspace = Workspace::factory()->create();
+    $machine = Machine::factory()->for($workspace)->create();
+    $this->app->instance(DeploySourcePacker::class, new DeploySourcePacker(app(RepositoryDetector::class), maxUnpackedBytes: 1024 * 1024));
+
+    // One entry that says it's 10 bytes but inflates to 2 MB.
+    $path = nextZip(['my-app/big.txt' => str_repeat('A', 2 * 1024 * 1024)]);
+    lieAboutSize($path, 'my-app/big.txt', 10);
+
+    $zip = new ZipArchive;
+    $zip->open($path, ZipArchive::RDONLY);
+    expect($zip->statName('my-app/big.txt')['size'])->toBe(10);
+    $zip->close();
+
+    upload($this->actingAs($workspace->owner), $workspace, $machine, $path)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['file' => 'unpacks to more than']);
+
+    $source = DeploySource::query()->sole();
+    expect(is_dir($source->directory().'/work'))->toBeFalse()
+        ->and(is_dir($source->repoPath()))->toBeFalse();
+
+    File::deleteDirectory($source->directory());
+});
+
+test('zips under the limit still unpack', function () {
+    $workspace = Workspace::factory()->create();
+    $machine = Machine::factory()->for($workspace)->create();
+    $this->app->instance(DeploySourcePacker::class, new DeploySourcePacker(app(RepositoryDetector::class), maxUnpackedBytes: 1024 * 1024));
+
+    upload($this->actingAs($workspace->owner), $workspace, $machine, nextZip(['my-app/big.txt' => str_repeat('A', 512 * 1024)]))
+        ->assertOk();
+
+    File::deleteDirectory(DeploySource::query()->sole()->directory());
 });
 
 test('the repository is served for fetching only, and only while it lasts', function () {

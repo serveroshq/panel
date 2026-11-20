@@ -2,6 +2,7 @@
 
 namespace App\Enums;
 
+use App\Models\Workspace;
 use App\Support\Extensions\Prices;
 
 enum Plan: string
@@ -15,15 +16,15 @@ enum Plan: string
         return match ($this) {
             self::Essential => 'Essential',
             self::Pro => 'Pro',
-            self::Business => 'Business',
+            self::Business => 'Scale',
         };
     }
 
     public function machineLimit(): int
     {
         return match ($this) {
-            self::Essential => 1,
-            self::Pro => 5,
+            self::Essential => 2,
+            self::Pro => 10,
             self::Business => 25,
         };
     }
@@ -130,8 +131,8 @@ enum Plan: string
     {
         return self::translated(match ($this) {
             self::Essential => 'For individual developers.',
-            self::Pro => 'For small teams and projects.',
-            self::Business => 'For agencies and small MSPs.',
+            self::Pro => 'For developers and small teams.',
+            self::Business => 'For agencies and MSPs.',
         });
     }
 
@@ -171,7 +172,7 @@ enum Plan: string
     }
 
     /** @return array{value: string, label: string, summary: string, monthlyPrice: int|null, annualPrice: int|null, machineLimit: int, mcpCallLimit: int, monitorLimit: int, minMonitorInterval: int, logRetentionDays: int, logLinesPerDay: int, activityRetentionDays: int, features: list<string>} */
-    public function toPageProps(Currency $currency = Currency::GBP): array
+    public function toPageProps(Currency $currency = Currency::GBP, ?Workspace $workspace = null): array
     {
         $prices = app(Prices::class);
 
@@ -179,8 +180,8 @@ enum Plan: string
             'value' => $this->value,
             'label' => $this->label(),
             'summary' => $this->summary(),
-            'monthlyPrice' => $prices->plan($this, BillingInterval::Monthly, $currency),
-            'annualPrice' => $prices->plan($this, BillingInterval::Annual, $currency),
+            'monthlyPrice' => $prices->plan($this, BillingInterval::Monthly, $currency, $workspace),
+            'annualPrice' => $prices->plan($this, BillingInterval::Annual, $currency, $workspace),
             'machineLimit' => $this->machineLimit(),
             'mcpCallLimit' => $this->mcpCallLimit(),
             'monitorLimit' => $this->monitorLimit(),

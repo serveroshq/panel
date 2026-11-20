@@ -164,6 +164,8 @@ final class LogStore
                 $table->index(['machine_id', 'id']);
                 $table->index(['machine_id', 'service', 'id']);
                 $table->index('logged_at');
+                // Pruning deletes one workspace's old lines at a time.
+                $table->index(['machine_id', 'logged_at']);
             });
         }
         if (! $schema->hasTable('log_counts')) {
