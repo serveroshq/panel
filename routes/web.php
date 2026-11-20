@@ -32,6 +32,7 @@ use App\Http\Controllers\MachineFileController;
 use App\Http\Controllers\MachineFirewallController;
 use App\Http\Controllers\MachineGroupController;
 use App\Http\Controllers\MachineMetadataController;
+use App\Http\Controllers\MachineMoveController;
 use App\Http\Controllers\MachineScanController;
 use App\Http\Controllers\MachineServiceController;
 use App\Http\Controllers\MachineSettingsController;
@@ -300,6 +301,8 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
             ->name('workspace.machines.services.clone');
         Route::post('machines/{machine}/scan', [MachineScanController::class, 'store'])->middleware('throttle:10,1')->name('workspace.machines.scan.store');
         Route::post('machines/{machine}/refresh', [MachineScanController::class, 'discover'])->middleware('throttle:20,1')->name('workspace.machines.refresh');
+        Route::get('machines/{machine}/machine-file', [MachineMoveController::class, 'file'])->middleware('throttle:20,1')->name('workspace.machines.machine-file');
+        Route::post('machines/{machine}/move-check', [MachineMoveController::class, 'check'])->middleware('throttle:20,1')->name('workspace.machines.move-check');
         Route::post('machines/{machine}/disk-usage', [MachineDiskUsageController::class, 'store'])->middleware('throttle:10,1')->name('workspace.machines.disk-usage.store');
         Route::get('machines/{machine}/disk-usage/{job}', [MachineDiskUsageController::class, 'show'])->name('workspace.machines.disk-usage.show');
         Route::post('machines/{machine}/updates/check', [MachineUpdatesController::class, 'check'])->middleware('throttle:10,1')->name('workspace.machines.updates.check');

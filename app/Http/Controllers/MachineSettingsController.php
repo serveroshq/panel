@@ -48,6 +48,8 @@ class MachineSettingsController extends Controller
             'workspace' => $workspace->toPageProps(),
             'machine' => (new MachineResource($machine))->resolve(),
             'canManage' => Gate::allows('manageMachines', $workspace),
+            'moveTargets' => $workspace->machines()->whereKeyNot($machine->id)->orderBy('name')->get(['id', 'name'])
+                ->map(fn (Machine $m) => ['id' => $m->id, 'name' => $m->name])->values(),
             'policy' => $this->policyProps($workspace, $machine),
             'tunnel' => CloudflareTunnel::offered() ? [
                 'supported' => CloudflareTunnel::supported($machine),

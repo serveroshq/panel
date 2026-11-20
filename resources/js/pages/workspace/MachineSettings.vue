@@ -8,6 +8,7 @@ import { SolarCopy as Copy } from '@/lib/solarIcons';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
 import ClearDataDialog from '@/components/machines/ClearDataDialog.vue';
+import MovePanel from '@/components/machines/MovePanel.vue';
 import type { DataKind } from '@/components/machines/ClearDataDialog.vue';
 import type { Machine } from '@/components/machines/machines';
 import PolicySends from '@/components/machines/PolicySends.vue';
@@ -108,6 +109,7 @@ const props = defineProps<{
     workspace: Workspace;
     machine: Machine;
     canManage: boolean;
+    moveTargets: { id: number; name: string }[];
     statusPage: StatusPageSettings;
     policy: {
         current: MachinePolicy;
@@ -1279,6 +1281,13 @@ const serviceColumns =
                     :remove-url="`/machines/${machine.id}/icon`"
                 />
             </section>
+
+            <MovePanel
+                v-if="canManage && machine.id"
+                :machine-id="machine.id"
+                :machine-name="machine.name"
+                :targets="moveTargets"
+            />
 
             <section
                 v-if="canManage && machine.id"

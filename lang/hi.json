@@ -3616,5 +3616,14 @@
     "You’ve been signed out. Reload the page and sign in again.": "आप साइन आउट हो गए हैं। पेज रीलोड करें और फिर से साइन इन करें।",
     "The machine said: :line": "मशीन ने कहा: :line",
     "That didn’t work. Try again.": "वह काम नहीं किया। फिर से कोशिश करें।",
-    "That was cancelled. Try again.": "यह रद्द हो गया। फिर से कोशिश करें।"
+    "That was cancelled. Try again.": "यह रद्द हो गया। फिर से कोशिश करें।",
+    "Add another machine to this workspace to check a move.": "Move जाँचने के लिए इस वर्कस्पेस में एक और मशीन जोड़ें।",
+    "Apps aren’t moved for you yet: this check and the machine file show what a move would take.": "ऐप अभी अपने आप move नहीं होते: यह जाँच और मशीन फ़ाइल बताती हैं कि move के लिए क्या चाहिए।",
+    "Check the move": "Move जाँचें",
+    "Download machine file": "मशीन फ़ाइल डाउनलोड करें",
+    "Machine to move to": "जिस मशीन पर move करना है",
+    "Move to another machine": "दूसरी मशीन पर move करें",
+    "Nothing blocks a move to :to.": ":to पर move में कोई रुकावट नहीं है।",
+    "The machine file lists the apps ServerOS deployed on :name and their settings, without their values. Check what a move to another machine would take. Nothing is changed on either machine.": "मशीन फ़ाइल में वे ऐप हैं जो ServerOS ने :name पर डिप्लॉय किए, और उनकी सेटिंग्स, बिना उनकी values के। जाँचें कि दूसरी मशीन पर move के लिए क्या चाहिए। किसी भी मशीन पर कुछ नहीं बदलता।",
+    "This move can’t start yet.": "यह move अभी शुरू नहीं हो सकता।"
 }
