@@ -3616,5 +3616,7 @@
     "You’ve been signed out. Reload the page and sign in again.": "आप साइन आउट हो गए हैं। पेज रीलोड करें और फिर से साइन इन करें।",
     "The machine said: :line": "मशीन ने कहा: :line",
     "That didn’t work. Try again.": "वह काम नहीं किया। फिर से कोशिश करें।",
-    "That was cancelled. Try again.": "यह रद्द हो गया। फिर से कोशिश करें।"
+    "That was cancelled. Try again.": "यह रद्द हो गया। फिर से कोशिश करें।",
+    "OpenCode Go": "OpenCode Go",
+    "Server fixes and the assistant": "सर्वर सुधार और सहायक"
 }

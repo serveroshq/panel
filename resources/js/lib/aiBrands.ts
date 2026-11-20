@@ -80,6 +80,16 @@ export const AI_BRANDS = {
             },
         ],
     },
+    opencodeGo: {
+        title: trans('OpenCode Go'),
+        viewBox: '0 0 24 24',
+        paths: [
+            {
+                d: 'M4 5.5A2.5 2.5 0 016.5 3h11A2.5 2.5 0 0120 5.5v13A2.5 2.5 0 0117.5 21h-11A2.5 2.5 0 014 18.5v-13zM8 8.25a.75.75 0 000 1.5h3.19l-3.22 3.22a.75.75 0 101.06 1.06L12.25 10.8v3.2a.75.75 0 001.5 0v-6a.75.75 0 00-.75-.75H8z',
+                rule: 'evenodd',
+            },
+        ],
+    },
     mcp: {
         title: trans('Model Context Protocol'),
         viewBox: '0 0 24 24',

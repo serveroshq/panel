@@ -15,13 +15,15 @@ class AiProviders
     public const PROVIDERS = [
         'anthropic' => ['label' => 'Anthropic', 'model' => 'claude-sonnet-5-5', 'prefix' => 'sk-ant-'],
         'openai' => ['label' => 'OpenAI', 'model' => 'gpt-5', 'prefix' => 'sk-'],
+        OpenCodeGo::PROVIDER => ['label' => OpenCodeGo::LABEL, 'model' => OpenCodeGo::DEFAULT_MODEL, 'prefix' => 'oc_sk_'],
     ];
 
-    public const PREFERENCE = ['anthropic', 'openai'];
+    public const PREFERENCE = ['anthropic', 'openai', OpenCodeGo::PROVIDER];
 
     public const FALLBACK_MODELS = [
         'anthropic' => ['claude-opus-5-5' => 'Claude Opus 5.5', 'claude-sonnet-5-5' => 'Claude Sonnet 5.5', 'claude-haiku-5-5' => 'Claude Haiku 5.5', 'claude-fable-5-1' => 'Claude Fable 5.1'],
         'openai' => ['gpt-5' => 'GPT-5', 'gpt-5-mini' => 'GPT-5 mini'],
+        OpenCodeGo::PROVIDER => OpenCodeGo::FALLBACK_MODELS,
     ];
 
     public const MODEL_PATTERN = '/^[A-Za-z0-9._:\/\[\]-]{1,80}$/';
@@ -117,13 +119,16 @@ class AiProviders
     private function listModels(string $provider, string $key): array
     {
         try {
-            $response = $provider === 'anthropic'
-                ? Http::withHeaders(['x-api-key' => $key, 'anthropic-version' => '2023-06-01'])->timeout(8)->get('https://api.anthropic.com/v1/models', ['limit' => 100])
-                : Http::withToken($key)->timeout(8)->get('https://api.openai.com/v1/models');
+            $response = match ($provider) {
+                'anthropic' => Http::withHeaders(['x-api-key' => $key, 'anthropic-version' => '2023-06-01'])->timeout(8)->get('https://api.anthropic.com/v1/models', ['limit' => 100]),
+                OpenCodeGo::PROVIDER => OpenCodeGo::http($key)->timeout(8)->get(OpenCodeGo::url(OpenCodeGo::MODELS)),
+                'openai' => Http::withToken($key)->timeout(8)->get('https://api.openai.com/v1/models'),
+                default => null,
+            };
         } catch (ConnectionException) {
             return [];
         }
-        if (! $response->successful()) {
+        if ($response === null || ! $response->successful()) {
             return [];
         }
 
@@ -136,7 +141,7 @@ class AiProviders
             if ($provider === 'openai' && (preg_match('/^(gpt-|o\d|chatgpt-)/', $id) !== 1 || preg_match('/(embedding|audio|realtime|transcribe|tts|image|search|instruct|moderation|dall-e|whisper)/', $id) === 1)) {
                 continue;
             }
-            $models[] = ['id' => $id, 'label' => (string) ($model['display_name'] ?? $id), 'created' => (int) ($model['created'] ?? (isset($model['created_at']) ? strtotime((string) $model['created_at']) : 0))];
+            $models[] = ['id' => $id, 'label' => (string) ($model['display_name'] ?? $model['name'] ?? $id), 'created' => (int) ($model['created'] ?? (isset($model['created_at']) ? strtotime((string) $model['created_at']) : 0))];
         }
         usort($models, fn (array $a, array $b) => $b['created'] <=> $a['created']);
 
@@ -149,7 +154,7 @@ class AiProviders
      *
      * @throws RuntimeException
      */
-    public function json(array $ai, string $system, string $user, int $maxTokens = 1800): array
+    public function json(array $ai, string $system, string $user, int $maxTokens = 1800, ?string $conversationKey = null): array
     {
         if ($ai['key'] === '') {
             throw new RuntimeException('The agent isn’t set up on this ServerOS: there’s no model key.');
@@ -176,7 +181,16 @@ class AiProviders
                         'text' => ['format' => ['type' => 'json_object']],
                         'store' => false,
                     ]),
-                default => Http::withToken($ai['key'])->connectTimeout(10)->timeout(90)
+                OpenCodeGo::PROVIDER => OpenCodeGo::http($ai['key'], OpenCodeGo::sessionId($conversationKey ?? ''))
+                    ->connectTimeout(10)->timeout(120)
+                    ->post(OpenCodeGo::url(OpenCodeGo::CHAT_COMPLETIONS), [
+                        'model' => $ai['model'],
+                        'temperature' => 0.2,
+                        'max_tokens' => $maxTokens,
+                        'response_format' => ['type' => 'json_object'],
+                        'messages' => [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $user]],
+                    ]),
+                'groq' => Http::withToken($ai['key'])->connectTimeout(10)->timeout(90)
                     ->post('https://api.groq.com/openai/v1/chat/completions', [
                         'model' => $ai['model'],
                         'temperature' => 0.2,
@@ -186,6 +200,7 @@ class AiProviders
                         'response_format' => ['type' => 'json_object'],
                         'messages' => [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $user]],
                     ]),
+                default => throw new RuntimeException('The agent isn’t set up on this ServerOS: there’s no model key.'),
             };
         } catch (ConnectionException) {
             throw new RuntimeException("Couldn’t reach {$who}. Try again in a minute.");
@@ -250,10 +265,14 @@ class AiProviders
     /** @throws RuntimeException */
     public function verify(string $provider, string $key): void
     {
+        if (! isset(self::PROVIDERS[$provider])) {
+            throw new RuntimeException('That AI provider isn’t supported.');
+        }
         try {
             $response = match ($provider) {
                 'anthropic' => Http::withHeaders(['x-api-key' => $key, 'anthropic-version' => '2023-06-01'])->timeout(15)->get('https://api.anthropic.com/v1/models', ['limit' => 1]),
-                default => Http::withToken($key)->timeout(15)->get('https://api.openai.com/v1/models'),
+                OpenCodeGo::PROVIDER => OpenCodeGo::http($key)->timeout(15)->get(OpenCodeGo::url(OpenCodeGo::MODELS)),
+                'openai' => Http::withToken($key)->timeout(15)->get('https://api.openai.com/v1/models'),
             };
         } catch (ConnectionException) {
             throw new RuntimeException('Couldn’t reach '.self::PROVIDERS[$provider]['label'].' to check the key. Try again.');

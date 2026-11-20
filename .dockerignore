@@ -1,0 +1,21 @@
+# Keep secrets, dependency trees, caches and host build output out of the image context.
+.git
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+node_modules
+vendor
+.composer-cache
+docker/self-hosted/backups
+docker/self-hosted/.env
+docker/self-hosted/.env.*
+storage/logs/*
+storage/framework/cache/**
+storage/framework/sessions/**
+storage/framework/views/**
+public/build
+public/hot
+bootstrap/cache/*.php

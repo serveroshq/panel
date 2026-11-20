@@ -23,6 +23,7 @@ return [
         'es' => 'Español',
         'de' => 'Deutsch',
         'hi' => 'हिन्दी',
+        'zh-CN' => '简体中文',
     ],
 
     'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),

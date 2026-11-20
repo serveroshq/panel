@@ -3,6 +3,7 @@
 namespace App\Support\Assistant;
 
 use App\Support\Ai\AiProviders;
+use App\Support\Ai\OpenCodeGo;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -20,7 +21,7 @@ class AgentChat
      *
      * @throws RuntimeException
      */
-    public function turn(array $ai, string $system, array $messages, array $tools, int $maxTokens = 1600): array
+    public function turn(array $ai, string $system, array $messages, array $tools, int $maxTokens = 1600, ?string $conversationKey = null): array
     {
         if ($ai['key'] === '') {
             throw new RuntimeException('The assistant isn’t set up on this ServerOS: there’s no model key.');
@@ -31,7 +32,9 @@ class AgentChat
             $response = match ($ai['provider']) {
                 'anthropic' => $this->anthropic($ai, $system, $messages, $tools, $maxTokens),
                 'openai' => $this->responses($ai, $system, $messages, $tools, $maxTokens),
-                default => $this->groq($ai, $ai['model'], $system, $messages, $tools, $maxTokens),
+                OpenCodeGo::PROVIDER => $this->openCodeGo($ai, $system, $messages, $tools, $maxTokens, $conversationKey),
+                'groq' => $this->groq($ai, $ai['model'], $system, $messages, $tools, $maxTokens),
+                default => throw new RuntimeException('The assistant isn’t set up on this ServerOS: there’s no model key.'),
             };
             if ($ai['provider'] === 'groq' && $response->serverError()) {
                 $response = $this->groq($ai, $ai['model'], $system, $messages, $tools, $maxTokens);
@@ -66,7 +69,7 @@ class AgentChat
         return match ($ai['provider']) {
             'anthropic' => $this->readAnthropic($response, $ai['model']),
             'openai' => $this->readResponses($response, $ai['model']),
-            default => $this->readOpenai($response, $ai['model']),
+            OpenCodeGo::PROVIDER, 'groq' => $this->readOpenai($response, $ai['model']),
         };
     }
 
@@ -94,6 +97,67 @@ class AgentChat
         }
 
         return ['id' => 'call_'.substr(md5((string) microtime(true)), 0, 12), 'name' => $name, 'arguments' => is_array($arguments) ? $arguments : []];
+    }
+
+    /**
+     * @param  array{provider: string, key: string, model: string, own: bool}  $ai
+     * @param  list<array<string, mixed>>  $messages
+     * @param  list<array{name: string, description: string, schema: array<string, mixed>}>  $tools
+     */
+    private function openCodeGo(array $ai, string $system, array $messages, array $tools, int $maxTokens, ?string $conversationKey): Response
+    {
+        $wire = [['role' => 'system', 'content' => $system]];
+        foreach ($messages as $m) {
+            $wire[] = match ($m['role']) {
+                'assistant' => array_filter([
+                    'role' => 'assistant',
+                    'content' => ($m['content'] ?? '') !== '' ? $m['content'] : null,
+                    'tool_calls' => array_map(fn (array $c) => [
+                        'id' => $c['id'],
+                        'type' => 'function',
+                        'function' => ['name' => $c['name'], 'arguments' => json_encode((object) $c['arguments'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)],
+                    ], $m['calls'] ?? []) ?: null,
+                ], fn ($v) => $v !== null),
+                'tool' => ['role' => 'tool', 'tool_call_id' => $m['id'], 'content' => $m['content']],
+                default => ['role' => 'user', 'content' => $m['content']],
+            };
+        }
+
+        $body = [
+            'model' => $ai['model'],
+            'messages' => $wire,
+            'temperature' => 0.2,
+            'max_tokens' => $maxTokens,
+        ];
+        if ($tools !== []) {
+            $body['tools'] = array_map(fn (array $t) => ['type' => 'function', 'function' => ['name' => $t['name'], 'description' => $t['description'], 'parameters' => $t['schema']]], $tools);
+        }
+
+        return OpenCodeGo::http($ai['key'], OpenCodeGo::sessionId($conversationKey ?? ''))
+            ->connectTimeout(10)
+            ->timeout(90)
+            ->post(OpenCodeGo::url(OpenCodeGo::CHAT_COMPLETIONS), $body);
+    }
+
+    /**
+     * Stream a chat-completions reply from OpenCode Go (no tools). Used by tests
+     * and any panel path that needs token streaming on this provider.
+     *
+     * @param  array{provider: string, key: string, model: string, own: bool}  $ai
+     * @param  list<array{role: string, content: string}>  $messages
+     */
+    public function streamOpenCodeGo(array $ai, array $messages, string $conversationKey, int $maxTokens = 900): Response
+    {
+        return OpenCodeGo::http($ai['key'], OpenCodeGo::sessionId($conversationKey), stream: true)
+            ->connectTimeout(10)
+            ->timeout(90)
+            ->post(OpenCodeGo::url(OpenCodeGo::CHAT_COMPLETIONS), [
+                'model' => $ai['model'],
+                'stream' => true,
+                'temperature' => 0.2,
+                'max_tokens' => $maxTokens,
+                'messages' => $messages,
+            ]);
     }
 
     /**

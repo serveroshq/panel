@@ -14,7 +14,7 @@ import { appButtonClasses } from '@/lib/appButton';
 import { SolarSparkles as Sparkles } from '@/lib/solarIcons';
 
 export type AiProvider = {
-    provider: 'anthropic' | 'openai';
+    provider: 'anthropic' | 'openai' | 'opencode-go';
     label: string;
     defaultModel: string;
     connected: boolean;
@@ -30,7 +30,11 @@ const props = defineProps<{
     canManage: boolean;
 }>();
 
-const brand = { anthropic: 'claude', openai: 'openai' } as const;
+const brand = {
+    anthropic: 'claude',
+    openai: 'openai',
+    'opencode-go': 'opencodeGo',
+} as const;
 const about = {
     anthropic: {
         name: 'Anthropic',
@@ -45,6 +49,13 @@ const about = {
         uses: 'Server fixes and Codex',
         keysUrl: 'https://platform.openai.com/api-keys',
         placeholder: 'sk-proj-…',
+    },
+    'opencode-go': {
+        name: 'OpenCode Go',
+        product: 'OpenCode Go',
+        uses: 'Server fixes and the assistant',
+        keysUrl: 'https://opencode.ai/docs/console/go/',
+        placeholder: 'oc_sk_…',
     },
 } as const;
 

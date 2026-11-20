@@ -3616,5 +3616,7 @@
     "You’ve been signed out. Reload the page and sign in again.": "Se cerró tu sesión. Recarga la página e inicia sesión de nuevo.",
     "The machine said: :line": "La máquina dijo: :line",
     "That didn’t work. Try again.": "No ha funcionado. Inténtalo de nuevo.",
-    "That was cancelled. Try again.": "Se canceló. Inténtalo de nuevo."
+    "That was cancelled. Try again.": "Se canceló. Inténtalo de nuevo.",
+    "OpenCode Go": "OpenCode Go",
+    "Server fixes and the assistant": "Reparaciones del servidor y el asistente"
 }

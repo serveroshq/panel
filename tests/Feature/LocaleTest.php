@@ -66,6 +66,26 @@ test('every language has the same strings as the others', function () {
     }
 });
 
+test('Simplified Chinese is offered, and browser Chinese maps to zh-CN', function () {
+    $this->get('/login', ['Accept-Language' => 'zh-CN,zh-Hans;q=0.9,zh;q=0.8,en;q=0.7'])
+        ->assertInertia(fn (Assert $page) => $page->where('locale', 'zh-CN')->where('locales.zh-CN', '简体中文'));
+
+    $this->get('/login', ['Accept-Language' => 'zh-Hans-CN,zh;q=0.9'])
+        ->assertInertia(fn (Assert $page) => $page->where('locale', 'zh-CN'));
+
+    $user = User::factory()->create();
+    $this->actingAs($user)
+        ->post('/locale', ['locale' => 'zh-CN'])
+        ->assertRedirect()
+        ->assertCookie(SetLocale::COOKIE, 'zh-CN', encrypted: false);
+    expect($user->fresh()->locale)->toBe('zh-CN');
+
+    $this->withCredentials()
+        ->withUnencryptedCookie(SetLocale::COOKIE, 'zh-CN')
+        ->postJson('/locale', ['locale' => ''])
+        ->assertJsonPath('errors.locale.0', fn (string $message) => str_contains($message, '不能为空'));
+});
+
 test('signing in takes the language picked while signed out', function () {
     $user = User::factory()->create(['locale' => 'en']);
 

@@ -235,7 +235,7 @@ class AssistantAgent
                 $instructions ??= $this->instructions();
                 // A theme is a whole stylesheet in one tool call, longer than an answer usually is.
                 $maxTokens = in_array('update_dashboard_theme', $this->chat['loaded'], true) ? 6000 : 1600;
-                $answer = $this->model->turn($ai, $instructions, $this->withImages(AiProviders::seesImages($ai)), $this->toolDefinitions(), $maxTokens);
+                $answer = $this->model->turn($ai, $instructions, $this->withImages(AiProviders::seesImages($ai)), $this->toolDefinitions(), $maxTokens, conversationKey: 'assistant:'.$this->context->workspace->id.':'.$this->chat['id']);
 
                 if ($answer['text'] !== '') {
                     ($this->emit)(['type' => 'text', 'text' => $answer['text']]);

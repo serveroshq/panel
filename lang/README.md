@@ -1,6 +1,6 @@
 # Translations
 
-ServerOS speaks English, Spanish, German and Hindi (`locales` in `config/app.php`).
+ServerOS speaks English, Spanish, German, Hindi and Simplified Chinese (`locales` in `config/app.php`).
 English is the source: every other language lives in `lang/{code}.json`,
 keyed by the English text. A string with no translation shows in English.
 
@@ -15,11 +15,13 @@ Keep keys as whole sentences, so translators see the full thought.
 
 ## Adding the translations
 
-Add the English key with its translation to `lang/es.json`, `lang/de.json` and
-`lang/hi.json` (alphabetical). Spanish uses "tú" and German "du", like the
+Add the English key with its translation to `lang/es.json`, `lang/de.json`,
+`lang/hi.json` and `lang/zh-CN.json` (alphabetical). Spanish uses "tú" and German "du", like the
 panel's casual English. Hindi uses "आप" and writes everyday tech words the way
 Indian developers say them (सर्वर, ऐप, डिप्लॉय), keeping product names, code
-and `:placeholders` in English. Machine drafts are fine to start; have a native
+and `:placeholders` in English. Simplified Chinese (`zh-CN`) uses 你 for the
+reader, keeps product names, code and `:placeholders` in English, and prefers
+common mainland technical wording (服务器, 应用, 部署). Machine drafts are fine to start; have a native
 speaker check the pages people see most.
 
 Laravel's own messages (validation, passwords, sign-in) come from

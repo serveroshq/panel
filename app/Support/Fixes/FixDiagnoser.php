@@ -18,7 +18,7 @@ class FixDiagnoser
         $evidence = FixEvidence::gather($fix->machine, $fix->service_key);
         $fix->forceFill(['evidence' => $evidence, 'model' => $ai['model']])->save();
 
-        [$answer, $model] = $this->ai->json($ai, self::instructions(), self::question($fix, $evidence));
+        [$answer, $model] = $this->ai->json($ai, self::instructions(), self::question($fix, $evidence), conversationKey: 'fix:'.$fix->id);
         $fix->forceFill(['model' => mb_substr($model, 0, 80)]);
 
         $steps = FixActions::clean($answer['steps'] ?? [], $fix->machine);
