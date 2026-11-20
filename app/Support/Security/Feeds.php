@@ -287,7 +287,7 @@ class Feeds
 
         // NVD's own score first, then the reporter's; newest CVSS version first.
         $score = null;
-        foreach (['cvssMetricV31', 'cvssMetricV30', 'cvssMetricV40'] as $version) {
+        foreach (['cvssMetricV40', 'cvssMetricV31', 'cvssMetricV30'] as $version) {
             $metrics = (array) ($cve['metrics'][$version] ?? []);
             usort($metrics, fn ($a, $b) => (($a['type'] ?? '') === 'Primary' ? 0 : 1) <=> (($b['type'] ?? '') === 'Primary' ? 0 : 1));
             $value = $metrics[0]['cvssData']['baseScore'] ?? null;
