@@ -146,11 +146,14 @@ final class Firewall
         return null;
     }
 
-    /** @return list<array{port: int, proto: string, what: string, exposure: string|null}> */
-    public static function exposedDatabases(Machine $machine): array
+    /**
+     * @param  array{ports: list<array{port: int, proto: string, process: string|null, exposure: string|null, because: string|null, what: string|null, ssh: bool}>}|null  $view
+     * @return list<array{port: int, proto: string, what: string, exposure: string|null}>
+     */
+    public static function exposedDatabases(Machine $machine, ?array $view = null): array
     {
         $exposed = [];
-        foreach (self::view($machine)['ports'] ?? [] as $p) {
+        foreach (($view ?? self::view($machine))['ports'] ?? [] as $p) {
             if ($p['what'] !== null && in_array($p['exposure'], self::REACHABLE, true)) {
                 $exposed[] = ['port' => $p['port'], 'proto' => $p['proto'], 'what' => $p['what'], 'exposure' => $p['exposure']];
             }
