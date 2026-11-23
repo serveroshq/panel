@@ -3,6 +3,7 @@ const FLAGS: Record<string, string> = {
     es: 'es',
     de: 'de',
     hi: 'in',
+    'zh-CN': 'cn',
 };
 
 export function flagUrl(locale: string): string {

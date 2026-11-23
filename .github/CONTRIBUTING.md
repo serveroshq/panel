@@ -87,7 +87,7 @@ Migrations have to run on SQLite, PostgreSQL and MySQL. Tests never touch your o
 
 ## Translations
 
-The panel speaks English, Spanish, German and Hindi. Every other language lives in `lang/{code}.json`, keyed by the English text, and [lang/README.md](../lang/README.md) says how to add a string. Fixes to the translations are welcome as small pull requests.
+The panel speaks English, Spanish, German, Hindi and Simplified Chinese. Every other language lives in `lang/{code}.json`, keyed by the English text, and [lang/README.md](../lang/README.md) says how to add a string. Fixes to the translations are welcome as small pull requests.
 
 ## The daemon
 
