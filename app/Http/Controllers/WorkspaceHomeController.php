@@ -14,6 +14,7 @@ use App\Support\Audit\Audited;
 use App\Support\Edition;
 use App\Support\Extensions\Extensions;
 use App\Support\Health\WorkspaceHealth;
+use App\Support\Licensing\SupportAsk;
 use App\Support\Updates\PanelUpdates;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
@@ -61,6 +62,7 @@ class WorkspaceHomeController extends Controller
             'lastBackup' => $machines->max('last_backup_at')?->diffForHumans(),
             'machines' => MachineResource::collection($machines->take(6))->resolve(),
             'panelUpdate' => Edition::installAdmin($request->user(), $workspace) ? PanelUpdates::notice() : null,
+            'supportAsk' => SupportAsk::for($workspace, $request->user(), $machines->count()),
             ...app(Extensions::class)->pagePropsFor('workspace/Home', $request, $workspace),
         ]);
     }

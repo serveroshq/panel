@@ -42,8 +42,7 @@ class StatusSubscriptionController extends Controller
     public function unsubscribeShow(string $slug, string $token): Response
     {
         $page = $this->page($slug);
-        $subscriber = StatusSubscriber::query()->where('token', $token)->first();
-        if ($subscriber === null) {
+        if ($this->pageSubscriber($page, $token) === null) {
             return $this->view($page, 'You’re unsubscribed', 'You won’t get any more emails from '.StatusSubscriptions::title($page).'.');
         }
 
@@ -53,7 +52,7 @@ class StatusSubscriptionController extends Controller
     public function unsubscribe(string $slug, string $token): Response
     {
         $page = $this->page($slug);
-        StatusSubscriber::query()->where('token', $token)->delete();
+        $this->pageSubscriber($page, $token)?->delete();
 
         return $this->view($page, 'You’re unsubscribed', 'You won’t get any more emails from '.StatusSubscriptions::title($page).'.');
     }
@@ -92,6 +91,15 @@ class StatusSubscriptionController extends Controller
     {
         $subscriber = $page->subscribers()->where('token', $token)->first();
         abort_if($subscriber === null, 404);
+
+        return $subscriber;
+    }
+
+    private function pageSubscriber(StatusPage|WorkspaceStatusPage $page, string $token): ?StatusSubscriber
+    {
+        $subscriber = $page->subscribers()->where('token', $token)->first();
+        // A token from another page must not unsubscribe that person through this page.
+        abort_if($subscriber === null && StatusSubscriber::query()->where('token', $token)->exists(), 404);
 
         return $subscriber;
     }

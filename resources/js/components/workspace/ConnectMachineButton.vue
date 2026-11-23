@@ -11,6 +11,8 @@ import {
     SolarRefreshCw as RefreshCw,
 } from '@/lib/solarIcons';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import type { Component } from 'vue';
+import ExtensionSlot from '@/components/ExtensionSlot.vue';
 import { toast } from '@/lib/toast';
 import { errorMessage, failIfBad } from '@/lib/errors';
 import {
@@ -37,6 +39,11 @@ import type { AppButtonSize } from '@/lib/appButton';
 import { onWorkspace } from '@/lib/workspaceRoute';
 import settingsRoutes from '@/routes/workspace/settings';
 import type { Workspace, WorkspaceAccess } from '@/types';
+
+const slotParts = import.meta.glob<Component>(
+    '../../../../vendor/serveroshq/*/resources/js/slots/workspace/ConnectMachine/**/*.vue',
+    { eager: true, import: 'default' },
+);
 
 type Props = { size?: AppButtonSize };
 const { size = 'md' } = defineProps<Props>();
@@ -886,6 +893,10 @@ defineExpose({ connect: createCommand });
                     >{{ $t('Generate new command') }}</AppButton
                 >
             </div>
+            <ExtensionSlot
+                name="workspace/ConnectMachine/footer"
+                :parts="slotParts"
+            />
         </DialogContent>
     </Dialog>
 </template>

@@ -260,6 +260,8 @@ The page shows them through an `<ExtensionSlot name="..." :parts="slotParts">` (
 | `auth/Login`                  | `auth/Login/notices`                               | nothing                                                             |
 | `auth/Login`                  | `auth/Login/sign-in-options`                       | `lastUsed`                                                          |
 
+The Connect a machine dialog (`resources/js/components/workspace/ConnectMachineButton.vue`) has `workspace/ConnectMachine/footer`, at the bottom of the dialog. It gets nothing.
+
 The sign-in layout (`resources/js/layouts/auth/AuthPanelLayout.vue`) has one too, `layouts/AuthPanelLayout/art`: what a package puts there shows beside the form on every sign-in page. With nothing in it, the form sits in the middle of the page.
 
 Add a slot to a page, and a `pagePropsFor` call to its controller, when a package needs one. Give the page `defineOptions({ inheritAttrs: false })`, so props it doesn't declare don't land on its root element.

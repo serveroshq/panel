@@ -11,6 +11,8 @@ use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Support\Deploys\AppReleases;
 use App\Support\Deploys\AppVersions;
+use App\Support\Deploys\DeployOnPush;
+use App\Support\Deploys\SiteSwitches;
 
 final class GetApp extends Tool
 {
@@ -26,7 +28,7 @@ final class GetApp extends Tool
 
     public function description(): string
     {
-        return 'Shows an app (or template stack) ServerOS deployed on a machine: the live version (its deploy id, commit, when and by whom), where its code comes from (a Git repository’s address, or an uploaded .zip and whether it’s still on hand), its domains and URL, port and health check, the names of its settings (never their values) and which of them mention its domain, its running containers as list_services shows them, its earlier versions (successful deploys, newest first, and whether each one’s container is still kept on the machine for rollback), `rollback` (the versions rollback_app can switch to, and whether their data can go back too: withData, from a snapshot taken at dataFrom), snapshotBeforeDeploy (whether deploys snapshot its data first), `database` (the database snapshotted with it: setting auto follows its settings like DATABASE_URL, current is the one that comes to now), and its latest deploys with their state. '
+        return 'Shows an app (or template stack) ServerOS deployed on a machine: the live version (its deploy id, commit, when and by whom), where its code comes from (a Git repository’s address, or an uploaded .zip and whether it’s still on hand), its domains and URL, port and health check, the names of its settings (never their values) and which of them mention its domain, its running containers as list_services shows them, its earlier versions (successful deploys, newest first, and whether each one’s container is still kept on the machine for rollback), `rollback` (the versions rollback_app can switch to, and whether their data can go back too: withData, from a snapshot taken at dataFrom), snapshotBeforeDeploy (whether deploys snapshot its data first), deployOnPush (whether each push to a branch of its GitHub repository deploys it, and onlyNewest: whether pushes that come in while it deploys wait, with a newer one replacing them), `site` (its site switches: maintenance page, password, www redirect and path redirects, which update_site_settings changes), `limits` (the CPU and memory limits set for its container, the ones its machine reports the live container runs with as applied, why they can’t be set when they can’t, and the machine’s CPUs and memory as max), `database` (the database snapshotted with it: setting auto follows its settings like DATABASE_URL, current is the one that comes to now), and its latest deploys with their state. '
             .'Use it before deploy_new_version, rollback_app, redeploy_app (an earlier version’s id builds it again) or set_app_domain. app is the name it was deployed as (list_deploys shows them), app:<name>, or one of its services.';
     }
 
@@ -90,6 +92,9 @@ final class GetApp extends Tool
             'services' => $this->services($context, $machine, $app, $fromCode),
             'versions' => $fromCode ? $this->versions($machine, $app, $live) : [],
             'snapshotBeforeDeploy' => $machine->snapshotsBeforeDeploy($app),
+            'deployOnPush' => DeployOnPush::setting($machine, $app),
+            'site' => $fromCode ? array_diff_key(SiteSwitches::props($machine, $app, $domains), ['job' => true]) : null,
+            'limits' => $fromCode && $live !== null ? AppVersionController::limitsProps($machine, $live) : null,
             'database' => $fromCode && $live !== null ? AppVersionController::databaseProps($machine, $live) : null,
             'rollback' => $fromCode ? array_map(fn (array $v) => [
                 'commit' => $v['commit'],

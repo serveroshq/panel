@@ -95,3 +95,22 @@ test('the deploy dialog is told whether the machine can turn HTTPS off', functio
     [$workspace, $url] = httpsMachine('0.1.1-pre.40');
     $this->actingAs($workspace->owner)->getJson($url.'/deploy/taken')->assertOk()->assertJson(['canChooseHttps' => false]);
 });
+
+test('the deploy dialog offers a free sslip.io address only for a public IPv4 machine', function () {
+    [$workspace, $url] = httpsMachine();
+    $this->actingAs($workspace->owner)->getJson($url.'/deploy/taken')->assertOk()->assertJson(['freeAddress' => '203-0-113-7.sslip.io']);
+
+    foreach (['10.0.0.5', '192.168.1.2', '100.64.1.1', '127.0.0.1', '2001:db8::1', ''] as $ip) {
+        $machine = Machine::query()->latest('id')->first();
+        $machine->forceFill(['ip_address' => $ip])->save();
+        $this->actingAs($workspace->owner)->getJson($url.'/deploy/taken')->assertOk()->assertJson(['freeAddress' => null]);
+    }
+});
+
+test('an app can deploy on its free address', function () {
+    [$workspace, $url] = httpsMachine();
+    $this->actingAs($workspace->owner)
+        ->postJson($url.'/deploy', ['template' => 'uptime-kuma', 'service' => 'status', 'domain' => 'status.203-0-113-7.sslip.io'])
+        ->assertAccepted();
+    expect(lastDeployJob()['domains'])->toBe(['status.203-0-113-7.sslip.io']);
+});

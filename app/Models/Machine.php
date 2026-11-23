@@ -54,6 +54,8 @@ use Illuminate\Support\Facades\Storage;
  * @property string|null $log_ip_masking off, partial or hash: IPs masked in log lines on the machine
  * @property array{services: list<string>, patterns: list<array{service: string|null, pattern: string}>}|null $log_skip services and line patterns whose logs never leave the machine
  * @property array{provider: string, tunnel_id: string|null, state: string, plain_http: bool, since: string}|null $tunnel the Cloudflare Tunnel the machine's apps are served through, once the daemon has it running
+ * @property array{enabled?: bool, previous?: bool, job?: string, sites?: int|null, existing?: int|null}|null $traffic whether its daemon counts visits from the proxy's access logs (TrafficSwitch)
+ * @property array{at?: int, sites?: list<array<string, mixed>>}|null $traffic_sites the sites its own nginx and Apache configs serve, as the daemon last reported them (ExistingSites)
  * @property list<string>|null $log_muted_services services whose log lines aren't kept, by ServiceLabels::identity()
  * @property array<string, array<string, int|float|null>>|null $service_stats
  * @property list<array{mount: string, used: int, total: int}>|null $disks
@@ -112,6 +114,8 @@ class Machine extends Model
             'log_muted_services' => 'array',
             'log_skip' => 'array',
             'tunnel' => 'array',
+            'traffic' => 'array',
+            'traffic_sites' => 'array',
             'service_stats' => 'array',
             'disks' => 'array',
             'alert_state' => 'array',
@@ -158,6 +162,18 @@ class Machine extends Model
     public function vulnerabilities(): HasMany
     {
         return $this->hasMany(MachineVulnerability::class);
+    }
+
+    /** @return HasMany<ContainerImage, $this> */
+    public function containerImages(): HasMany
+    {
+        return $this->hasMany(ContainerImage::class);
+    }
+
+    /** @return HasMany<ImageVulnerability, $this> */
+    public function imageVulnerabilities(): HasMany
+    {
+        return $this->hasMany(ImageVulnerability::class);
     }
 
     /** @return BelongsTo<MachineGroup, $this> */

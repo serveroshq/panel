@@ -194,7 +194,7 @@ class WorkspaceLogStoreController extends Controller
     {
         Gate::authorize('manageSettings', $workspace);
         if (! $workspace->hasOwnLogStorage()) {
-            throw ValidationException::withMessages(['host' => Edition::selfHosted() ? __('Logs in your own database need a ServerOS license.') : __('Logs in your own database come with Business.')]);
+            throw ValidationException::withMessages(['host' => Edition::selfHosted() ? __('Logs in your own database need a ServerOS license.') : __('Logs in your own database come with Scale.')]);
         }
     }
 

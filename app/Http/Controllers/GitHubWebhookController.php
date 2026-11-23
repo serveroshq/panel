@@ -6,6 +6,7 @@ use App\Models\Activity;
 use App\Models\GitHubInstallation;
 use App\Models\Project;
 use App\Models\Workflow;
+use App\Support\Deploys\DeployOnPush;
 use App\Support\GitHub\GitHubApp;
 use App\Support\Projects\Previews;
 use App\Support\Workflows\WorkflowEngine;
@@ -16,7 +17,7 @@ use Throwable;
 
 class GitHubWebhookController extends Controller
 {
-    public function __invoke(Request $request, WorkflowEngine $engine, Previews $previews): JsonResponse
+    public function __invoke(Request $request, WorkflowEngine $engine, Previews $previews, DeployOnPush $apps): JsonResponse
     {
         if (! GitHubApp::signed($request->getContent(), $request->header('X-Hub-Signature-256'))) {
             return response()->json(['error' => 'Bad signature.'], 401);
@@ -80,7 +81,9 @@ class GitHubWebhookController extends Controller
             }
         }
 
-        return response()->json(['started' => $started, 'skipped' => $skipped], 202);
+        $deploys = $apps->handle($workspaces, $repo, $branch, $commit);
+
+        return response()->json(['started' => $started, 'skipped' => $skipped, 'deploys' => $deploys['started'], 'deploysSkipped' => $deploys['skipped']], 202);
     }
 
     /** @return list<int> */

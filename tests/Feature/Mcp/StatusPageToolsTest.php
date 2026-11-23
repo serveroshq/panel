@@ -615,12 +615,12 @@ test('update_fleet_status_page checks what it’s given', function () {
     expect(mcpCall($workspace, $key, 'update_status_page', ['machine' => 'web-1', 'slug' => 'acme-fleet'])['text'])->toContain('That address is taken.');
 });
 
-test('the fleet page is Business only', function () {
+test('the fleet page is Scale only', function () {
     [$workspace, , $key] = statusToolsSetup(Plan::Pro);
 
     expect(mcpCall($workspace, $key, 'get_fleet_status_page')['data'])->toMatchArray(['planAllows' => false])
-        ->and(mcpCall($workspace, $key, 'get_fleet_status_page')['data']['note'])->toContain('comes with Business')
-        ->and(mcpCall($workspace, $key, 'update_fleet_status_page', ['enabled' => true])['text'])->toContain('One status page for every machine comes with Business.')
+        ->and(mcpCall($workspace, $key, 'get_fleet_status_page')['data']['note'])->toContain('comes with Scale')
+        ->and(mcpCall($workspace, $key, 'update_fleet_status_page', ['enabled' => true])['text'])->toContain('One status page for every machine comes with Scale.')
         ->and(WorkspaceStatusPage::query()->count())->toBe(0);
 });
 
@@ -651,7 +651,7 @@ test('preview_status_page shows what visitors see and who they are', function ()
 
     $page->update(['enabled' => true]);
     $workspace->forceFill(['plan' => Plan::Essential])->save();
-    expect($preview(['machine' => 'web-1'])['visitors'])->toContain('status pages need Pro or Business');
+    expect($preview(['machine' => 'web-1'])['visitors'])->toContain('status pages need Pro or Scale');
     $workspace->forceFill(['plan' => Plan::Pro])->save();
 
     $days = $preview(['machine' => 'web-1', 'include_days' => true])['report'];

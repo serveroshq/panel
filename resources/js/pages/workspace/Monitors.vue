@@ -43,6 +43,7 @@ const props = defineProps<{
         email: boolean;
         webhook: string | null;
         webhookSet: boolean;
+        telegram: { chat: string | null; set: boolean };
         muted: string[];
     };
     incidents: Incident[];
@@ -100,6 +101,15 @@ const full = computed(() => props.monitors.length >= props.limit);
 
 const creating = ref(false);
 const alertsOpen = ref(false);
+const alertChannels = computed(() =>
+    [
+        props.alerts.email ? trans('Email') : null,
+        props.alerts.webhookSet ? trans('Webhook') : null,
+        props.alerts.telegram?.set ? trans('Telegram') : null,
+    ]
+        .filter(Boolean)
+        .join(', '),
+);
 
 const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | undefined;
@@ -258,7 +268,7 @@ const focusRing =
                             ? $t('Live')
                             : statusPage.available
                               ? $t('Off')
-                              : $t('Business')
+                              : $t('Scale')
                     }}
                 </span>
             </Link>
@@ -282,26 +292,8 @@ const focusRing =
             >
                 <Bell class="size-3.5 opacity-60" :stroke-width="1.75" />
                 {{ $t('Alerts') }}
-                <span
-                    class="text-(--ds-text-muted)"
-                    :title="
-                        [
-                            alerts.email ? $t('Email') : null,
-                            alerts.webhookSet ? $t('Webhook') : null,
-                        ]
-                            .filter(Boolean)
-                            .join(' and ') || 'Off'
-                    "
-                >
-                    {{
-                        alerts.email && alerts.webhookSet
-                            ? $t('Email, webhook')
-                            : alerts.email
-                              ? $t('Email')
-                              : alerts.webhookSet
-                                ? $t('Webhook')
-                                : 'Off'
-                    }}
+                <span class="text-(--ds-text-muted)">
+                    {{ alertChannels || $t('Off') }}
                 </span>
             </button>
             <button

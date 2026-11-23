@@ -6,6 +6,7 @@ use App\Models\Activity;
 use App\Models\Workspace;
 use App\Models\WorkspaceAiKey;
 use App\Support\Ai\AiProviders;
+use App\Support\Ai\CompatibleEndpoint;
 use App\Support\Audit\AuditContext;
 use App\Support\Audit\Audited;
 use Illuminate\Http\RedirectResponse;
@@ -32,6 +33,7 @@ class WorkspaceAiController extends Controller
                 'connected' => $keys->has($provider),
                 'hint' => $keys->get($provider)?->hint,
                 'model' => $keys->get($provider)?->model,
+                'baseUrl' => $keys->get($provider)?->base_url,
                 'by' => $keys->get($provider)?->user?->name,
                 'connectedAt' => $keys->get($provider)?->created_at?->toIso8601String(),
             ])->all()),
@@ -46,26 +48,43 @@ class WorkspaceAiController extends Controller
         Gate::authorize('manageSettings', $workspace);
         abort_unless(isset(AiProviders::PROVIDERS[$provider]), 404);
         $existing = $ai->key($workspace, $provider);
+        $custom = $provider === 'custom';
         $data = $request->validate([
-            'key' => [$existing ? 'nullable' : 'required', 'string', 'min:20', 'max:300', 'regex:/^\S+$/'],
-            'model' => ['nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9._:\/\[\]-]+$/'],
-        ], ['key.regex' => 'Paste the key on its own, with no spaces.', 'model.regex' => 'That isn’t a model name.']);
+            'key' => [$existing ? 'nullable' : 'required', 'string', $custom ? 'min:1' : 'min:20', 'max:300', 'regex:/^\S+$/'],
+            'model' => [$custom ? 'required' : 'nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9._:\/\[\]-]+$/'],
+            'url' => $custom ? ['required', 'string', 'max:255'] : ['prohibited'],
+        ], [
+            'key.regex' => 'Paste the key on its own, with no spaces.',
+            'model.regex' => 'That isn’t a model name.',
+            'model.required' => 'Name the model to use, like deepseek-chat.',
+            'url.required' => 'Add the API address, like https://openrouter.ai/api/v1.',
+        ]);
 
         $key = trim((string) ($data['key'] ?? ''));
-        if ($key !== '') {
+        $url = null;
+        if ($custom) {
+            $url = CompatibleEndpoint::normalise((string) $data['url']);
+            if ($url === null) {
+                throw ValidationException::withMessages(['url' => 'That isn’t a web address. It starts with https://.']);
+            }
+        }
+        $moved = $custom && $existing !== null && $url !== $existing->base_url;
+        if ($key !== '' || $moved) {
             try {
-                $ai->verify($provider, $key);
+                $ai->verify($provider, $key !== '' ? $key : $existing->key, $url);
             } catch (RuntimeException $e) {
-                throw ValidationException::withMessages(['key' => $e->getMessage()]);
+                throw ValidationException::withMessages([$custom && $e->getCode() !== 401 ? 'url' : 'key' => $e->getMessage()]);
             }
         }
 
         WorkspaceAiKey::query()->updateOrCreate(['workspace_id' => $workspace->id, 'provider' => $provider], array_filter([
             'key' => $key !== '' ? $key : null,
-            'hint' => $key !== '' ? '…'.substr($key, -4) : null,
+            // A short key, like a local Ollama's, would be shown almost whole: keep no hint.
+            'hint' => $key !== '' ? (strlen($key) >= 8 ? '…'.substr($key, -4) : '') : null,
             'model' => trim((string) ($data['model'] ?? '')) ?: null,
+            'base_url' => $url,
             'user_id' => $key !== '' ? $request->user()->id : null,
-            'verified_at' => $key !== '' ? now() : null,
+            'verified_at' => $key !== '' || $moved ? now() : null,
         ], fn ($v) => $v !== null) + ['model' => trim((string) ($data['model'] ?? '')) ?: null]);
         Activity::record($workspace, $existing ? 'ai.update' : 'ai.connect', AiProviders::PROVIDERS[$provider]['label'], null, $request->user());
 

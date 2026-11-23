@@ -140,7 +140,7 @@ test('list_members shows two-factor as the Members page does when the workspace 
         ->and($members['Bea'])->toMatchArray(['twoFactor' => true, 'needsTwoFactor' => false]);
 });
 
-test('list_members shows custom role names on Business, and the base role off it', function () {
+test('list_members shows custom role names on Scale, and the base role off it', function () {
     $workspace = Workspace::factory()->onPlan(Plan::Business)->create();
     $role = $workspace->customRoles()->create(['name' => 'Billing manager', 'permissions' => ['manage-billing']]);
     teamToolsJoin($workspace, 'viewer', ['name' => 'Sam'], $role);
@@ -204,7 +204,7 @@ test('list_roles explains the built-in roles and what the plan offers', function
         ->and($roles['member']['available'])->toBeFalse()
         ->and($roles['viewer']['available'])->toBeFalse()
         ->and($data['hasStaffRoles'])->toBeFalse()
-        ->and(implode(' ', $data['notes']))->toContain('Member and Viewer roles are on Pro and Business');
+        ->and(implode(' ', $data['notes']))->toContain('Member and Viewer roles are on Pro and Scale');
 });
 
 test('list_roles lists the workspace’s own roles, and says when the plan no longer uses them', function () {
@@ -229,7 +229,7 @@ test('list_roles lists the workspace’s own roles, and says when the plan no lo
     expect($data['hasCustomRoles'])->toBeFalse()
         ->and(collect($data['customRoles'])->every(fn (array $r) => $r['inUse'] === false))->toBeTrue()
         ->and(collect($data['roles'])->firstWhere('value', 'viewer')['members'])->toBe(3)
-        ->and(implode(' ', $data['notes']))->toContain('Custom roles are on Business');
+        ->and(implode(' ', $data['notes']))->toContain('Custom roles are on Scale');
 });
 
 test('invite_member invites by email with a role, sends the email and records it', function () {
@@ -294,7 +294,7 @@ test('invite_member follows the plan’s role rules and refuses existing members
     $key = mcpKey($essential);
 
     expect(mcpCall($essential, $key, 'invite_member', ['email' => 'sam@example.com', 'role' => 'member'])['text'])
-        ->toContain('Member and Viewer roles are on Pro and Business. Invite them as an Admin, or upgrade.')
+        ->toContain('Member and Viewer roles are on Pro and Scale. Invite them as an Admin, or upgrade.')
         ->and(mcpCall($essential, $key, 'invite_member', ['email' => 'sam@example.com', 'role' => 'viewer'])['error'])->toBeTrue()
         ->and($essential->invitations()->count())->toBe(0);
 
@@ -325,7 +325,7 @@ test('invite_member checks its arguments', function () {
     Notification::assertNothingSent();
 });
 
-test('invite_member gives custom roles on Business only, and only this workspace’s', function () {
+test('invite_member gives custom roles on Scale only, and only this workspace’s', function () {
     Notification::fake();
     $workspace = Workspace::factory()->onPlan(Plan::Business)->create();
     $role = $workspace->customRoles()->create(['name' => 'Billing manager', 'permissions' => ['manage-billing']]);
@@ -347,8 +347,8 @@ test('invite_member gives custom roles on Business only, and only this workspace
         ->and(mcpCall($workspace, $key, 'invite_member', ['email' => 'max@example.com', 'role' => 'Theirs'])['text'])->toContain('Pick a role');
 
     $workspace->forceFill(['plan' => Plan::Pro])->save();
-    expect(mcpCall($workspace, $key, 'invite_member', ['email' => 'max@example.com', 'role' => "custom:{$role->id}"])['text'])->toContain('Custom roles are on Business.')
-        ->and(mcpCall($workspace, $key, 'invite_member', ['email' => 'max@example.com', 'role' => 'Billing manager'])['text'])->toContain('Custom roles are on Business.')
+    expect(mcpCall($workspace, $key, 'invite_member', ['email' => 'max@example.com', 'role' => "custom:{$role->id}"])['text'])->toContain('Custom roles are on Scale.')
+        ->and(mcpCall($workspace, $key, 'invite_member', ['email' => 'max@example.com', 'role' => 'Billing manager'])['text'])->toContain('Custom roles are on Scale.')
         ->and(WorkspaceInvitation::query()->where('email', 'max@example.com')->exists())->toBeFalse();
 });
 
@@ -451,7 +451,7 @@ test('change_member_role protects the owner and your own role', function () {
 test('change_member_role follows the plan and keeps to this workspace', function () {
     $essential = Workspace::factory()->onPlan(Plan::Essential)->create();
     $admin = teamToolsJoin($essential, 'admin');
-    expect(mcpCall($essential, mcpKey($essential), 'change_member_role', ['member' => $admin->email, 'role' => 'member'])['text'])->toContain('Member and Viewer roles are on Pro and Business.')
+    expect(mcpCall($essential, mcpKey($essential), 'change_member_role', ['member' => $admin->email, 'role' => 'member'])['text'])->toContain('Member and Viewer roles are on Pro and Scale.')
         ->and($essential->roleOf($admin)->value)->toBe('admin');
 
     $workspace = Workspace::factory()->onPlan(Plan::Business)->create();
@@ -477,7 +477,7 @@ test('change_member_role follows the plan and keeps to this workspace', function
         ->and($other->roleOf($stranger)->value)->toBe('admin');
 
     $workspace->forceFill(['plan' => Plan::Pro])->save();
-    expect(mcpCall($workspace, $key, 'change_member_role', ['member' => $sam->email, 'role' => 'Billing manager'])['text'])->toContain('Custom roles are on Business.');
+    expect(mcpCall($workspace, $key, 'change_member_role', ['member' => $sam->email, 'role' => 'Billing manager'])['text'])->toContain('Custom roles are on Scale.');
 });
 
 test('change_member_role says when the person has only been invited, or names several people', function () {

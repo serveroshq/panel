@@ -290,7 +290,7 @@ function fleetPayload(array $overrides = []): array
     ];
 }
 
-test('a Business workspace gets one status page with a section for each machine', function () {
+test('a Scale workspace gets one status page with a section for each machine', function () {
     [$workspace, $web] = statusMachine(Plan::Business);
     $db = Machine::factory()->for($workspace)->create(['name' => 'Database']);
     $db->forceFill(['uid' => (string) Str::uuid(), 'last_seen_at' => now(), 'inventory' => ['scanned_at' => now()->getTimestamp(), 'services' => [
@@ -326,7 +326,7 @@ test('a Business workspace gets one status page with a section for each machine'
         ->where('status.overall.label', 'All systems operational'));
 });
 
-test('the fleet page is Business only, and shares addresses with machine pages', function () {
+test('the fleet page is Scale only, and shares addresses with machine pages', function () {
     [$workspace, $machine] = statusMachine(Plan::Pro);
     $settings = 'https://'.$workspace->host().'/settings/status-page';
 

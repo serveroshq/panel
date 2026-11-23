@@ -124,3 +124,12 @@ test('diagnoses keep the Anthropic and Groq transports unchanged', function (str
         && $request['messages'][0]['content'] === ($provider === 'anthropic' ? 'Evidence' : 'Return JSON.')
         && ! isset($request['store']) && ! isset($request['text']));
 })->with(['anthropic', 'groq']);
+
+test('Anthropic diagnoses send no temperature, which newer Claude models refuse', function () {
+    $ai = [...$this->ai, 'provider' => 'anthropic', 'model' => 'claude-haiku-5-5'];
+    Http::fake(['https://api.anthropic.com/v1/messages' => Http::response(['content' => [['type' => 'text', 'text' => json_encode($this->answer)]]])]);
+
+    app(AiProviders::class)->json($ai, 'Return JSON.', 'Evidence');
+
+    Http::assertSent(fn (Request $request) => $request['model'] === 'claude-haiku-5-5' && ! array_key_exists('temperature', $request->data()));
+});

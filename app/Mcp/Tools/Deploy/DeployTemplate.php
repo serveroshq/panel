@@ -57,6 +57,7 @@ final class DeployTemplate extends Tool
             'health_path' => Schema::string('App templates only: the path that answers 200 once the app is up, like /health. Defaults to the template’s (/up for Laravel, which only Laravel 11 and newer have: detect_repository says which to use).', maxLength: 200),
             'compose_file' => Schema::string('compose-file only: the Compose file’s path in the repository, like docker/compose.prod.yaml. Defaults to compose.yaml; detect_repository returns the one it found.', maxLength: 200),
             'php' => Schema::string('PHP templates only (laravel, php, symfony…): the PHP version to build on. Defaults to 8.4; an older app needs the version detect_repository suggests, or it can crash on start.', RepositoryDetector::PHP_VERSIONS),
+            'base_dir' => Schema::string('App templates that build code only: the app’s folder in its repository, for a monorepo, like apps/web. Detection (detect_repository with a /tree/<branch>/<folder> link) finds the setup for that folder.', maxLength: 200),
             'domain' => Schema::string('Web templates only: the domain to serve it at, like app.example.com. Leave out for none.', maxLength: 253),
             'wildcard' => Schema::boolean('Also serve every subdomain one level under the domain (*.domain), each getting its own certificate the first time it’s visited. Needs domain, and a wildcard DNS record (*.domain) pointing at the machine.'),
             'env' => ['type' => 'object', 'description' => 'The template’s settings by key (list_templates with template shows them), like {"WP_TITLE": "Field notes"}. Values are text; a setting to accept takes "true", once the person has accepted it. Leave secrets out to have them generated.', 'additionalProperties' => ['type' => 'string']],
@@ -90,6 +91,7 @@ final class DeployTemplate extends Tool
             'health_path' => ['sometimes', 'nullable', 'string', 'max:200'],
             'php' => ['sometimes', 'nullable', 'string', 'max:10'],
             'compose_file' => ['sometimes', 'nullable', 'string', 'max:200'],
+            'base_dir' => ['sometimes', 'nullable', 'string', 'max:200'],
             'domain' => ['sometimes', 'nullable', 'string', 'max:300'],
             'wildcard' => ['sometimes', 'boolean'],
             'proxy' => ['sometimes', 'nullable', 'string', 'in:caddy,nginx,apache,traefik'],
@@ -132,6 +134,7 @@ final class DeployTemplate extends Tool
             'health_path' => $args['health_path'] ?? null,
             'php' => $args['php'] ?? null,
             'compose_file' => $args['compose_file'] ?? null,
+            'base_dir' => filled($args['base_dir'] ?? null) ? trim((string) $args['base_dir'], " /\t") : null,
             'domain' => DeployRequest::bareDomain($args['domain'] ?? null),
             'wildcard' => ($args['wildcard'] ?? false) ? true : null,
             'https' => isset($args['https']) ? (bool) $args['https'] : null,
@@ -159,10 +162,11 @@ final class DeployTemplate extends Tool
         Deploys::check(fn () => DeployRequest::assertDocker($machine, $context->user));
         Deploys::check(fn () => DeployRequest::assertWildcard($machine, $template->web ? ($data['domain'] ?? null) : null, (bool) ($data['wildcard'] ?? false)));
         Deploys::check(fn () => DeployRequest::assertComposeFromRepo($machine, $template));
+        Deploys::check(fn () => DeployRequest::assertBaseDir($machine, $data['base_dir'] ?? null));
 
         $proxy = Deploys::check(fn () => DeployRequest::proxy($machine, $template->web ? ($data['domain'] ?? null) : null, $args['proxy'] ?? null));
         $https = Deploys::check(fn () => DeployRequest::https($machine, $template->web ? ($data['domain'] ?? null) : null, $args['https'] ?? null));
-        $job = $this->deploys->deploy($context, $machine, DeployRequest::withHttps(DeployRequest::withProxy($deployment->job(), is_string($proxy) ? $proxy : null), is_bool($https) ? $https : null));
+        $job = $this->deploys->deploy($context, $machine, DeployRequest::withBaseDir(DeployRequest::withHttps(DeployRequest::withProxy($deployment->job(), is_string($proxy) ? $proxy : null), is_bool($https) ? $https : null), $data['base_dir'] ?? null));
         AppInstall::record($machine, $context->user, $template->slug, $job->id, 'mcp');
         $job = $context->waitForJob($job, (int) ($args['wait'] ?? 0));
         $result = DeployRequest::templateResult($deployment, $data);

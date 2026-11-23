@@ -140,6 +140,19 @@ test('unsubscribing asks first, and a one-click POST does it without a CSRF toke
     $this->get("/status/web-one/unsubscribe/{$subscriber->token}")->assertOk()->assertSee('You’re unsubscribed', false);
 });
 
+test('an unsubscribe token only works on the status page it belongs to', function () {
+    [, , $page] = subscriptionsSetup();
+    $subscriber = confirmedSubscriber($page, 'ada@example.com');
+
+    $this->get("/status/acme/unsubscribe/{$subscriber->token}")->assertNotFound();
+    $this->post("/status/acme/unsubscribe/{$subscriber->token}")->assertNotFound();
+    expect($subscriber->fresh())->not->toBeNull();
+
+    $this->get("/status/web-one/unsubscribe/{$subscriber->token}")->assertOk()->assertSee('Stop emails from Shop status?', false);
+    $this->post("/status/web-one/unsubscribe/{$subscriber->token}")->assertOk()->assertSee('You’re unsubscribed', false);
+    expect($subscriber->fresh())->toBeNull();
+});
+
 test('the feed lists incident updates as Atom', function () {
     Mail::fake();
     [$workspace, $machine] = subscriptionsSetup();

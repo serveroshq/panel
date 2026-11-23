@@ -230,7 +230,7 @@ class WorkspaceDomainController extends Controller
     {
         Gate::authorize('manageSettings', $workspace);
         if (! $workspace->hasCustomDomains()) {
-            throw ValidationException::withMessages(['hostname' => Edition::selfHosted() ? 'Your own domains need a ServerOS license.' : 'Your own domains come with Business.']);
+            throw ValidationException::withMessages(['hostname' => Edition::selfHosted() ? 'Your own domains need a ServerOS license.' : 'Your own domains come with Scale.']);
         }
     }
 

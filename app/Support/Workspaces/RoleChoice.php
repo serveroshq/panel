@@ -21,7 +21,7 @@ final class RoleChoice
 
         if (preg_match('/^custom:(\d+)$/', $value, $m) === 1) {
             if (! $workspace->hasCustomRoles()) {
-                return Edition::selfHosted() ? 'Custom roles need a ServerOS license.' : 'Custom roles are on Business.';
+                return Edition::selfHosted() ? 'Custom roles need a ServerOS license.' : 'Custom roles are on Scale.';
             }
             $custom = $workspace->customRoles()->find((int) $m[1]);
 
@@ -33,7 +33,7 @@ final class RoleChoice
             return 'Pick a role.';
         }
         if ($role->isStaffRole() && ! $workspace->hasStaffRoles()) {
-            return 'Member and Viewer roles are on Pro and Business.';
+            return 'Member and Viewer roles are on Pro and Scale.';
         }
 
         return new self($role, null);

@@ -16,7 +16,7 @@ enum Plan: string
         return match ($this) {
             self::Essential => 'Essential',
             self::Pro => 'Pro',
-            self::Business => 'Business',
+            self::Business => 'Scale',
         };
     }
 

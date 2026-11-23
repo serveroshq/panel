@@ -2,7 +2,10 @@
 import { usePage } from '@inertiajs/vue3';
 import { trans } from 'laravel-vue-i18n';
 import { Check, ChevronsUpDown, PinOff, Plus } from '@lucide/vue';
-import { SolarPin as Pin } from '@/lib/solarIcons';
+import {
+    SolarLayoutGrid as LayoutGrid,
+    SolarPin as Pin,
+} from '@/lib/solarIcons';
 import { computed, ref } from 'vue';
 import {
     DropdownMenu,
@@ -14,6 +17,7 @@ import CreateWorkspaceDialog from '@/components/workspace/CreateWorkspaceDialog.
 import { usePinnedWorkspaces } from '@/composables/usePinnedWorkspaces';
 import { useWorkspaceSwitch } from '@/composables/useWorkspaceSwitch';
 import { workspaceInitial, workspaceTileColor } from '@/lib/workspaceTile';
+import { index as workspacesIndex } from '@/routes/workspaces';
 import type { Workspace, WorkspaceSummary } from '@/types';
 
 const { variant = 'inline' } = defineProps<{ variant?: 'inline' | 'block' }>();
@@ -37,6 +41,10 @@ const lastPinned = computed(() => workspaces.value.filter(isPinned).length - 1);
 
 const domain = computed(() =>
     current.value.host.slice(current.value.slug.length + 1),
+);
+
+const allWorkspacesUrl = computed(
+    () => new URL(workspacesIndex.url(), page.props.appUrl).href,
 );
 
 const creating = ref(false);
@@ -255,6 +263,15 @@ const icon = 'size-4 shrink-0 text-(--ds-text-muted)';
                     </div>
                 </div>
 
+                <DropdownMenuItem
+                    as-child
+                    :class="[row, 'text-(--ds-text-muted)']"
+                >
+                    <a :href="allWorkspacesUrl">
+                        <LayoutGrid :class="icon" :stroke-width="1.6" />
+                        {{ $t('All workspaces') }}
+                    </a>
+                </DropdownMenuItem>
                 <DropdownMenuItem
                     :class="[row, 'text-(--ds-text-muted)']"
                     @select="creating = true"

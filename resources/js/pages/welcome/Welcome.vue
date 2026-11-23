@@ -4,6 +4,7 @@ import { ArrowRight, Check, Copy, LockKeyhole } from '@lucide/vue';
 import { trans } from 'laravel-vue-i18n';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Component } from 'vue';
+import { countdown } from '@/lib/formatting';
 import { shake } from '@/lib/shake';
 import { toast } from '@/lib/toast';
 import { errorMessage, failIfBad } from '@/lib/errors';
@@ -416,12 +417,8 @@ const connected = computed(() =>
 
 const timeLeft = computed(() => {
     if (expiresAt.value === null) return '';
-    const seconds = Math.max(
-        0,
-        Math.round((expiresAt.value - now.value) / 1000),
-    );
 
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    return countdown(expiresAt.value - now.value);
 });
 
 async function poll(): Promise<void> {

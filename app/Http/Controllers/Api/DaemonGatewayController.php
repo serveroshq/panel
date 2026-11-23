@@ -9,14 +9,17 @@ use App\Models\Machine;
 use App\Models\MachineSample;
 use App\Models\ServiceSample;
 use App\Models\StatusPage;
+use App\Models\TrafficRollup;
 use App\Support\Backups\BackupRunner;
 use App\Support\DaemonFacts;
 use App\Support\DaemonJobQueue;
 use App\Support\Databases\DatabaseConsole;
+use App\Support\Deploys\DeployOnPush;
 use App\Support\Deploys\ServiceLabels;
 use App\Support\Files\FileJobs;
 use App\Support\Fixes\FixRunner;
 use App\Support\Health\JobAlerts;
+use App\Support\Images\ImageUpdates;
 use App\Support\Logs\LogIngest;
 use App\Support\Logs\LogSkipRules;
 use App\Support\Machines\CloudflareTunnel;
@@ -26,6 +29,8 @@ use App\Support\Machines\PackageUpdates;
 use App\Support\Projects\ProjectData;
 use App\Support\Projects\ProjectLinks;
 use App\Support\Projects\ProjectNetwork;
+use App\Support\Traffic\ExistingSites;
+use App\Support\Traffic\TrafficSwitch;
 use App\Support\Workflows\WorkflowEngine;
 use App\Support\Workflows\WorkflowEvents;
 use Illuminate\Http\JsonResponse;
@@ -38,7 +43,7 @@ class DaemonGatewayController extends Controller
 {
     private const FINISHED_JOB_STATES = ['succeeded', 'failed', 'cancelled', 'timed_out', 'refused'];
 
-    private const RESCAN_AFTER = ['deploy', 'rollback', 'service_remove', 'service_repair', 'service_action', 'service_clone', 'adopt'];
+    private const RESCAN_AFTER = ['deploy', 'rollback', 'service_remove', 'service_repair', 'service_action', 'service_clone', 'adopt', 'image_update', 'docker_prune'];
 
     private function authorised(Request $request): bool
     {
@@ -142,6 +147,7 @@ class DaemonGatewayController extends Controller
         ]);
 
         $changes = ['last_seen_at' => now(), 'disconnected_at' => null];
+        $traffic = [];
         $firstInventory = $machine->inventory === null;
         foreach ($data['envelopes'] as $envelope) {
             $payload = $envelope['payload'];
@@ -185,6 +191,14 @@ class DaemonGatewayController extends Controller
                         $readings[] = $this->machineReading($sample);
                     }
                     MachineSample::record($machine, $readings);
+                    if (is_array($payload['traffic'] ?? null)) {
+                        // Each site's minutes, counted from the proxy's access logs: stored together below.
+                        $traffic = [...$traffic, ...array_slice(array_values($payload['traffic']), 0, TrafficRollup::MAX_PER_REQUEST - count($traffic))];
+                    }
+                    if (is_array($payload['traffic_sites'] ?? null)) {
+                        // The sites the machine's own web server configs serve, all of them.
+                        $changes['traffic_sites'] = ExistingSites::stored($payload['traffic_sites']);
+                    }
                     if ($services !== []) {
                         $changes['service_stats'] = array_slice($services, 0, 200, true);
                         $this->recordServiceHistory($machine, $changes['service_stats']);
@@ -242,6 +256,9 @@ class DaemonGatewayController extends Controller
                         if ($state === 'succeeded' && in_array($job->kind, PackageUpdates::KINDS, true)) {
                             PackageUpdates::ingest($job);
                         }
+                        if ($job->kind === 'image_update') {
+                            ImageUpdates::finished($job);
+                        }
                     }
 
                     if ($job->kind === 'backup_to') {
@@ -297,6 +314,13 @@ class DaemonGatewayController extends Controller
                         }
                     }
 
+                    if ($job->kind === TrafficSwitch::KIND && in_array($state, self::FINISHED_JOB_STATES, true)) {
+                        $kept = TrafficSwitch::finished($machine, $job, $state, is_array($payload['result'] ?? null) ? $payload['result'] : null);
+                        if ($kept !== null) {
+                            $changes['traffic'] = $kept;
+                        }
+                    }
+
                     if ($state === 'succeeded' && $job->kind === 'adopt' && is_string($job->service)) {
                         $inventory = $changes['inventory'] ?? $machine->inventory;
                         if (is_array($inventory)) {
@@ -307,6 +331,9 @@ class DaemonGatewayController extends Controller
             }
         }
         $machine->forceFill($changes)->save();
+        if ($traffic !== []) {
+            TrafficRollup::ingest($machine, $traffic);
+        }
 
         if (isset($rescanFor)) {
             $this->rescan($machine, $rescanFor);
@@ -495,6 +522,9 @@ class DaemonGatewayController extends Controller
             app(DaemonJobQueue::class)->followUp($job);
             if ($job->kind === 'network') {
                 app(ProjectNetwork::class)->jobFinished($job);
+            }
+            if (in_array($job->kind, ['deploy', 'rollback'], true) && is_string($job->service)) {
+                app(DeployOnPush::class)->release($job->machine, $job->service);
             }
             if ($job->kind === 'deploy') {
                 app(ProjectLinks::class)->deployFinished($job);

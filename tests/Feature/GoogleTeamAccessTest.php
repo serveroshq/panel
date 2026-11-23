@@ -122,7 +122,7 @@ test('a domain verified by another workspace cannot be verified again', function
         ->and($other->emailDomains()->sole()->isVerified())->toBeTrue();
 });
 
-test('verified domains need Pro or Business, and settings rights', function () {
+test('verified domains need Pro or Scale, and settings rights', function () {
     $essential = Workspace::factory()->onPlan(Plan::Essential)->create();
     $this->actingAs($essential->owner)
         ->post(gtaHost($essential, '/settings/email-domains'), ['domain' => 'acme.com'])
@@ -213,7 +213,7 @@ test('an unverified Google email never gets as far as joining', function () {
     expect($workspace->members()->count())->toBe(1);
 });
 
-test('joining as a custom role sits it on top of Viewer, on Business', function () {
+test('joining as a custom role sits it on top of Viewer, on Scale', function () {
     $workspace = verifiedDomainFor(Plan::Business);
     $role = $workspace->customRoles()->create(['name' => 'Ops', 'permissions' => ['manage-machines']]);
 
@@ -230,7 +230,7 @@ test('joining as a custom role sits it on top of Viewer, on Business', function 
         ->and($workspace->customRoleOf($user)?->is($role))->toBeTrue();
 });
 
-test('the join role follows the plan: staff roles on Pro, custom roles on Business', function () {
+test('the join role follows the plan: staff roles on Pro, custom roles on Scale', function () {
     $essential = Workspace::factory()->onPlan(Plan::Essential)->create();
     $this->actingAs($essential->owner)
         ->put(gtaHost($essential, '/settings/domain-join'), ['mode' => 'auto', 'role' => 'admin'])
@@ -441,7 +441,7 @@ test('turning it on needs a verified domain, and a way in for whoever does it', 
         ->assertSessionHasErrors('domain');
 });
 
-test('turning it on needs Pro or Business', function () {
+test('turning it on needs Pro or Scale', function () {
     $workspace = verifiedDomainFor(Plan::Essential, join: 'off');
 
     $this->actingAs($workspace->owner)

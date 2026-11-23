@@ -25,7 +25,7 @@ final class UpdateWorkflow extends Tool
     public function description(): string
     {
         return 'Saves a workflow as the dashboard’s editor does. Give any of: name, description (empty clears it), enabled (true turns it on, so it runs on its own when its trigger fires; false turns it off), and graph, which REPLACES the whole graph: send every node and edge to keep (start from get_workflow’s graph; get_workflow_reference describes kinds, ports and rules). What you leave out stays as it is. '
-            .'Steps that still need something (a machine, a service, a monitor…) can be saved while it’s off: they come back in `problems`. It can only be turned on, or stay on, with no problems, and on the Pro or Business plan. '
+            .'Steps that still need something (a machine, a service, a monitor…) can be saved while it’s off: they come back in `problems`. It can only be turned on, or stay on, with no problems, and on the Pro or Scale plan. '
             .'Saving makes you the one its machine steps run as (with your permissions), and moves a schedule’s next run; a webhook trigger gets its secret URL (shown only in the dashboard). '
             .'A workflow with a command step needs two-factor authentication on, and a connection allowed to run commands. Turning one on means it will act on machines by itself (restart, stop, deploy, run commands): say what it will do and check with the person first. Returns the saved workflow as get_workflow does, and what changed.';
     }
@@ -94,7 +94,7 @@ final class UpdateWorkflow extends Tool
         $enabled = (bool) ($data['enabled'] ?? $workflow->enabled);
 
         if ($enabled && ! $workspace->hasAutomations()) {
-            throw new ToolError('Workflows come with Pro. Choose Pro or Business to turn one on.'.($workflow->enabled ? ' To save it, turn it off too (enabled false).' : ''));
+            throw new ToolError('Workflows come with Pro. Choose Pro or Scale to turn one on.'.($workflow->enabled ? ' To save it, turn it off too (enabled false).' : ''));
         }
         if ($enabled && $problems !== []) {
             throw new ToolError('Fix the steps marked with a warning before turning it on. '.Workflows::problemText(Workflows::problems($problems, $graph))

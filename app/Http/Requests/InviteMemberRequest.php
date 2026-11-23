@@ -55,7 +55,7 @@ class InviteMemberRequest extends FormRequest
 
                 if (str_starts_with($this->string('role')->toString(), 'custom:')) {
                     if (! $workspace->hasCustomRoles()) {
-                        $validator->errors()->add('role', Edition::selfHosted() ? 'Custom roles need a ServerOS license.' : 'Custom roles are on Business.');
+                        $validator->errors()->add('role', Edition::selfHosted() ? 'Custom roles need a ServerOS license.' : 'Custom roles are on Scale.');
 
                         return;
                     }
@@ -67,7 +67,7 @@ class InviteMemberRequest extends FormRequest
                 }
 
                 if ($this->chosenRole()->isStaffRole() && ! $workspace->hasStaffRoles()) {
-                    $validator->errors()->add('role', 'Member and Viewer roles are on Pro and Business. Invite them as an Admin, or upgrade.');
+                    $validator->errors()->add('role', 'Member and Viewer roles are on Pro and Scale. Invite them as an Admin, or upgrade.');
                 } elseif (! $workspace->canGrant($this->user(), Workspace::permissionsFor($this->chosenRole(), $this->chosenCustomRole()))) {
                     $validator->errors()->add('role', 'You can’t give a role with more access than your own.');
                 }

@@ -34,8 +34,8 @@ final class UpdateFleetStatusPage extends Tool
 
     public function description(): string
     {
-        return 'Changes the workspace’s fleet status page (one page with a section per machine; Business), like Settings → Status page. Every argument is optional and only what you give changes; the page is created if there’s none. '
-            .'`enabled` publishes it (true; needs Business) or takes it down. `public` false makes it members-only. `slug`: the address, /status/{slug} (3–60 lowercase letters, numbers and single dashes, unique across every status page, machine pages included). '
+        return 'Changes the workspace’s fleet status page (one page with a section per machine; Scale), like Settings → Status page. Every argument is optional and only what you give changes; the page is created if there’s none. '
+            .'`enabled` publishes it (true; needs Scale) or takes it down. `public` false makes it members-only. `slug`: the address, /status/{slug} (3–60 lowercase letters, numbers and single dashes, unique across every status page, machine pages included). '
             .'`title` (≤80), `description` (≤280), `notice` (≤500, a banner; `notice_kind` info, maintenance or incident) take an empty string to clear. `show_uptime`: the 90-day uptime bars. '
             .'Which machines: `every_machine` true covers all of them, including ones connected later; `machines` sets exactly which (ids or names); `add_machines` / `remove_machines` change the list (from every machine, removing one makes a list of the rest). '
             .'`monitors` sets exactly which uptime monitors that aren’t on a machine (a site hosted elsewhere) show, first, with their own uptime (ids or names; an empty list shows none); monitors on a machine come with it. '
@@ -47,7 +47,7 @@ final class UpdateFleetStatusPage extends Tool
         $machines = fn (string $what) => Schema::array(Schema::machine('A machine: its id or name.'), $what, 500);
 
         return Schema::object([
-            'enabled' => Schema::boolean('Publish the page (true; needs Business) or take it down (false).'),
+            'enabled' => Schema::boolean('Publish the page (true; needs Scale) or take it down (false).'),
             'public' => Schema::boolean('true: anyone with the link. false: only members of this workspace, signed in.'),
             'slug' => Schema::string('The address: /status/{slug}. 3–60 lowercase letters, numbers and single dashes.', maxLength: 60),
             'title' => Schema::string('The page’s title (≤80). Empty: the workspace’s name.', maxLength: 80),
@@ -181,7 +181,7 @@ final class UpdateFleetStatusPage extends Tool
         $data = $validator->validated();
 
         if ($data['enabled'] && ! $workspace->hasFleetStatusPage()) {
-            throw new ToolError((Edition::selfHosted() ? 'One status page for every machine needs a ServerOS license (Settings › License).' : 'One status page for every machine comes with Business.').($page->enabled ? ' (This page is still switched on from before: set enabled to false to switch it off.)' : ''));
+            throw new ToolError((Edition::selfHosted() ? 'One status page for every machine needs a ServerOS license (Settings › License).' : 'One status page for every machine comes with Scale.').($page->enabled ? ' (This page is still switched on from before: set enabled to false to switch it off.)' : ''));
         }
 
         $before = $this->snapshot($page);
@@ -232,7 +232,7 @@ final class UpdateFleetStatusPage extends Tool
         if (! $page->enabled) {
             $notes[] = 'The page is switched off: visitors get “not found”. Set enabled to true to publish it.';
         } elseif (! $page->live()) {
-            $notes[] = Edition::selfHosted() ? 'The page is switched on but isn’t served: the fleet page needs a ServerOS license.' : 'The page is switched on but isn’t served: the fleet page needs Business.';
+            $notes[] = Edition::selfHosted() ? 'The page is switched on but isn’t served: the fleet page needs a ServerOS license.' : 'The page is switched on but isn’t served: the fleet page needs Scale.';
         }
 
         return [

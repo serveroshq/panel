@@ -3,6 +3,7 @@ import { trans } from 'laravel-vue-i18n';
 import { Form, Head, Link, router, useForm } from '@inertiajs/vue3';
 import {
     SolarBell as Bell,
+    SolarBox as Box,
     SolarBuilding2 as Building2,
     SolarGitBranch as GitBranch,
     SolarTriangleAlert as TriangleAlert,
@@ -41,6 +42,7 @@ type Props = {
         email: boolean;
         webhook: string | null;
         webhookSet: boolean;
+        telegram: { chat: string | null; set: boolean };
         muted: string[];
     };
     github:
@@ -57,6 +59,15 @@ type Props = {
         fromEnvironment: boolean;
     } | null;
     panelUpdate: PanelUpdateState | null;
+    registries:
+        | {
+              id: number;
+              host: string;
+              label: string;
+              username: string;
+              addedAt: string | null;
+          }[]
+        | null;
 };
 
 const props = defineProps<Props>();
@@ -81,6 +92,36 @@ function disconnectGitHub(id: number, account: string): void {
     }
     router.delete(`/settings/github/${id}`, { preserveScroll: true });
 }
+const registryOpen = ref(false);
+const registryForm = useForm({ host: '', username: '', password: '' });
+
+watch(registryOpen, (open) => {
+    if (!open) return;
+    registryForm.reset();
+    registryForm.clearErrors();
+});
+
+function addRegistry(): void {
+    registryForm.post('/settings/registries', {
+        preserveScroll: true,
+        onSuccess: () => (registryOpen.value = false),
+    });
+}
+
+function removeRegistry(id: number, label: string): void {
+    if (
+        !window.confirm(
+            trans(
+                'Remove the login for :name? Deploys that pull private images from it will fail until it’s added again.',
+                { name: label },
+            ),
+        )
+    ) {
+        return;
+    }
+    router.delete(`/settings/registries/${id}`, { preserveScroll: true });
+}
+
 const deleteForm = useForm({ confirmation: '' });
 
 function deleteWorkspace(): void {
@@ -191,6 +232,7 @@ watch(confirmingDelete, (open) => {
                                 ? $t('Email to owners and admins')
                                 : null,
                             alerts.webhookSet ? $t('Webhook') : null,
+                            alerts.telegram?.set ? $t('Telegram') : null,
                         ]
                             .filter(Boolean)
                             .join(' and ') || $t('Off')
@@ -326,6 +368,67 @@ watch(confirmingDelete, (open) => {
         </div>
     </Tile>
 
+    <Tile
+        id="registries"
+        v-if="registries"
+        :title="$t('Container registries')"
+        :description="
+            $t(
+                'Deploy private Docker images. Deploys pull from these registries with your login.',
+            )
+        "
+        :icon="Box"
+    >
+        <div class="flex flex-col gap-3">
+            <ul v-if="registries.length" class="flex flex-col">
+                <li
+                    v-for="registry in registries"
+                    :key="registry.id"
+                    class="flex items-center gap-3 border-b border-(--ds-divider) py-2.5 first:pt-0 last:border-b-0"
+                >
+                    <span class="min-w-0 grow">
+                        <span class="block truncate text-[13px]/5 font-medium">
+                            {{ registry.label }}
+                        </span>
+                        <span
+                            class="block truncate text-xs/4 text-(--ds-text-muted)"
+                        >
+                            {{
+                                registry.label === registry.host
+                                    ? $t('As :username', {
+                                          username: registry.username,
+                                      })
+                                    : $t(':host, as :username', {
+                                          host: registry.host,
+                                          username: registry.username,
+                                      })
+                            }}
+                        </span>
+                    </span>
+                    <AppButton
+                        size="sm"
+                        variant="quiet"
+                        @click="removeRegistry(registry.id, registry.label)"
+                    >
+                        {{ ' ' + $t('Remove') + ' ' }}
+                    </AppButton>
+                </li>
+            </ul>
+            <p v-else class="text-[13px]/5 text-(--ds-text-muted)">
+                {{
+                    ' ' +
+                    $t('None yet. Public images deploy without a login.') +
+                    ' '
+                }}
+            </p>
+            <div>
+                <AppButton size="sm" @click="registryOpen = true">
+                    {{ ' ' + $t('Add a registry login') + ' ' }}
+                </AppButton>
+            </div>
+        </div>
+    </Tile>
+
     <PanelUpdateTile v-if="panelUpdate" :state="panelUpdate" />
 
     <Tile
@@ -367,6 +470,77 @@ watch(confirmingDelete, (open) => {
             </button>
         </div>
     </Tile>
+
+    <Dialog v-model:open="registryOpen">
+        <DialogContent
+            class="workspace-panel ds-modal font-ui text-foreground sm:max-w-md"
+        >
+            <DialogHeader>
+                <DialogTitle>{{ $t('Add a registry login') }}</DialogTitle>
+                <DialogDescription>
+                    {{
+                        $t(
+                            'For Docker Hub, GitHub’s registry (ghcr.io) or your own. Use a token that can only read images. It’s sent to a machine only while it deploys, and never shown again.',
+                        )
+                    }}
+                </DialogDescription>
+            </DialogHeader>
+            <form class="flex flex-col gap-4" @submit.prevent="addRegistry">
+                <div class="grid gap-2">
+                    <label for="registry-host" class="text-[13px]/5">{{
+                        $t('Registry')
+                    }}</label>
+                    <Input
+                        id="registry-host"
+                        v-model="registryForm.host"
+                        :placeholder="
+                            $t('docker.io, ghcr.io or registry.example.com')
+                        "
+                        autocomplete="off"
+                        autocapitalize="off"
+                        spellcheck="false"
+                        class="font-ui-mono"
+                    />
+                    <InputError :message="registryForm.errors.host" />
+                </div>
+                <div class="grid gap-2">
+                    <label for="registry-username" class="text-[13px]/5">{{
+                        $t('Username')
+                    }}</label>
+                    <Input
+                        id="registry-username"
+                        v-model="registryForm.username"
+                        autocomplete="off"
+                        autocapitalize="off"
+                        spellcheck="false"
+                    />
+                    <InputError :message="registryForm.errors.username" />
+                </div>
+                <div class="grid gap-2">
+                    <label for="registry-password" class="text-[13px]/5">{{
+                        $t('Password or token')
+                    }}</label>
+                    <Input
+                        id="registry-password"
+                        v-model="registryForm.password"
+                        type="password"
+                        autocomplete="new-password"
+                    />
+                    <InputError :message="registryForm.errors.password" />
+                </div>
+                <div class="flex justify-end gap-2">
+                    <AppButton size="sm" @click="registryOpen = false">
+                        {{ ' ' + $t('Cancel') + ' ' }}
+                    </AppButton>
+                    <SubmitButton
+                        :label="$t('Save')"
+                        busy-label="Saving…"
+                        :processing="registryForm.processing"
+                    />
+                </div>
+            </form>
+        </DialogContent>
+    </Dialog>
 
     <Dialog v-model:open="confirmingDelete">
         <DialogContent

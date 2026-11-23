@@ -358,7 +358,7 @@ final class StatusPages
         $data = $validator->validated();
 
         if ($data['enabled'] && ! $workspace->hasStatusPages()) {
-            throw new ToolError('Status pages come with Pro. Choose Pro or Business to turn one on.'.($page->enabled ? ' (This page is still switched on from before: set enabled to false to switch it off.)' : ''));
+            throw new ToolError('Status pages come with Pro. Choose Pro or Scale to turn one on.'.($page->enabled ? ' (This page is still switched on from before: set enabled to false to switch it off.)' : ''));
         }
 
         return $data;

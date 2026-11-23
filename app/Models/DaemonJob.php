@@ -27,6 +27,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property array{kind: string, job: array<string, mixed>, service: string|null}|null $then
  * @property string|null $workflow_node
  * @property int|null $agent_fix_id
+ * @property string|null $trigger
+ * @property bool $held
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Machine $machine
@@ -58,6 +60,7 @@ class DaemonJob extends Model
             'error' => 'array',
             'then' => 'array',
             'finished_at' => 'datetime',
+            'held' => 'boolean',
         ];
     }
 
@@ -66,9 +69,11 @@ class DaemonJob extends Model
         return in_array($this->state, ['queued', 'running'], true);
     }
 
+    // A held job is waiting in the panel on purpose, so it's never stale.
     public function isStale(): bool
     {
         return $this->isActive()
+            && ! $this->held
             && $this->updated_at !== null
             && $this->updated_at->lt(now()->subMinutes(self::STALE_AFTER_MINUTES));
     }

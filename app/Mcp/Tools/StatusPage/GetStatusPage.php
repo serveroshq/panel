@@ -51,7 +51,7 @@ final class GetStatusPage extends Tool
             'preview' => StatusPages::preview($report->toArray()),
             'settingsUrl' => $context->url("/machines/{$machine->id}/settings/status"),
             'note' => match (true) {
-                ! $context->workspace->hasStatusPages() => 'Status pages come with Pro and Business; this workspace’s plan doesn’t include them, so the page can’t be published.',
+                ! $context->workspace->hasStatusPages() => 'Status pages come with Pro and Scale; this workspace’s plan doesn’t include them, so the page can’t be published.',
                 ! $page->exists => 'This machine has no status page yet: these are the settings it would start with. update_status_page or arrange_status_page creates it.',
                 ! $page->enabled => 'The page is switched off: visitors get “not found”.',
                 default => null,

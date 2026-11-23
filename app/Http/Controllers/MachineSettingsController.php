@@ -22,6 +22,7 @@ use App\Support\Machines\MachineDataEraser;
 use App\Support\Machines\MachineMetadata;
 use App\Support\Machines\MachinePolicies;
 use App\Support\StatusPages\StatusReport;
+use App\Support\Traffic\TrafficSwitch;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -56,6 +57,7 @@ class MachineSettingsController extends Controller
                 'target' => CloudflareTunnel::target($machine),
                 'changing' => CloudflareTunnel::changing($machine)?->id,
             ] : null,
+            'traffic' => TrafficSwitch::props($machine),
             'logSkip' => [
                 'available' => DaemonJobQueue::canSkipLogs($machine),
                 'since' => 'v'.config('daemon.log_skip_since'),
@@ -282,7 +284,7 @@ class MachineSettingsController extends Controller
         ]);
 
         if ($data['enabled'] && ! $workspace->hasStatusPages()) {
-            return back()->withErrors(['enabled' => 'Status pages come with Pro. Choose Pro or Business to turn one on.']);
+            return back()->withErrors(['enabled' => 'Status pages come with Pro. Choose Pro or Scale to turn one on.']);
         }
 
         $services = [];

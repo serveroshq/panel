@@ -26,7 +26,7 @@ final class CreateWorkflow extends Tool
     {
         return 'Creates a workflow from a template (list_workflow_templates; “blank” is just a trigger you run by hand), as the dashboard’s “New workflow” does. It starts off (enabled false): nothing runs until it’s turned on. '
             .'Templates fill in the workspace’s first machine, managed service, deployed app and monitor; check the returned `problems` and `hints`, fix them (and adapt the steps) with update_workflow, then turn it on with update_workflow enabled true. '
-            .'name replaces the template’s name. Needs the Pro or Business plan; a workspace can have '.Workflows::LIMIT.' workflows. Returns the workflow as get_workflow does.';
+            .'name replaces the template’s name. Needs the Pro or Scale plan; a workspace can have '.Workflows::LIMIT.' workflows. Returns the workflow as get_workflow does.';
     }
 
     public function inputSchema(): array
@@ -51,7 +51,7 @@ final class CreateWorkflow extends Tool
 
         $workspace = $context->workspace;
         if (! $workspace->hasAutomations()) {
-            throw new ToolError('Workflows come with Pro. Choose Pro or Business to use them.');
+            throw new ToolError('Workflows come with Pro. Choose Pro or Scale to use them.');
         }
         if ($workspace->workflows()->count() >= Workflows::LIMIT) {
             throw new ToolError('A workspace can have '.Workflows::LIMIT.' workflows.');

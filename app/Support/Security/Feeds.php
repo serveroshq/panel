@@ -93,7 +93,7 @@ class Feeds
         $out = [];
         $missing = [];
         foreach (array_unique($ids) as $id) {
-            $cached = Cache::get('security:osv:'.$id);
+            $cached = Cache::get('security:osv2:'.$id);
             is_array($cached) && array_is_list($cached) ? $out[$id] = $cached : $missing[] = $id;
         }
 
@@ -108,7 +108,7 @@ class Feeds
                     continue;
                 }
                 $out[$id] = self::parseOsv($response->json());
-                Cache::put('security:osv:'.$id, $out[$id], now()->addDay());
+                Cache::put('security:osv2:'.$id, $out[$id], now()->addDay());
             }
         }
 
@@ -160,7 +160,26 @@ class Feeds
             (array) ($osv['affected'] ?? []),
         ), 'is_string')));
 
+        // The first fixed version of each package it's about, by
+        // ecosystem: what an image's packages need to reach.
+        $fixed = [];
+        foreach ((array) ($osv['affected'] ?? []) as $affected) {
+            $ecosystem = $affected['package']['ecosystem'] ?? null;
+            $name = $affected['package']['name'] ?? null;
+            if (! is_string($ecosystem) || ! is_string($name)) {
+                continue;
+            }
+            foreach ((array) ($affected['ranges'] ?? []) as $range) {
+                foreach ((array) ($range['events'] ?? []) as $event) {
+                    if (is_string($event['fixed'] ?? null) && $event['fixed'] !== '') {
+                        $fixed[$ecosystem.'|'.$name] ??= $event['fixed'];
+                    }
+                }
+            }
+        }
+
         $base = [
+            'fixed' => $fixed,
             'title' => $title !== null && $title !== '' ? Str::limit($title, 290) : null,
             'summary' => is_string($osv['details'] ?? null) && trim($osv['details']) !== '' ? Str::limit(trim($osv['details']), 2000) : null,
             'severity' => $rating ?? Vulnerability::severityFromScore($score),
@@ -287,7 +306,7 @@ class Feeds
 
         // NVD's own score first, then the reporter's; newest CVSS version first.
         $score = null;
-        foreach (['cvssMetricV31', 'cvssMetricV30', 'cvssMetricV40'] as $version) {
+        foreach (['cvssMetricV40', 'cvssMetricV31', 'cvssMetricV30'] as $version) {
             $metrics = (array) ($cve['metrics'][$version] ?? []);
             usort($metrics, fn ($a, $b) => (($a['type'] ?? '') === 'Primary' ? 0 : 1) <=> (($b['type'] ?? '') === 'Primary' ? 0 : 1));
             $value = $metrics[0]['cvssData']['baseScore'] ?? null;

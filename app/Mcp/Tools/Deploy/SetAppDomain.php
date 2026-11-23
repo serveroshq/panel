@@ -34,7 +34,7 @@ final class SetAppDomain extends Tool
     {
         return 'Moves an app ServerOS built from code to a new domain, as the dashboard’s “Change domain” on its page does: the same code and settings are deployed as a fresh release served at https://<domain> (the machine gets the certificate itself once DNS points there: check with check_domain first and tell the person which record to add). Once it passes its health check it takes over and the old domain stops serving it. '
             .'Check with the person first. move_settings (default true, as in the dashboard) also changes settings that mention the old domain (like APP_URL or PUBLIC_URL) to the new one; get_app lists which settings mention it. '
-            .'Apps built from a Git repository deploy their live commit again, which replaces the container in place (a moment of downtime); apps uploaded as a .zip need their uploaded code still on hand. Returns the queued job; follow it with get_job or list_deploys.';
+            .'Apps built from a Git repository deploy their live commit again, beside the running container with no downtime on an up-to-date daemon (an older one replaces it in place, a moment of downtime); apps uploaded as a .zip need their uploaded code still on hand. Returns the queued job; follow it with get_job or list_deploys.';
     }
 
     public function inputSchema(): array

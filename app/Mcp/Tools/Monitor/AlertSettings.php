@@ -8,6 +8,7 @@ use App\Mcp\McpContext;
 use App\Models\Monitor;
 use App\Models\User;
 use App\Support\Monitors\AlertKinds;
+use App\Support\Monitors\TelegramAlerts;
 
 final class AlertSettings
 {
@@ -30,6 +31,10 @@ final class AlertSettings
             'webhook' => [
                 'set' => $webhook !== null,
                 'host' => $webhook !== null && $manager ? parse_url($webhook, PHP_URL_HOST) : null,
+            ],
+            'telegram' => [
+                'set' => TelegramAlerts::configured($workspace),
+                'chat' => $manager ? $workspace->alert_telegram_chat : null,
             ],
             'events' => self::EVENTS,
             'off' => AlertKinds::muted($workspace),

@@ -5,7 +5,7 @@ export type PlanKey = 'starter' | LockedPlan;
 export const planNames: Record<PlanKey, string> = {
     starter: trans('Essential'),
     pro: trans('Pro'),
-    business: trans('Business'),
+    business: trans('Scale'),
 };
 
 export type Pricing = {

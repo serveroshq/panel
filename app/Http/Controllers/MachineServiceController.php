@@ -18,11 +18,16 @@ use App\Support\Databases\DatabaseConsole;
 use App\Support\Deploys\AppReleases;
 use App\Support\Deploys\AppVersions;
 use App\Support\Deploys\ContainerNames;
+use App\Support\Deploys\DeployOnPush;
 use App\Support\Deploys\ServiceLabels;
+use App\Support\Deploys\SiteSwitches;
 use App\Support\Files\FileJobs;
 use App\Support\Machines\ServiceClones;
 use App\Support\Projects\AppSettings;
 use App\Support\Projects\Placement;
+use App\Support\Traffic\ExistingSites;
+use App\Support\Traffic\SiteTraffic;
+use App\Support\Traffic\TrafficSwitch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -111,7 +116,11 @@ class MachineServiceController extends Controller
                     || (DeploySource::fromRepoUrl($deploy->command['job']['repo'] ?? null)?->usable() ?? false),
                 'deployedAt' => $deploy->created_at?->toIso8601String(),
                 'snapshotBefore' => $machine->snapshotsBeforeDeploy($deploy->service),
+                'deployOnPush' => DeployOnPush::repoName($deploy->command['job']['repo'] ?? null) === null ? null : DeployOnPush::setting($machine, (string) $deploy->service),
                 'database' => AppVersionController::databaseProps($machine, $deploy),
+                'site' => SiteSwitches::props($machine, (string) $deploy->service, (array) ($deploy->command['job']['domains'] ?? [])),
+                'traffic' => SiteTraffic::state($machine, (string) $deploy->service, (array) ($deploy->command['job']['domains'] ?? [])),
+                'limits' => AppVersionController::limitsProps($machine, $deploy),
                 'versions' => array_map(fn (array $v) => [
                     'commit' => $v['commit'],
                     'live' => $v['live'],
@@ -127,6 +136,7 @@ class MachineServiceController extends Controller
                     return $names;
                 })(),
             ],
+            'siteTraffic' => self::siteTraffic($machine, $found),
             'commandsEnabled' => (bool) config('daemon.commands_enabled'),
             'files' => fn () => [
                 'places' => FileJobs::placesFor($machine, $found),
@@ -139,6 +149,60 @@ class MachineServiceController extends Controller
                 'minutes' => ConsoleLock::MINUTES,
             ],
         ]);
+    }
+
+    /**
+     * The Traffic tab of any service a site is tied to: a web server's own
+     * sites (nginx, Apache, Caddy, Traefik, on the machine or in a
+     * container), or the sites that pass requests on to an app. An app
+     * nothing passes requests to gets the tab too, to say so. Null for a
+     * service with no tab (databases and the like, and apps ServerOS
+     * deployed, which have their own).
+     *
+     * @param  array<string, mixed>  $found
+     * @return array{server: string|null, role: string, collecting: bool, blocked: string|null, update: string|null, canAddFile: bool, ports: list<int>, sites: list<array<string, mixed>>}|null
+     */
+    private static function siteTraffic(Machine $machine, array $found): ?array
+    {
+        if (is_string($found['app'] ?? null)) {
+            return null;
+        }
+        $server = ExistingSites::serverOf($found);
+        ['serves' => $serves, 'sites' => $sites] = ExistingSites::forService($machine, $found);
+        $appLike = in_array($found['kind'] ?? null, ['app', 'container', 'runtime', 'web_server', 'proxy'], true)
+            && ((array) ($found['ports'] ?? []) !== [] || is_string($found['working_dir'] ?? null));
+        if (! $serves && $sites === [] && ! $appLike && $server === null) {
+            return null;
+        }
+        $numbers = SiteTraffic::lastDay($machine);
+        $zero = ['requests' => 0, 'errors' => 0, 'clientErrors' => 0, 'visitors' => 0];
+        $rows = array_map(fn (array $site) => [
+            ...ExistingSites::state($machine, $site),
+            'label' => ExistingSites::label($site),
+            'where' => ExistingSites::where($site),
+            'lastDay' => $numbers[$site['site']] ?? $zero,
+        ], $sites);
+        // Busiest first, as the machine's traffic table has them; no log last.
+        usort($rows, fn (array $a, array $b) => [$a['existing']['unlogged'] !== null, $b['lastDay']['requests'], $a['label']] <=> [$b['existing']['unlogged'] !== null, $a['lastDay']['requests'], $b['label']]);
+        $current = DaemonJobQueue::canCountAnySite($machine);
+        // Host nginx and Apache came first; everything else needs the newer daemon.
+        $hostClassic = $serves && in_array($server, ['nginx', 'apache'], true) && ExistingSites::containerOf($found) === null;
+        $needs = $hostClassic ? (string) config('daemon.existing_sites_traffic_since') : (string) config('daemon.any_site_traffic_since');
+        $older = ! ($hostClassic ? ExistingSites::available($machine) : $current);
+        $update = $older && $rows === [] && TrafficSwitch::blocked($machine) === null
+            ? __('Update the ServerOS daemon on :name to :version or later to count this service’s traffic.', ['name' => $machine->name, 'version' => 'v'.$needs])
+            : null;
+
+        return [
+            'server' => $serves && $server !== null ? ExistingSites::SERVERS[$server] : null,
+            'role' => $serves ? 'server' : 'app',
+            'collecting' => TrafficSwitch::on($machine),
+            'blocked' => TrafficSwitch::blocked($machine),
+            'update' => is_string($update) ? $update : null,
+            'canAddFile' => $current && ! $serves,
+            'ports' => array_values(array_filter((array) ($found['ports'] ?? []), 'is_int')),
+            'sites' => $rows,
+        ];
     }
 
     #[Audited]

@@ -8,6 +8,7 @@ use App\Models\Machine;
 use App\Models\Workspace;
 use App\Support\Audit\Audited;
 use App\Support\DaemonJobQueue;
+use App\Support\Deploys\DeployOnPush;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -66,10 +67,15 @@ class DaemonJobController extends Controller
 
     private function stopWaiting(DaemonJob $job): void
     {
+        $held = $job->held;
         $job->forceFill([
             'state' => 'cancelled',
-            'error' => ['phase' => 'panel', 'message' => 'Stopped waiting: the daemon never reported back on this job.'],
+            'held' => false,
+            'error' => ['phase' => 'panel', 'message' => $held ? 'Cancelled before it was sent to the machine.' : 'Stopped waiting: the daemon never reported back on this job.'],
             'finished_at' => now(),
         ])->save();
+        if (! $held && in_array($job->kind, ['deploy', 'rollback'], true) && is_string($job->service)) {
+            app(DeployOnPush::class)->release($job->machine, $job->service);
+        }
     }
 }

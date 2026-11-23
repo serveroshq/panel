@@ -59,7 +59,7 @@ final class Agents
             return;
         }
         if (! $context->workspace->hasAutomations()) {
-            throw new ToolError('Agents come with Pro. The person can choose Pro or Business in ServerOS under Settings → Billing.');
+            throw new ToolError('Agents come with Pro. The person can choose Pro or Scale in ServerOS under Settings → Billing.');
         }
         if (! $context->user->hasEnabledTwoFactorAuthentication()) {
             throw new ToolError('Turn on two-factor authentication to run agents: the person can do that in ServerOS under Settings → Security.');

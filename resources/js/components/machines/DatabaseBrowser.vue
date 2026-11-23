@@ -25,6 +25,7 @@ import SubmitButton from '@/components/workspace/SubmitButton.vue';
 import TickBox from '@/components/workspace/TickBox.vue';
 import { edit as securityEdit } from '@/routes/security';
 import { describe, errorMessage, jobReason } from '@/lib/errors';
+import { fixed } from '@/lib/formatting';
 
 type Result = {
     database: string | null;
@@ -745,7 +746,7 @@ const field =
                                     }}
                                     <span v-if="tookMs !== null">
                                         ·
-                                        {{ (tookMs / 1000).toFixed(1) }} s</span
+                                        {{ fixed(tookMs / 1000) }} s</span
                                     >
                                 </p>
                                 <AppButton

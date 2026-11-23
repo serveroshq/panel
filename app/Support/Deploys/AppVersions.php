@@ -42,7 +42,8 @@ final class AppVersions
             }
 
             $next = $deploys->slice(0, $index)->last();
-            $restore = $next === null ? [] : self::keptSnapshots($machine, $next, $commit);
+            // A Compose app goes back by deploying again, which can't put its data back.
+            $restore = $next === null || self::isCompose($job) ? [] : self::keptSnapshots($machine, $next, $commit);
 
             $versions[] = [
                 'job' => $job,
@@ -54,6 +55,11 @@ final class AppVersions
         }
 
         return $versions;
+    }
+
+    private static function isCompose(DaemonJob $deploy): bool
+    {
+        return filled($deploy->command['job']['compose_file'] ?? null);
     }
 
     /** @return list<array{service: string, snapshot: string}> */
@@ -87,11 +93,18 @@ final class AppVersions
         $reason = match (true) {
             $version === null => 'That version isn’t kept on '.$machine->name.' any more. It keeps the last '.self::KEPT.'.',
             $version['live'] => 'That version is already live.',
+            $withData && self::isCompose($version['job']) => 'A Compose app rolls back its code only. Restore a backup to put its data back.',
             $withData && $version['restore'] === [] => 'There’s no snapshot of its data to put back. Roll back the code only, or restore a backup.',
             default => $this->queue->unavailable($machine, 'rollback'),
         };
         if ($reason !== null) {
             throw new RuntimeException($reason);
+        }
+
+        // A Compose stack keeps no old containers to start again, so going
+        // back means deploying that version again, as it was deployed then.
+        if (self::isCompose($version['job'])) {
+            return $this->queue->deploy($machine, $user, $version['job']->command['job']);
         }
 
         return $this->queue->queue($machine, $user, 'rollback', [

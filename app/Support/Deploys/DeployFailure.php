@@ -115,13 +115,19 @@ final class DeployFailure
         if ($has('/toomanyrequests|You have reached your (unauthenticated )?pull rate limit/i')) {
             return [
                 'cause' => 'Docker Hub refused to send the image: this machine hit its download limit.',
-                'fix' => 'Wait a few hours and retry, or sign in to Docker Hub on the machine (“docker login”) for a higher limit.',
+                'fix' => 'Wait a few hours and retry, or add a Docker Hub login in Settings → General → Container registries for a higher limit.',
             ];
         }
-        if ($has('/pull access denied|manifest unknown|manifest for \S+ not found|repository does not exist or may require/i')) {
+        if ($phase === 'build' && $has('/unauthorized: incorrect username or password|unauthorized: authentication required|error from registry: (unauthorized|denied)|failed to fetch oauth token|failed to authorize: /i')) {
             return [
-                'cause' => 'An image the build needs couldn’t be downloaded: the name or tag is wrong, or the image is private.',
-                'fix' => 'Check the FROM lines in the Dockerfile (or the images in the Compose file) exist on Docker Hub with that tag.',
+                'cause' => 'A registry turned down the login for an image the deploy needs.',
+                'fix' => 'Check the login for that registry in Settings → General → Container registries (a token needs permission to read packages), then retry.',
+            ];
+        }
+        if ($has('/pull access denied|manifest unknown|manifest for \S+ not found|repository does not exist or may require|denied: requested access to the resource is denied/i')) {
+            return [
+                'cause' => 'An image the deploy needs couldn’t be downloaded: the name or tag is wrong, or the image is private.',
+                'fix' => 'If it’s private, add a login for its registry (Docker Hub, ghcr.io or your own) in Settings → General → Container registries, then retry. Otherwise check the FROM lines in the Dockerfile (or the images in the Compose file) exist with that tag.',
             ];
         }
 

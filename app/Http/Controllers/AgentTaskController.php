@@ -295,7 +295,7 @@ class AgentTaskController extends Controller
     private function canRun(Request $request, Workspace $workspace): void
     {
         if (! $workspace->hasAutomations()) {
-            throw ValidationException::withMessages(['prompt' => 'Agents come with Pro. Choose Pro or Business to use them.']);
+            throw ValidationException::withMessages(['prompt' => 'Agents come with Pro. Choose Pro or Scale to use them.']);
         }
         if (! $request->user()->hasEnabledTwoFactorAuthentication()) {
             throw ValidationException::withMessages(['prompt' => 'Turn on two-factor authentication to run agents.']);

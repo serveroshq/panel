@@ -26,7 +26,7 @@ final class ChangeMemberRole extends Tool
 
     public function description(): string
     {
-        return 'Changes what someone in the workspace may do, by giving them another role: admin, member or viewer, or one of the workspace’s own roles on Business (list_roles shows them and what each can do). The owner’s role can’t be changed, nobody can change their own, and Member and Viewer are on Pro and Business only. '
+        return 'Changes what someone in the workspace may do, by giving them another role: admin, member or viewer, or one of the workspace’s own roles on Scale (list_roles shows them and what each can do). The owner’s role can’t be changed, nobody can change their own, and Member and Viewer are on Pro and Scale only. '
             .'Making someone an Admin lets them change settings and invite or remove people, so check with the person before granting more access. Takes effect at once, including for that member’s own MCP connections. Returns the member as list_members shows them.';
     }
 
@@ -71,7 +71,7 @@ final class ChangeMemberRole extends Tool
             throw new ToolError('You can’t change your own role.');
         }
         if ($role->isStaffRole() && ! $workspace->hasStaffRoles()) {
-            throw new ToolError('Member and Viewer roles are on Pro and Business.');
+            throw new ToolError('Member and Viewer roles are on Pro and Scale.');
         }
         if (! $workspace->canGrant($context->user, $workspace->permissionsOf($member))) {
             throw new ToolError("{$member->name} has access you don’t, so you can’t change their role.");

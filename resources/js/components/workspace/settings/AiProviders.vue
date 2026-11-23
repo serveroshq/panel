@@ -2,6 +2,7 @@
 import { router, useForm } from '@inertiajs/vue3';
 import { ArrowUpRight } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import { useSelfHosted } from '@/composables/useSelfHosted';
 import AiBrandIcon from '@/components/workspace/AiBrandIcon.vue';
 import Tile from '@/components/workspace/Tile.vue';
 import {
@@ -11,15 +12,17 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { appButtonClasses } from '@/lib/appButton';
-import { SolarSparkles as Sparkles } from '@/lib/solarIcons';
+import type { AiBrand } from '@/lib/aiBrands';
+import { SolarPlug as Plug, SolarSparkles as Sparkles } from '@/lib/solarIcons';
 
 export type AiProvider = {
-    provider: 'anthropic' | 'openai';
+    provider: 'anthropic' | 'openai' | 'custom';
     label: string;
     defaultModel: string;
     connected: boolean;
     hint: string | null;
     model: string | null;
+    baseUrl: string | null;
     by: string | null;
     connectedAt: string | null;
 };
@@ -30,23 +33,50 @@ const props = defineProps<{
     canManage: boolean;
 }>();
 
-const brand = { anthropic: 'claude', openai: 'openai' } as const;
-const about = {
+const brands: Partial<Record<AiProvider['provider'], AiBrand>> = {
+    anthropic: 'claude',
+    openai: 'openai',
+};
+const about: Record<
+    AiProvider['provider'],
+    {
+        name: string;
+        uses: string;
+        keysUrl: string | null;
+        placeholder: string;
+        model: string;
+    }
+> = {
     anthropic: {
         name: 'Anthropic',
-        product: 'Claude',
         uses: 'Server fixes and Claude Code',
         keysUrl: 'https://console.anthropic.com/settings/keys',
         placeholder: 'sk-ant-api03-…',
+        model: 'Model for server fixes',
     },
     openai: {
         name: 'OpenAI',
-        product: 'GPT',
         uses: 'Server fixes and Codex',
         keysUrl: 'https://platform.openai.com/api-keys',
         placeholder: 'sk-proj-…',
+        model: 'Model for server fixes',
     },
-} as const;
+    custom: {
+        name: 'OpenAI-compatible',
+        uses: 'Server fixes and Ask AI',
+        keysUrl: null,
+        placeholder: 'sk-or-v1-…',
+        model: 'Model',
+    },
+};
+
+function host(url: string | null): string {
+    try {
+        return url ? new URL(url).host : '';
+    } catch {
+        return url ?? '';
+    }
+}
 
 const openFor = ref<AiProvider['provider'] | null>(null);
 const current = computed(
@@ -59,13 +89,15 @@ const open = computed({
     },
 });
 
-const form = useForm({ key: '', model: '' });
+const selfHosted = useSelfHosted();
+const form = useForm({ key: '', model: '', url: '' });
 const confirmingRemove = ref(false);
 
 function show(p: AiProvider): void {
     form.reset();
     form.clearErrors();
     form.model = p.model ?? '';
+    form.url = p.baseUrl ?? '';
     confirmingRemove.value = false;
     openFor.value = p.provider;
 }
@@ -73,7 +105,9 @@ function show(p: AiProvider): void {
 function save(): void {
     const p = current.value;
     if (!p) return;
-    form.put(`/settings/ai/${p.provider}`, {
+    form.transform((data) =>
+        p.provider === 'custom' ? data : { key: data.key, model: data.model },
+    ).put(`/settings/ai/${p.provider}`, {
         preserveScroll: true,
         onSuccess: () => (openFor.value = null),
     });
@@ -137,22 +171,34 @@ const field =
                         class="grid size-9 shrink-0 place-items-center rounded-[10px] border border-(--ds-border) bg-(--ds-hover)"
                     >
                         <AiBrandIcon
-                            :brand="brand[p.provider]"
+                            v-if="brands[p.provider]"
+                            :brand="brands[p.provider]!"
                             class="size-[18px]"
+                        />
+                        <Plug
+                            v-else
+                            class="size-[18px] text-(--ds-text-muted)"
+                            :stroke-width="1.75"
                         />
                     </span>
                     <span class="flex min-w-0 flex-1 flex-col">
                         <span class="text-[13.5px]/5 font-medium">{{
-                            about[p.provider].name
+                            $t(about[p.provider].name)
                         }}</span>
                         <span
                             class="truncate text-[12.5px]/5 text-(--ds-text-muted)"
                         >
                             <template v-if="p.connected">
-                                <code class="font-ui-mono text-[12px]">{{
-                                    p.hint
-                                }}</code>
-                                · {{ p.model ?? p.defaultModel }}
+                                <template v-if="p.hint">
+                                    <code class="font-ui-mono text-[12px]">{{
+                                        p.hint
+                                    }}</code>
+                                    ·
+                                </template>
+                                {{ p.model ?? p.defaultModel }}
+                                <template v-if="p.baseUrl">
+                                    · {{ host(p.baseUrl) }}</template
+                                >
                             </template>
                             <template v-else>{{
                                 $t(about[p.provider].uses)
@@ -206,17 +252,25 @@ const field =
                         class="grid size-12 place-items-center rounded-[14px] border border-(--ds-border) bg-(--ds-hover)"
                     >
                         <AiBrandIcon
-                            :brand="brand[current.provider]"
+                            v-if="brands[current.provider]"
+                            :brand="brands[current.provider]!"
                             class="size-6"
+                        />
+                        <Plug
+                            v-else
+                            class="size-6 text-(--ds-text-muted)"
+                            :stroke-width="1.75"
                         />
                     </span>
                     <div class="flex flex-col gap-1">
                         <DialogTitle class="text-[15px]/6 font-semibold">
                             {{
                                 current.connected
-                                    ? about[current.provider].name
+                                    ? $t(about[current.provider].name)
                                     : $t('Connect :name', {
-                                          name: about[current.provider].name,
+                                          name: $t(
+                                              about[current.provider].name,
+                                          ),
                                       })
                             }}
                         </DialogTitle>
@@ -225,16 +279,21 @@ const field =
                         >
                             {{
                                 current.connected
-                                    ? $t('Key :hint, added :when:by.', {
-                                          hint: String(current.hint),
-                                          when: added(current),
-                                          by: current.by
-                                              ? ' ' +
-                                                $t('by :name', {
-                                                    name: current.by,
-                                                })
-                                              : '',
-                                      })
+                                    ? $t(
+                                          current.hint
+                                              ? 'Key :hint, added :when:by.'
+                                              : 'Key added :when:by.',
+                                          {
+                                              hint: String(current.hint),
+                                              when: added(current),
+                                              by: current.by
+                                                  ? ' ' +
+                                                    $t('by :name', {
+                                                        name: current.by,
+                                                    })
+                                                  : '',
+                                          },
+                                      )
                                     : $t(':uses run on your :name account.', {
                                           uses: about[current.provider].uses,
                                           name: about[current.provider].name,
@@ -245,6 +304,46 @@ const field =
                 </div>
 
                 <div class="flex flex-col gap-4 px-6 pb-6">
+                    <label
+                        v-if="current.provider === 'custom'"
+                        class="flex flex-col gap-1.5"
+                    >
+                        <span
+                            class="text-[12px]/5 font-medium text-(--ds-text-muted)"
+                            >{{ $t('API address') }}</span
+                        >
+                        <input
+                            v-model="form.url"
+                            type="url"
+                            inputmode="url"
+                            autocomplete="off"
+                            spellcheck="false"
+                            :class="field"
+                            placeholder="https://openrouter.ai/api/v1"
+                            required
+                            :autofocus="!current.connected"
+                        />
+                        <span
+                            v-if="form.errors.url"
+                            class="text-[12px]/4 text-(--ds-red)"
+                            >{{ form.errors.url }}</span
+                        >
+                        <span
+                            v-else
+                            class="text-[12px]/4 text-(--ds-text-faint)"
+                            >{{
+                                $t(
+                                    'Any API that works like OpenAI’s: OpenRouter, DeepSeek, Groq, Ollama and more.',
+                                )
+                            }}<template v-if="selfHosted">
+                                {{
+                                    $t(
+                                        'For one on your own network, like Ollama, set MONITORS_ALLOW_PRIVATE=true.',
+                                    )
+                                }}</template
+                            ></span
+                        >
+                    </label>
                     <label class="flex flex-col gap-1.5">
                         <span
                             class="flex items-center justify-between text-[12px]/5 font-medium text-(--ds-text-muted)"
@@ -255,7 +354,10 @@ const field =
                                     : $t('API key')
                             }}
                             <a
-                                :href="about[current.provider].keysUrl"
+                                v-if="about[current.provider].keysUrl"
+                                :href="
+                                    about[current.provider].keysUrl ?? undefined
+                                "
                                 target="_blank"
                                 rel="noopener"
                                 class="inline-flex items-center gap-0.5 font-normal text-(--ds-text-faint) hover:text-(--ds-text)"
@@ -275,7 +377,10 @@ const field =
                                     : about[current.provider].placeholder
                             "
                             :required="!current.connected"
-                            :autofocus="!current.connected"
+                            :autofocus="
+                                !current.connected &&
+                                current.provider !== 'custom'
+                            "
                         />
                         <span
                             v-if="form.errors.key"
@@ -286,14 +391,17 @@ const field =
                     <label class="flex flex-col gap-1.5">
                         <span
                             class="text-[12px]/5 font-medium text-(--ds-text-muted)"
-                            >{{ $t('Model for server fixes') }}</span
+                            >{{ $t(about[current.provider].model) }}</span
                         >
                         <input
                             v-model="form.model"
                             type="text"
                             spellcheck="false"
                             :class="field"
-                            :placeholder="current.defaultModel"
+                            :placeholder="
+                                current.defaultModel || 'deepseek/deepseek-chat'
+                            "
+                            :required="current.provider === 'custom'"
                         />
                         <span
                             v-if="form.errors.model"
@@ -305,7 +413,13 @@ const field =
                         {{
                             $t(
                                 'Checked with :name before it’s saved, then kept encrypted. It’s never shown again.',
-                                { name: about[current.provider].name },
+                                {
+                                    name:
+                                        current.provider === 'custom'
+                                            ? host(form.url) ||
+                                              $t('the provider')
+                                            : about[current.provider].name,
+                                },
                             )
                         }}
                     </p>

@@ -10,6 +10,7 @@ use App\Support\ServiceTemplates\ServiceTemplate;
 use App\Support\ServiceTemplates\TemplateDeployment;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\IpUtils;
 
 final class DeployRequest
 {
@@ -29,12 +30,12 @@ final class DeployRequest
             : $domain;
     }
 
-    /** @return array<string, list<string>> */
+    /** @return array<string, list<string|\Closure|\Stringable>> */
     public static function gitRules(): array
     {
         return [
             'service' => ['required', 'string', 'max:63', 'regex:'.self::SERVICE_PATTERN],
-            'repo' => ['required', 'url', 'max:500'],
+            'repo' => ['required', 'string', 'max:500', self::repoRule()],
             'commit' => ['required', 'string', 'regex:'.self::COMMIT_PATTERN],
             'port' => ['required', 'integer', 'between:1,65535'],
             'health_path' => ['required', 'string', 'max:200', 'regex:/^\/[\x21-\x7e]*$/'],
@@ -42,16 +43,17 @@ final class DeployRequest
             'wildcard' => ['sometimes', 'boolean'],
             'proxy' => ['nullable', 'string', Rule::in(array_keys(Machine::PROXIES))],
             'https' => ['sometimes', 'nullable', 'boolean'],
+            'base_dir' => ['nullable', 'string', 'max:200', 'regex:'.RepositoryDetector::BASE_DIR_PATTERN],
         ];
     }
 
-    /** @return array<string, list<string>> */
+    /** @return array<string, list<string|\Closure|\Stringable>> */
     public static function templateRules(ServiceTemplate $template): array
     {
         return [
             'service' => ['required', 'string', 'max:63', 'regex:'.self::SERVICE_PATTERN],
             'port' => ['nullable', 'integer', 'between:1,65535'],
-            'repo' => [$template->isApp() ? 'required' : 'nullable', 'url', 'max:500'],
+            'repo' => [$template->isApp() ? 'required' : 'nullable', 'string', 'max:500', self::repoRule()],
             'commit' => [$template->isApp() ? 'required' : 'nullable', 'string', 'regex:'.self::COMMIT_PATTERN],
             'health_path' => ['nullable', 'string', 'max:200', 'regex:/^\/[\x21-\x7e]*$/'],
             'domain' => ['nullable', 'string', 'max:253', 'regex:'.self::DOMAIN_PATTERN],
@@ -65,7 +67,25 @@ final class DeployRequest
             // Nullable either way: the dialog sends null for templates that don't
             // use it, and prohibited still turns down an actual path.
             'compose_file' => ['nullable', ...($template->composeFromRepo() ? [] : ['prohibited']), 'string', 'max:200', 'regex:'.self::COMPOSE_FILE_PATTERN],
+            // A Compose file is named by its path instead, so only builds take a folder.
+            'base_dir' => ['nullable', ...($template->isApp() && ! $template->composeFromRepo() ? [] : ['prohibited']), 'string', 'max:200', 'regex:'.RepositoryDetector::BASE_DIR_PATTERN],
         ];
+    }
+
+    public static function assertBaseDir(Machine $machine, ?string $baseDir): void
+    {
+        if (filled($baseDir) && ! DaemonJobQueue::canBuildFromFolder($machine)) {
+            throw ValidationException::withMessages(['base_dir' => $machine->name.'’s daemon is too old to build an app from a folder of its repository. It updates itself, or run “sudo serverosd update” on the server, then deploy again.']);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $job
+     * @return array<string, mixed>
+     */
+    public static function withBaseDir(array $job, ?string $baseDir): array
+    {
+        return filled($baseDir) ? [...$job, 'base_dir' => $baseDir] : $job;
     }
 
     public static function assertComposeFromRepo(Machine $machine, ServiceTemplate $template): void
@@ -73,6 +93,22 @@ final class DeployRequest
         if ($template->composeFromRepo() && ! DaemonJobQueue::canComposeFromRepo($machine)) {
             throw ValidationException::withMessages(['form' => $machine->name.'’s daemon is too old to run a Compose file from a repository. It updates itself, or run “sudo serverosd update” on the server, then deploy again.']);
         }
+    }
+
+    /**
+     * A free address for a machine with a public IPv4 address, from sslip.io:
+     * any name under 203-0-113-5.sslip.io resolves to 203.0.113.5, so an app
+     * can have a working address (and a certificate) before it has a domain.
+     */
+    public static function freeAddressBase(Machine $machine): ?string
+    {
+        $ip = (string) $machine->ip_address;
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false
+            || IpUtils::checkIp($ip, ['100.64.0.0/10', '192.0.0.0/24', '198.18.0.0/15'])) {
+            return null;
+        }
+
+        return str_replace('.', '-', $ip).'.sslip.io';
     }
 
     /** @return list<string> */
@@ -168,6 +204,32 @@ final class DeployRequest
     public static function withHttps(array $job, ?bool $https): array
     {
         return $https === null ? $job : [...$job, 'https' => $https];
+    }
+
+    // An HTTPS address, or an SSH one fetched with the app's deploy key.
+    private static function repoRule(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail): void {
+            if (! GitRemote::isSsh($value) && filter_var($value, FILTER_VALIDATE_URL) === false) {
+                $fail('Use the repository’s HTTPS address, or its SSH one for a private repository with a deploy key.');
+            }
+        };
+    }
+
+    /**
+     * An SSH repository is fetched with the app's deploy key, and its commit
+     * comes from the machine (the panel can't read it), so it must be given.
+     */
+    public static function assertRepo(string $repo, ?string $commit = null): void
+    {
+        if (! GitRemote::isSsh($repo)) {
+            self::assertPublicRepo($repo);
+
+            return;
+        }
+        if ($commit === null || preg_match(self::COMMIT_PATTERN, $commit) !== 1) {
+            throw ValidationException::withMessages(['commit' => 'An SSH repository deploys a commit the machine has looked up with its deploy key: add the key, then look up the branch first.']);
+        }
     }
 
     public static function assertPublicRepo(string $repo): void

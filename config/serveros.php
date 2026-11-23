@@ -5,7 +5,8 @@ return [
 
     'egress_ip' => env('SERVEROS_EGRESS_IP'),
 
-    'open_source' => (bool) env('SERVEROS_OPEN_SOURCE', false),
+    // The panel and the daemon are both public under the AGPL-3.0.
+    'open_source' => (bool) env('SERVEROS_OPEN_SOURCE', true),
 
     'edition' => env('SERVEROS_EDITION', 'self-hosted'),
 
@@ -38,6 +39,14 @@ return [
     'updates' => [
         'version_file' => base_path('VERSION'),
         'feed_url' => env('SERVEROS_UPDATE_FEED_URL', 'https://api.github.com/repos/serveroshq/panel/releases/latest'),
+    ],
+
+    // The card on a self-hosted install's home page asking its admins to
+    // donate or get a Business license. SERVEROS_SUPPORT_ASK=false hides it.
+    'support_ask' => [
+        'enabled' => (bool) env('SERVEROS_SUPPORT_ASK', true),
+        'donate_url' => env('SERVEROS_DONATE_URL', 'https://serveros.com/donate'),
+        'license_url' => env('SERVEROS_LICENSE_URL', 'https://serveros.com/pricing'),
     ],
 
     'telemetry' => [

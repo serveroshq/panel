@@ -64,7 +64,7 @@ function create(template: string): void {
                 {{
                     available
                         ? $t('Start a workflow. It opens switched off.')
-                        : $t('Workflows come with Pro and Business.')
+                        : $t('Workflows come with Pro and Scale.')
                 }}
             </DropdownMenuLabel>
             <DropdownMenuItem

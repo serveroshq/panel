@@ -28,6 +28,9 @@ ServerOS runs the Linux servers you already own from one place. Connect a VPS fr
 
 This repo is the panel, the web app you and your team work in. Each server runs [serverosd](https://github.com/serveroshq/daemon), a small daemon the panel talks to. [serveros.com](https://serveros.com) runs this same panel as a hosted service.
 
+> [!TIP]
+> **No server yet?** Get your first VPS free for a month on [Synteq](https://serveros.com/synteq/go?from=github), then connect it to ServerOS with one command.
+
 ## What's in it
 
 - **Machines**: connect a server with one command, see CPU, memory and disk, and install updates.

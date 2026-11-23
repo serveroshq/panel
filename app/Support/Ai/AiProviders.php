@@ -15,16 +15,27 @@ class AiProviders
     public const PROVIDERS = [
         'anthropic' => ['label' => 'Anthropic', 'model' => 'claude-sonnet-5-5', 'prefix' => 'sk-ant-'],
         'openai' => ['label' => 'OpenAI', 'model' => 'gpt-5', 'prefix' => 'sk-'],
+        'custom' => ['label' => 'OpenAI-compatible', 'model' => '', 'prefix' => ''],
     ];
 
-    public const PREFERENCE = ['anthropic', 'openai'];
+    public const PREFERENCE = ['anthropic', 'openai', 'custom'];
 
     public const FALLBACK_MODELS = [
         'anthropic' => ['claude-opus-5-5' => 'Claude Opus 5.5', 'claude-sonnet-5-5' => 'Claude Sonnet 5.5', 'claude-haiku-5-5' => 'Claude Haiku 5.5', 'claude-fable-5-1' => 'Claude Fable 5.1'],
         'openai' => ['gpt-5' => 'GPT-5', 'gpt-5-mini' => 'GPT-5 mini'],
+        'custom' => [],
     ];
 
     public const MODEL_PATTERN = '/^[A-Za-z0-9._:\/\[\]-]{1,80}$/';
+
+    public function __construct(private readonly CompatibleEndpoint $endpoint) {}
+
+    /** @return array{provider: string, key: string, model: string, own: bool, url?: string} */
+    private static function own(string $provider, WorkspaceAiKey $key, ?string $model = null): array
+    {
+        return ['provider' => $provider, 'key' => $key->key, 'model' => $model ?? ($key->model ?: self::PROVIDERS[$provider]['model']), 'own' => true]
+            + ($provider === 'custom' ? ['url' => (string) $key->base_url] : []);
+    }
 
     /** @param  array{provider: string, model: string}  $ai */
     public static function seesImages(array $ai): bool
@@ -40,8 +51,8 @@ class AiProviders
     /**
      * The model for a message with images: Ask AI's own model moves to one that can see them.
      *
-     * @param  array{provider: string, key: string, model: string, own: bool}  $ai
-     * @return array{provider: string, key: string, model: string, own: bool}
+     * @param  array{provider: string, key: string, model: string, own: bool, url?: string}  $ai
+     * @return array{provider: string, key: string, model: string, own: bool, url?: string}
      */
     public static function forImages(array $ai): array
     {
@@ -58,27 +69,27 @@ class AiProviders
             ->first();
     }
 
-    /** @return array{provider: string, key: string, model: string, own: bool} */
+    /** @return array{provider: string, key: string, model: string, own: bool, url?: string} */
     public function forAgent(Workspace|int $workspace): array
     {
         foreach (self::PREFERENCE as $provider) {
             $key = $this->key($workspace, $provider);
             if ($key !== null) {
-                return ['provider' => $provider, 'key' => $key->key, 'model' => $key->model ?: self::PROVIDERS[$provider]['model'], 'own' => true];
+                return self::own($provider, $key);
             }
         }
 
         return ['provider' => 'groq', 'key' => (string) config('services.groq.key'), 'model' => (string) config('services.groq.model'), 'own' => false];
     }
 
-    /** @return array{provider: string, key: string, model: string, own: bool} */
+    /** @return array{provider: string, key: string, model: string, own: bool, url?: string} */
     public function forChat(Workspace|int $workspace, ?string $choice): array
     {
         if ($choice !== null && str_contains($choice, ':')) {
             [$provider, $model] = explode(':', $choice, 2);
             $key = isset(self::PROVIDERS[$provider]) && preg_match(self::MODEL_PATTERN, $model) === 1 ? $this->key($workspace, $provider) : null;
             if ($key !== null) {
-                return ['provider' => $provider, 'key' => $key->key, 'model' => $model, 'own' => true];
+                return self::own($provider, $key, $model);
             }
         }
 
@@ -95,10 +106,10 @@ class AiProviders
                 continue;
             }
             $default = $key->model ?: self::PROVIDERS[$provider]['model'];
-            $cacheKey = "ai-models:{$workspace->id}:{$provider}:".substr(hash('sha256', $key->key), 0, 16);
+            $cacheKey = "ai-models:{$workspace->id}:{$provider}:".substr(hash('sha256', $key->key.'|'.$key->base_url), 0, 16);
             $models = Cache::get($cacheKey);
             if (! is_array($models) || $models === []) {
-                $models = $this->listModels($provider, $key->key);
+                $models = $this->listModels($provider, $key->key, $key->base_url);
                 if ($models !== []) {
                     Cache::put($cacheKey, $models, now()->addHour());
                 }
@@ -114,13 +125,15 @@ class AiProviders
     }
 
     /** @return list<array{id: string, label: string}> */
-    private function listModels(string $provider, string $key): array
+    private function listModels(string $provider, string $key, ?string $url): array
     {
         try {
-            $response = $provider === 'anthropic'
-                ? Http::withHeaders(['x-api-key' => $key, 'anthropic-version' => '2023-06-01'])->timeout(8)->get('https://api.anthropic.com/v1/models', ['limit' => 100])
-                : Http::withToken($key)->timeout(8)->get('https://api.openai.com/v1/models');
-        } catch (ConnectionException) {
+            $response = match ($provider) {
+                'anthropic' => Http::withHeaders(['x-api-key' => $key, 'anthropic-version' => '2023-06-01'])->timeout(8)->get('https://api.anthropic.com/v1/models', ['limit' => 100]),
+                'custom' => $this->endpoint->request((string) $url, $key, 8)->get(CompatibleEndpoint::url((string) $url, 'models')),
+                default => Http::withToken($key)->timeout(8)->get('https://api.openai.com/v1/models'),
+            };
+        } catch (ConnectionException|RuntimeException) {
             return [];
         }
         if (! $response->successful()) {
@@ -144,7 +157,7 @@ class AiProviders
     }
 
     /**
-     * @param  array{provider: string, key: string, model: string, own: bool}  $ai
+     * @param  array{provider: string, key: string, model: string, own: bool, url?: string}  $ai
      * @return array{0: array<string, mixed>, 1: string}
      *
      * @throws RuntimeException
@@ -158,12 +171,19 @@ class AiProviders
 
         try {
             $response = match ($ai['provider']) {
+                'custom' => $this->endpoint->request((string) ($ai['url'] ?? ''), $ai['key'], 120)
+                    ->post(CompatibleEndpoint::url((string) ($ai['url'] ?? ''), 'chat/completions'), [
+                        'model' => $ai['model'],
+                        'temperature' => 0.2,
+                        'max_completion_tokens' => $maxTokens,
+                        'messages' => [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $user]],
+                    ]),
                 'anthropic' => Http::withHeaders(['x-api-key' => $ai['key'], 'anthropic-version' => '2023-06-01'])
                     ->connectTimeout(10)->timeout(120)
                     ->post('https://api.anthropic.com/v1/messages', [
                         'model' => $ai['model'],
                         'max_tokens' => $maxTokens,
-                        'temperature' => 0.2,
+                        // No temperature: newer Claude models (Haiku 5.5 and up) refuse it.
                         'system' => $system,
                         'messages' => [['role' => 'user', 'content' => $user]],
                     ]),
@@ -248,21 +268,34 @@ class AiProviders
     }
 
     /** @throws RuntimeException */
-    public function verify(string $provider, string $key): void
+    public function verify(string $provider, string $key, ?string $url = null): void
     {
+        $name = $provider === 'custom' ? CompatibleEndpoint::host((string) $url) : self::PROVIDERS[$provider]['label'];
         try {
             $response = match ($provider) {
                 'anthropic' => Http::withHeaders(['x-api-key' => $key, 'anthropic-version' => '2023-06-01'])->timeout(15)->get('https://api.anthropic.com/v1/models', ['limit' => 1]),
+                'custom' => $this->endpoint->request((string) $url, $key, 15)->get(CompatibleEndpoint::url((string) $url, 'models')),
                 default => Http::withToken($key)->timeout(15)->get('https://api.openai.com/v1/models'),
             };
         } catch (ConnectionException) {
-            throw new RuntimeException('Couldn’t reach '.self::PROVIDERS[$provider]['label'].' to check the key. Try again.');
+            throw new RuntimeException('Couldn’t reach '.$name.' to check the key. Try again.');
         }
         if (in_array($response->status(), [401, 403], true)) {
-            throw new RuntimeException(self::PROVIDERS[$provider]['label'].' didn’t accept that key.');
+            throw new RuntimeException($name.' didn’t accept that key.', 401);
+        }
+        if ($provider === 'custom' && $response->redirect()) {
+            throw new RuntimeException($name.' sent the request somewhere else. Use the address it ends up at.');
+        }
+        $missing = 'There’s no OpenAI-compatible API at that address. It usually ends in /v1.';
+        if ($provider === 'custom' && $response->status() === 404) {
+            throw new RuntimeException($missing);
         }
         if (! $response->successful()) {
-            throw new RuntimeException(self::PROVIDERS[$provider]['label'].' couldn’t check the key right now ('.$response->status().'). Try again.');
+            throw new RuntimeException($name.' couldn’t check the key right now ('.$response->status().'). Try again.');
+        }
+        // A site that serves a page for every path answers 200 too; an API lists its models.
+        if ($provider === 'custom' && (! is_array($response->json()) || ! is_array($response->json('data')))) {
+            throw new RuntimeException($missing);
         }
     }
 }

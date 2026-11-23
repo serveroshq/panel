@@ -28,7 +28,7 @@ final class RedeployApp extends Tool
     public function description(): string
     {
         return 'Sends a deploy again exactly as it was sent (same code, settings, domain and any generated passwords), as the dashboard’s Redeploy button on a deploy does. Works for apps built from code and for template stacks. '
-            .'By default it redeploys what’s live now: the app’s latest successful deploy. Since releases are named by their commit, the same commit replaces the running container in place, which can mean a moment of downtime. Pass job (a deploy id from list_deploys or get_app’s versions) to send an earlier deploy of the app again instead: that rolls the app back to that version, settings included. '
+            .'By default it redeploys what’s live now: the app’s latest successful deploy. An up-to-date daemon starts the same commit beside the running container and switches over once it’s healthy, with no downtime, and skips the build when nothing changed; an older daemon replaces it in place, a moment of downtime. Pass job (a deploy id from list_deploys or get_app’s versions) to send an earlier deploy of the app again instead: that rolls the app back to that version, settings included. '
             .'Check with the person first: say the app, the machine and which version. A deploy still under way can’t be sent again until it has gone quiet for 10 minutes; then it is marked cancelled and sent anew. Returns the new job; follow it with get_job or list_deploys.';
     }
 

@@ -54,6 +54,18 @@ test('on serveros.com every feature and limit matches the plan', function (Plan 
         ->and($workspace->limitOf(Limit::StatusSubscribers))->toBe($plan->statusSubscriberLimit());
 })->with([Plan::Essential, Plan::Pro, Plan::Business]);
 
+test('on serveros.com a trial workspace uses its trial plan for activity retention', function () {
+    $trial = Workspace::factory()->create();
+    $businessTrial = Workspace::factory()->create(['trial_plan' => Plan::Business]);
+
+    expect($trial->isActive())->toBeTrue()
+        ->and($trial->effectivePlan())->toBe(Plan::Pro)
+        ->and($trial->logRetentionDays())->toBe(Plan::Pro->logRetentionDays())
+        ->and($trial->activityRetentionDays())->toBe(Plan::Pro->activityRetentionDays())
+        ->and($businessTrial->effectivePlan())->toBe(Plan::Business)
+        ->and($businessTrial->activityRetentionDays())->toBe(Plan::Business->activityRetentionDays());
+});
+
 test('on serveros.com a workspace with no plan or trial is inactive and gets the no-plan values', function () {
     $lapsed = Workspace::factory()->create(['plan' => null, 'trial_ends_at' => now()->subDay()]);
 

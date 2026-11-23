@@ -14,6 +14,7 @@ use App\Models\McpOAuthCode;
 use App\Models\McpToken;
 use App\Models\McpToolCall;
 use App\Models\ServiceSample;
+use App\Models\TrafficRollup;
 use App\Models\Workspace;
 use App\Models\WorkspaceLogStore;
 use App\Support\Logs\LogCounts;
@@ -27,7 +28,7 @@ class PruneLogs extends Command
 {
     protected $signature = 'logs:prune';
 
-    protected $description = 'Delete service log lines older than each workspace\'s plan keeps them, activity past the plan\'s 90 to 365 days, account events past a year (failed sign-ins past 90 days), staff actions and View as history past two years, machine usage history older than 30 days, service usage readings past a day (thinned to one a minute after an hour), and spent MCP access';
+    protected $description = 'Delete service log lines older than each workspace\'s plan keeps them, activity past the plan\'s 90 to 365 days, account events past a year (failed sign-ins past 90 days), staff actions and View as history past two years, machine usage history older than 30 days, service usage readings past a day (thinned to one a minute after an hour), site traffic minutes past two days and hours past 90 days, and spent MCP access';
 
     public function handle(): int
     {
@@ -90,6 +91,10 @@ class PruneLogs extends Command
 
         $serviceSamples = ServiceSample::prune();
         $this->info("Deleted {$serviceSamples} service usage readings.");
+
+        TrafficRollup::rollUp();
+        $traffic = TrafficRollup::prune();
+        $this->info("Deleted {$traffic} site traffic minutes and hours.");
 
         $calls = McpToolCall::query()->where('created_at', '<', now()->subDays(McpToolCall::KEEP_DAYS))->delete();
         McpOAuthCode::query()->where('expires_at', '<', now()->subDay())->delete();

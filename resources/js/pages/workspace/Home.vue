@@ -37,6 +37,7 @@ import McpDialog from '@/components/workspace/McpDialog.vue';
 import DotMeter from '@/components/charts/DotMeter.vue';
 import RidgeChart from '@/components/charts/RidgeChart.vue';
 import SegmentedTabs from '@/components/workspace/SegmentedTabs.vue';
+import SupportAsk from '@/components/workspace/SupportAsk.vue';
 import WorkspacePage from '@/components/workspace/WorkspacePage.vue';
 import { useAssistant } from '@/composables/useAssistant';
 import { useUpgradeLink } from '@/composables/useUpgradeLink';
@@ -68,6 +69,7 @@ type Props = {
     memberCount: number;
     lastBackup: string | null;
     panelUpdate: { version: string; current: string } | null;
+    supportAsk: { donateUrl: string; licenseUrl: string } | null;
     licenseMachines?: {
         allowed: number;
         connected: number;
@@ -647,6 +649,12 @@ const focusRing =
                     $t('Update')
                 }}</span>
             </Link>
+
+            <SupportAsk
+                v-if="supportAsk"
+                :ask="supportAsk"
+                :workspace-id="workspace.id"
+            />
 
             <Link
                 v-if="fixesWaiting.length"

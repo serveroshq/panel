@@ -176,7 +176,7 @@ const statusHint = computed(() => {
                   'Paused while the workspace has no license for it. New lines go to this panel’s database.',
               )
             : trans(
-                  'Paused while the workspace isn’t on Business. New lines go to ServerOS’s storage.',
+                  'Paused while the workspace isn’t on Scale. New lines go to ServerOS’s storage.',
               );
     }
     if (props.store.status === 'unreachable') {
@@ -220,10 +220,10 @@ async function copyIp(): Promise<void> {
                 <template v-else>{{
                     paused
                         ? $t(
-                              'Your plan doesn’t include your own log storage any more, so new lines go to ServerOS’s storage, with its daily limit. Lines already in your database stay there. Move to Business and new lines go to your database again.',
+                              'Your plan doesn’t include your own log storage any more, so new lines go to ServerOS’s storage, with its daily limit. Lines already in your database stay there. Move to Scale and new lines go to your database again.',
                           )
                         : $t(
-                              'Keeping logs in a Postgres database you own comes with Business.',
+                              'Keeping logs in a Postgres database you own comes with Scale.',
                           )
                 }}</template>
             </p>

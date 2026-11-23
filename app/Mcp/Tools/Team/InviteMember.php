@@ -31,7 +31,7 @@ final class InviteMember extends Tool
     public function description(): string
     {
         return 'Invites someone to the workspace by email: ServerOS emails them a link to join (it expires after 7 days), and they get the role when they accept, once they’ve signed in or signed up with that address. '
-            .'Inviting an address that already has a pending invite refreshes its link and role and emails it again. `role` is admin, member or viewer, or one of the workspace’s own roles on Business (list_roles shows them and what each can do); Member and Viewer are on Pro and Business, so on Essential people can only be invited as Admins. People already in the workspace can’t be invited. '
+            .'Inviting an address that already has a pending invite refreshes its link and role and emails it again. `role` is admin, member or viewer, or one of the workspace’s own roles on Scale (list_roles shows them and what each can do); Member and Viewer are on Pro and Scale, so on Essential people can only be invited as Admins. People already in the workspace can’t be invited. '
             .'An admin can change settings and invite or remove people, so check the email address and role with the person first. Returns the pending invite; the link itself is only in the email.';
     }
 
@@ -67,7 +67,7 @@ final class InviteMember extends Tool
 
         $problems = [];
         if ($role->isStaffRole() && ! $workspace->hasStaffRoles()) {
-            $problems[] = 'Member and Viewer roles are on Pro and Business. Invite them as an Admin, or upgrade.';
+            $problems[] = 'Member and Viewer roles are on Pro and Scale. Invite them as an Admin, or upgrade.';
         } elseif (! $workspace->canGrant($context->user, Workspace::permissionsFor($role, $custom))) {
             $problems[] = 'You can’t give a role with more access than your own. list_roles shows what each role can do.';
         }

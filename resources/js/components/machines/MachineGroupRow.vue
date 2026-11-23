@@ -8,6 +8,7 @@ import {
     SolarTrash2 as Trash2,
 } from '@/lib/solarIcons';
 import { computed } from 'vue';
+import { fixed } from '@/lib/formatting';
 import CpuBar from '@/components/machines/CpuBar.vue';
 import type { Machine, MachineColumns } from '@/components/machines/machines';
 import {
@@ -63,7 +64,7 @@ const services = computed(() =>
 const memory = computed(() => {
     const mb = props.machines.reduce((sum, m) => sum + (m.memoryMb ?? 0), 0);
 
-    return mb ? `${(mb / 1024).toFixed(1)} GiB` : '—';
+    return mb ? `${fixed(mb / 1024)} GiB` : '—';
 });
 
 const backups = computed(() => {

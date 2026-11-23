@@ -278,7 +278,7 @@ test('create_workflow needs Pro, and stops at 100', function () {
     [$essential, , $essentialKey] = wfToolsSetup(Plan::Essential);
     $denied = mcpCall($essential, $essentialKey, 'create_workflow', ['template' => 'blank']);
     expect($denied['error'])->toBeTrue()
-        ->and($denied['data']['error'])->toBe('Workflows come with Pro. Choose Pro or Business to use them.')
+        ->and($denied['data']['error'])->toBe('Workflows come with Pro. Choose Pro or Scale to use them.')
         ->and(Workflow::query()->count())->toBe(0);
 
     [$workspace, , $key] = wfToolsSetup();
@@ -375,7 +375,7 @@ test('update_workflow won’t turn on a workflow with problems, or on a plan wit
     $ok = wfToolsFlow($essential, [['t', 'trigger', ['event' => 'manual']], ['a', 'alert', ['subject' => 'x'], 't']]);
     $plan = mcpCall($essential, $essentialKey, 'update_workflow', ['workflow' => $ok->id, 'enabled' => true]);
     expect($plan['error'])->toBeTrue()
-        ->and($plan['data']['error'])->toBe('Workflows come with Pro. Choose Pro or Business to turn one on.')
+        ->and($plan['data']['error'])->toBe('Workflows come with Pro. Choose Pro or Scale to turn one on.')
         ->and(mcpCall($essential, $essentialKey, 'update_workflow', ['workflow' => $ok->id, 'name' => 'Still off'])['error'])->toBeFalse();
 });
 

@@ -179,3 +179,52 @@ test('detection hands the Compose file and its port to the dialog and to MCP', f
         ->and(TemplateGuide::for($template)['byHand'])->not->toContain('Dockerfile')
         ->and(app(DetectRepository::class)->description())->toContain('compose-file');
 });
+
+test('an app builds from a folder of its repository on a daemon that can', function () {
+    [$workspace, , $url] = composeMachine('0.1.1-pre.45');
+
+    $this->actingAs($workspace->owner)->postJson($url, [
+        'template' => 'nextjs', 'service' => 'web', 'repo' => 'https://github.com/example/mono.git', 'commit' => str_repeat('c', 40),
+        'base_dir' => 'apps/web',
+    ])->assertAccepted();
+
+    $job = sentComposeJob();
+    expect($job['base_dir'])->toBe('apps/web')->and($job['files'])->toHaveKey('.serveros/Dockerfile');
+});
+
+test('without a folder the job is as it was', function () {
+    [$workspace, , $url] = composeMachine('0.1.1-pre.45');
+
+    $this->actingAs($workspace->owner)->postJson($url, [
+        'template' => 'nextjs', 'service' => 'web', 'repo' => 'https://github.com/example/mono.git', 'commit' => str_repeat('c', 40),
+    ])->assertAccepted();
+
+    expect(sentComposeJob())->not->toHaveKey('base_dir');
+});
+
+test('an older daemon is told to update before building from a folder', function () {
+    [$workspace, , $url] = composeMachine('0.1.1-pre.44');
+
+    $this->actingAs($workspace->owner)->postJson($url, [
+        'template' => 'nextjs', 'service' => 'web', 'repo' => 'https://github.com/example/mono.git', 'commit' => str_repeat('c', 40),
+        'base_dir' => 'apps/web',
+    ])->assertUnprocessable()->assertJsonValidationErrors(['base_dir' => 'too old']);
+
+    expect(sentComposeJob())->toBeNull();
+});
+
+test('the folder stays inside the repository, and a Compose file takes a path instead', function (string $template, string $folder) {
+    [$workspace, , $url] = composeMachine('0.1.1-pre.45');
+
+    $this->actingAs($workspace->owner)->postJson($url, [
+        'template' => $template, 'service' => 'web', 'repo' => 'https://github.com/example/mono.git', 'commit' => str_repeat('c', 40),
+        'base_dir' => $folder,
+    ])->assertUnprocessable()->assertJsonValidationErrors('base_dir');
+
+    expect(sentComposeJob())->toBeNull();
+})->with([
+    'outside the repository' => ['nextjs', '../etc'],
+    'an absolute path' => ['nextjs', '/srv/app'],
+    'a dot folder' => ['nextjs', 'apps/./web'],
+    'a Compose app' => ['compose-file', 'apps/web'],
+]);
