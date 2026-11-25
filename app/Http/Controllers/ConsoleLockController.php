@@ -11,6 +11,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
+use Laravel\Passkeys\Actions\VerifyPasskey;
+use Laravel\Passkeys\Http\Requests\PasskeyVerificationRequest;
 
 class ConsoleLockController extends Controller
 {
@@ -28,6 +30,18 @@ class ConsoleLockController extends Controller
             throw ValidationException::withMessages(['code' => 'That code didn’t work. Use the current one from your authenticator app.']);
         }
         Activity::record($workspace, 'console.unlock', meta: ['minutes' => ConsoleLock::MINUTES]);
+
+        return response()->json(['unlockedUntil' => $lock->unlockedUntil()?->toIso8601String()]);
+    }
+
+    #[Audited]
+    public function passkey(PasskeyVerificationRequest $request, Workspace $workspace, ConsoleLock $lock, VerifyPasskey $verify): JsonResponse
+    {
+        Gate::authorize('manageMachines', $workspace);
+
+        $verify($request->credential(), $request->verificationOptions(), $request->user());
+        $lock->open();
+        Activity::record($workspace, 'console.unlock', meta: ['minutes' => ConsoleLock::MINUTES, 'via' => 'passkey']);
 
         return response()->json(['unlockedUntil' => $lock->unlockedUntil()?->toIso8601String()]);
     }

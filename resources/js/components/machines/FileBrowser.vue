@@ -37,6 +37,7 @@ import {
     InputOTPGroup,
     InputOTPSlot,
 } from '@/components/ui/input-otp';
+import ConsolePasskeyUnlock from '@/components/machines/ConsolePasskeyUnlock.vue';
 import AppButton from '@/components/workspace/AppButton.vue';
 import DangerButton from '@/components/workspace/DangerButton.vue';
 import SubmitButton from '@/components/workspace/SubmitButton.vue';
@@ -67,6 +68,8 @@ const props = defineProps<{
     maxRead: number;
     consoleLock: {
         twoFactorEnabled: boolean;
+        authenticator: boolean;
+        passkey: boolean;
         unlockedUntil: string | null;
         minutes: number;
     };
@@ -267,19 +270,23 @@ async function unlock(): Promise<void> {
 
             return;
         }
-        router.reload({
-            only: ['consoleLock'],
-            onFinish: () => {
-                const then = pending.value;
-                pending.value = null;
-                then?.();
-            },
-        });
+        reloadUnlocked();
     } catch (error) {
         unlockError.value = errorMessage(error);
     } finally {
         unlocking.value = false;
     }
+}
+
+function reloadUnlocked(): void {
+    router.reload({
+        only: ['consoleLock'],
+        onFinish: () => {
+            const then = pending.value;
+            pending.value = null;
+            then?.();
+        },
+    });
 }
 
 async function lockNow(): Promise<void> {
@@ -818,39 +825,56 @@ const focusRing =
                         <p class="text-[13px]/5 text-(--ds-text-muted)">
                             {{
                                 ' ' +
-                                $t(
-                                    'Enter the 6-digit code from your authenticator app. Files and the console stay unlocked for :minutes minutes on this device.',
-                                    {
-                                        minutes: String(
-                                            consoleLock.minutes ?? '',
-                                        ),
-                                    },
-                                ) +
+                                (consoleLock.authenticator
+                                    ? $t(
+                                          'Enter the 6-digit code from your authenticator app. Files and the console stay unlocked for :minutes minutes on this device.',
+                                          {
+                                              minutes: String(
+                                                  consoleLock.minutes ?? '',
+                                              ),
+                                          },
+                                      )
+                                    : $t(
+                                          'Confirm it’s you with your passkey. Files and the console stay unlocked for :minutes minutes on this device.',
+                                          {
+                                              minutes: String(
+                                                  consoleLock.minutes ?? '',
+                                              ),
+                                          },
+                                      )) +
                                 ' '
                             }}
                         </p>
                     </div>
-                    <InputOTP
-                        v-model="unlockCode"
-                        :maxlength="6"
-                        :disabled="unlocking"
-                        autofocus
-                        @complete="unlock"
-                    >
-                        <InputOTPGroup>
-                            <InputOTPSlot
-                                v-for="index in 6"
-                                :key="index"
-                                :index="index - 1"
-                            />
-                        </InputOTPGroup>
-                    </InputOTP>
-                    <InputError :message="unlockError ?? undefined" />
+                    <template v-if="consoleLock.authenticator">
+                        <InputOTP
+                            v-model="unlockCode"
+                            :maxlength="6"
+                            :disabled="unlocking"
+                            autofocus
+                            @complete="unlock"
+                        >
+                            <InputOTPGroup>
+                                <InputOTPSlot
+                                    v-for="index in 6"
+                                    :key="index"
+                                    :index="index - 1"
+                                />
+                            </InputOTPGroup>
+                        </InputOTP>
+                        <InputError :message="unlockError ?? undefined" />
+                    </template>
+                    <ConsolePasskeyUnlock
+                        v-if="consoleLock.passkey"
+                        :primary="!consoleLock.authenticator"
+                        @unlocked="reloadUnlocked"
+                    />
                     <div class="flex gap-2">
                         <AppButton @click="pending = null">{{
                             $t('Cancel')
                         }}</AppButton>
                         <SubmitButton
+                            v-if="consoleLock.authenticator"
                             :label="$t('Unlock')"
                             busy-label="Checking…"
                             :processing="unlocking"

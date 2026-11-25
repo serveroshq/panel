@@ -145,6 +145,8 @@ const props = defineProps<{
     files: { places: FilePlace[]; maxWrite: number; maxRead: number };
     consoleLock: {
         twoFactorEnabled: boolean;
+        authenticator: boolean;
+        passkey: boolean;
         unlockedUntil: string | null;
         minutes: number;
     };

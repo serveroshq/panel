@@ -23,7 +23,7 @@ class ConsoleLock
 
     public function requiresSetup(User $user): bool
     {
-        return ! $user->hasEnabledTwoFactorAuthentication();
+        return ! $user->hasEnabledTwoFactorAuthentication() && ! $user->passkeys()->exists();
     }
 
     public function unlockedUntil(): ?Carbon
@@ -57,9 +57,14 @@ class ConsoleLock
             return false;
         }
         RateLimiter::clear($attempts);
-        $this->session->put(self::KEY, now()->addMinutes(self::MINUTES)->getTimestamp());
+        $this->open();
 
         return true;
+    }
+
+    public function open(): void
+    {
+        $this->session->put(self::KEY, now()->addMinutes(self::MINUTES)->getTimestamp());
     }
 
     public function unlockedWith(User $user, mixed $code): bool

@@ -266,6 +266,7 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
         Route::get('machines/{machine}/deploy/jobs/{job}', [DeployKeyController::class, 'show'])->withoutScopedBindings()->middleware('throttle:120,1')->name('workspace.machines.deploy.job');
         Route::post('machines/{machine}/domain-check', DomainCheckController::class)->middleware('throttle:30,1')->name('workspace.machines.domain-check');
         Route::post('console/unlock', [ConsoleLockController::class, 'unlock'])->middleware('throttle:5,1')->name('workspace.console.unlock');
+        Route::post('console/unlock/passkey', [ConsoleLockController::class, 'passkey'])->middleware('throttle:5,1')->name('workspace.console.unlock.passkey');
         Route::post('console/lock', [ConsoleLockController::class, 'lock'])->name('workspace.console.lock');
         Route::post('machines/{machine}/files', [MachineFileController::class, 'store'])->middleware('throttle:120,1')->name('workspace.machines.files.store');
         Route::get('machines/{machine}/files/{job}', [MachineFileController::class, 'show'])->middleware('throttle:600,1')->name('workspace.machines.files.show');

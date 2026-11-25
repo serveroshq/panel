@@ -15,6 +15,9 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
+use Laravel\Passkeys\Actions\VerifyPasskey;
+use Laravel\Passkeys\Exceptions\InvalidPasskeyException;
+use Laravel\Passkeys\Passkey;
 
 /** @return array{0: Workspace, 1: Machine, 2: string} */
 function serviceMachine(): array
@@ -185,6 +188,64 @@ test('the console needs two-factor on the account and a fresh code to unlock', f
     $this->actingAs($owner)->postJson($unlock, ['code' => '123456'])->assertOk();
     $this->actingAs($owner)->postJson('https://'.$workspace->host().'/console/lock')->assertOk();
     $exec()->assertStatus(423);
+});
+
+function passkeyAssertion(): array
+{
+    $encode = fn (string $bytes) => rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+
+    return ['credential' => [
+        'id' => $encode('abc'),
+        'rawId' => $encode('abc'),
+        'type' => 'public-key',
+        'response' => [
+            'clientDataJSON' => $encode((string) json_encode(['type' => 'webauthn.get', 'challenge' => $encode(random_bytes(32)), 'origin' => 'https://serveros.test'])),
+            'authenticatorData' => $encode(hash('sha256', 'serveros.test', true).chr(5).pack('N', 1)),
+            'signature' => $encode('signature'),
+        ],
+    ]];
+}
+
+test('a passkey unlocks the console for someone without an authenticator app', function () {
+    [$workspace, , $url] = serviceMachine();
+    $owner = $workspace->owner;
+    $host = 'https://'.$workspace->host();
+    $exec = fn () => $this->actingAs($owner)->postJson($url.'docker:abc123def456/actions', ['action' => 'exec', 'command' => 'redis-cli ping']);
+    $passkey = Passkey::query()->forceCreate(['user_id' => $owner->id, 'name' => 'Laptop', 'credential_id' => 'abc', 'credential' => []]);
+
+    $verify = Mockery::mock(VerifyPasskey::class);
+    $verify->shouldReceive('__invoke')->once()->andThrow(InvalidPasskeyException::make('Passkey not recognized.'));
+    $verify->shouldReceive('__invoke')->once()->andReturn($passkey);
+    app()->instance(VerifyPasskey::class, $verify);
+
+    $exec()->assertStatus(423)->assertJson(['code' => 'console_locked']);
+    $this->actingAs($owner)->postJson($host.'/console/unlock', ['code' => '123456'])->assertUnprocessable();
+
+    $this->actingAs($owner)->postJson($host.'/console/unlock/passkey', passkeyAssertion())->assertUnprocessable();
+
+    $this->actingAs($owner)->getJson($host.'/passkeys/confirm/options')->assertOk();
+    $this->actingAs($owner)->postJson($host.'/console/unlock/passkey', passkeyAssertion())->assertUnprocessable()->assertJsonValidationErrors('credential');
+    $exec()->assertStatus(423);
+
+    $this->actingAs($owner)->getJson($host.'/passkeys/confirm/options')->assertOk();
+    $this->actingAs($owner)->postJson($host.'/console/unlock/passkey', passkeyAssertion())->assertOk()->assertJsonStructure(['unlockedUntil']);
+    $exec()->assertAccepted();
+    expect(Activity::query()->where('action', 'console.unlock')->latest('id')->first()->meta)->toMatchArray(['via' => 'passkey']);
+
+    $this->travel(ConsoleLock::MINUTES + 1)->minutes();
+    Machine::query()->latest('id')->first()->forceFill(['last_seen_at' => now()])->save();
+    $exec()->assertStatus(423);
+});
+
+test('only people who manage machines can unlock the console with a passkey', function () {
+    [$workspace] = serviceMachine();
+    $viewer = User::factory()->create();
+    $workspace->members()->attach($viewer, ['role' => 'viewer']);
+    Passkey::query()->forceCreate(['user_id' => $viewer->id, 'name' => 'Laptop', 'credential_id' => 'abc', 'credential' => []]);
+    $host = 'https://'.$workspace->host();
+
+    $this->actingAs($viewer)->getJson($host.'/passkeys/confirm/options')->assertOk();
+    $this->actingAs($viewer)->postJson($host.'/console/unlock/passkey', passkeyAssertion())->assertForbidden();
 });
 
 test('repairing queues the job for adopted containers only, and goes in the activity', function () {

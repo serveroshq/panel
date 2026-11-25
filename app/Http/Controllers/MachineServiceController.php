@@ -145,6 +145,8 @@ class MachineServiceController extends Controller
             ],
             'consoleLock' => fn () => [
                 'twoFactorEnabled' => ! $console->requiresSetup($request->user()),
+                'authenticator' => $request->user()->hasEnabledTwoFactorAuthentication(),
+                'passkey' => $request->user()->passkeys()->exists(),
                 'unlockedUntil' => $console->unlockedUntil()?->toIso8601String(),
                 'minutes' => ConsoleLock::MINUTES,
             ],
