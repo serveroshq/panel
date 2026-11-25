@@ -65,20 +65,26 @@ class SetLocale
         }
 
         foreach ($request->getLanguages() as $lang) {
-            $norm = strtolower(str_replace('_', '-', (string) $lang));
-            if ($norm === '') {
+            $tag = strtolower(str_replace('_', '-', (string) $lang));
+            if ($tag === '') {
                 continue;
             }
-            if (isset($lookup[$norm])) {
-                return $lookup[$norm];
+
+            if (isset($lookup[$tag])) {
+                return $lookup[$tag];
             }
-            if (isset(self::ALIASES[$norm]) && in_array(self::ALIASES[$norm], $supported, true)) {
-                return self::ALIASES[$norm];
+            if (isset(self::ALIASES[$tag]) && in_array(self::ALIASES[$tag], $supported, true)) {
+                return self::ALIASES[$tag];
+            }
+
+            // A regional tag takes its primary language before the next tag
+            // gets a turn, so "de-DE, en" stays German.
+            $primary = str_contains($tag, '-') ? strstr($tag, '-', true) : false;
+            if (is_string($primary) && isset($lookup[$primary])) {
+                return $lookup[$primary];
             }
         }
 
-        $browser = $request->getPreferredLanguage($supported);
-
-        return is_string($browser) && in_array($browser, $supported, true) ? $browser : null;
+        return null;
     }
 }
