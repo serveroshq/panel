@@ -8,6 +8,7 @@ use App\Models\DeploySource;
 use App\Models\Machine;
 use App\Support\DaemonJobQueue;
 use App\Support\Deploys\GitRemote;
+use App\Support\Firewall;
 use App\Support\Projects\Placement;
 
 /**
@@ -75,7 +76,22 @@ final class MachineMoveCheck
 
         $warnings = [...$warnings, ...self::capacity($from, $to)];
 
-        if ($domains !== []) {
+        $tunnel = MachineMoves::tunnelToken($from) !== null && CloudflareTunnel::active($from);
+        if ($tunnel && CloudflareTunnel::supported($to)) {
+            $warnings[] = self::say('At the switch-over, :from’s Cloudflare Tunnel moves to :to, so the domains need no DNS change.', ['from' => $from->name, 'to' => $to->name]);
+        } elseif ($tunnel) {
+            $blocking[] = self::say(':to’s daemon can’t run :from’s Cloudflare Tunnel yet. It updates itself, or run “sudo serverosd update” on it.', ['to' => $to->name, 'from' => $from->name]);
+        } elseif (CloudflareTunnel::active($from)) {
+            $warnings[] = self::say(':from’s Cloudflare Tunnel was set up outside ServerOS, so it doesn’t move. Point its routes at :to yourself.', ['from' => $from->name, 'to' => $to->name]);
+        }
+
+        if (($ports = MachineFile::openedPorts($from)) !== []) {
+            $warnings[] = Firewall::report($to) !== null
+                ? self::say('Ports ServerOS opened on :from (:ports) are opened on :to too.', ['from' => $from->name, 'to' => $to->name, 'ports' => implode(', ', $ports)])
+                : self::say('ServerOS can’t see :to’s firewall, so the ports it opened on :from (:ports) aren’t opened there. Open them yourself.', ['from' => $from->name, 'to' => $to->name, 'ports' => implode(', ', $ports)]);
+        }
+
+        if ($domains !== [] && ! $tunnel) {
             $warnings[] = self::say('Point :domains at :to only when you switch over. Their certificates are issued there once they do.', [
                 'domains' => implode(', ', array_slice($domains, 0, 5)).(count($domains) > 5 ? ', …' : ''),
                 'to' => $to->name,

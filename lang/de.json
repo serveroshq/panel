@@ -3648,5 +3648,9 @@
     "Adding its domains": "Domains werden hinzugefügt",
     "Sending": "Wird gesendet",
     "Sent": "Gesendet",
-    "Restoring": "Wird wiederhergestellt"
+    "Restoring": "Wird wiederhergestellt",
+    "Ports opened on :to:": "Auf :to geöffnete Ports:",
+    "Some ports couldn’t be opened on :to. Open them in its firewall yourself.": "Einige Ports konnten auf :to nicht geöffnet werden. Öffne sie selbst in seiner Firewall.",
+    "Traffic now goes through the Cloudflare Tunnel on :to, so DNS doesn’t need changing. :from’s apps stay stopped, ready to roll back to.": "Der Traffic läuft jetzt über den Cloudflare Tunnel auf :to, DNS muss also nicht geändert werden. Die Apps auf :from bleiben gestoppt, bereit zum Zurückwechseln.",
+    "Opening": "Wird geöffnet"
 }

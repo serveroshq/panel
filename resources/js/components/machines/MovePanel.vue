@@ -22,6 +22,8 @@ export type Move = {
     to: { id: number; name: string; address: string | null };
     domains: string[];
     stopped: number;
+    firewall: { rule: string; state: string; error: string | null }[];
+    tunnel: string | null;
     apps: {
         name: string;
         state: string;
@@ -96,6 +98,8 @@ const STATES: Record<string, string> = {
     sent: 'Sent',
     restoring: 'Restoring',
     copied: 'Copied',
+    opening: 'Opening',
+    opened: 'Opened',
 };
 
 function label(state: string): string {
@@ -392,7 +396,48 @@ onBeforeUnmount(() => clearTimeout(timer));
             </ul>
 
             <p
-                v-if="current.state === 'switched' && current.domains.length"
+                v-if="current.firewall.length"
+                class="text-(--ds-text-muted) tabular-nums"
+            >
+                {{ $t('Ports opened on :to:', { to: current.to.name }) }}
+                <template
+                    v-for="(entry, i) in current.firewall"
+                    :key="entry.rule"
+                >
+                    {{ i > 0 ? ', ' : '' }}{{ entry.rule }} ({{
+                        label(entry.state)
+                    }})
+                </template>
+            </p>
+            <p
+                v-if="current.firewall.some((e) => e.error)"
+                class="text-(--ds-red)"
+            >
+                {{
+                    $t(
+                        'Some ports couldn’t be opened on :to. Open them in its firewall yourself.',
+                        { to: current.to.name },
+                    )
+                }}
+            </p>
+
+            <p
+                v-if="
+                    current.state === 'switched' && current.tunnel === 'moved'
+                "
+                class="text-(--ds-text-muted)"
+            >
+                {{
+                    $t(
+                        'Traffic now goes through the Cloudflare Tunnel on :to, so DNS doesn’t need changing. :from’s apps stay stopped, ready to roll back to.',
+                        { to: current.to.name, from: current.from.name },
+                    )
+                }}
+            </p>
+            <p
+                v-else-if="
+                    current.state === 'switched' && current.domains.length
+                "
                 class="text-(--ds-text-muted)"
             >
                 {{

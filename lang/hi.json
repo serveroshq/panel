@@ -3648,5 +3648,9 @@
     "Adding its domains": "Domains जोड़े जा रहे हैं",
     "Sending": "भेजा जा रहा है",
     "Sent": "भेजा गया",
-    "Restoring": "Restore हो रहा है"
+    "Restoring": "Restore हो रहा है",
+    "Ports opened on :to:": ":to पर खोले गए ports:",
+    "Some ports couldn’t be opened on :to. Open them in its firewall yourself.": ":to पर कुछ ports नहीं खुल सके। उन्हें उसकी firewall में खुद खोलें।",
+    "Traffic now goes through the Cloudflare Tunnel on :to, so DNS doesn’t need changing. :from’s apps stay stopped, ready to roll back to.": "अब traffic :to पर Cloudflare Tunnel से जाता है, इसलिए DNS बदलने की ज़रूरत नहीं। :from के ऐप रुके रहते हैं, rollback के लिए तैयार।",
+    "Opening": "खुल रहा है"
 }

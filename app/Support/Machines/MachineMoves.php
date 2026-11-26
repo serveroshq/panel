@@ -2,6 +2,7 @@
 
 namespace App\Support\Machines;
 
+use App\Http\Controllers\MachineFirewallController;
 use App\Mcp\Tools\Deploy\Deploys;
 use App\Models\Activity;
 use App\Models\BackupDestination;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Support\Backups\ReceiverKey;
 use App\Support\DaemonJobQueue;
 use App\Support\Deploys\AppReleases;
+use App\Support\Firewall;
 use App\Support\Projects\Placement;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -49,6 +51,21 @@ final class MachineMoves
         private readonly ReceiverKey $keys,
     ) {}
 
+    /**
+     * The token the machine's Cloudflare Tunnel was started with, from the
+     * job that started it (kept encrypted with the job), or null when it
+     * wasn't started from ServerOS.
+     */
+    public static function tunnelToken(Machine $machine): ?string
+    {
+        $job = DaemonJob::query()->where('machine_id', $machine->id)->where('kind', CloudflareTunnel::KIND)
+            ->where('state', 'succeeded')->latest()->limit(20)->get()
+            ->first(fn (DaemonJob $j) => in_array($j->command['job']['action'] ?? null, ['up', 'down'], true));
+        $token = $job?->command['job']['action'] === 'up' ? ($job->command['job']['token'] ?? null) : null;
+
+        return is_string($token) && CloudflareTunnel::tunnelId($token) !== null ? $token : null;
+    }
+
     public static function active(Machine $from): ?MachineMove
     {
         return MachineMove::query()->where('from_machine_id', $from->id)
@@ -74,6 +91,9 @@ final class MachineMoves
                 'user_id' => $user->id,
                 'state' => 'copying',
             ]);
+            if (Firewall::report($to) !== null) {
+                $move->forceFill(['firewall' => array_map(fn (string $rule) => ['rule' => $rule, 'state' => 'waiting', 'job' => null, 'error' => null], MachineFile::openedPorts($from))])->save();
+            }
             foreach (MachineFile::apps($from) as $app) {
                 $row = $move->apps()->create(['name' => $app['name'], 'source' => $app['source'], 'state' => 'deploying']);
                 foreach (self::dataOf($from, $app['name']) as $service) {
@@ -124,7 +144,9 @@ final class MachineMoves
             }
 
             $locked->copies()->update(['state' => 'waiting', 'round' => 2, 'backup_job_id' => null, 'restore_job_id' => null, 'snapshot' => null, 'received' => null, 'error' => null]);
-            $locked->forceFill(['state' => 'switching', 'round' => 2, 'stopped' => $stopped, 'error' => null])->save();
+            $tunnel = CloudflareTunnel::active($locked->from) && CloudflareTunnel::supported($locked->to) && self::tunnelToken($locked->from) !== null
+                ? ['state' => 'pending', 'job' => null] : null;
+            $locked->forceFill(['state' => 'switching', 'round' => 2, 'stopped' => $stopped, 'tunnel' => $tunnel, 'error' => null])->save();
             Activity::record($locked->workspace_id, 'machine.move_switch', $locked->from->name, $locked->from, $user, ['to' => $locked->to->name]);
         });
 
@@ -141,6 +163,15 @@ final class MachineMoves
         foreach ($move->stopped ?? [] as $stopped) {
             try {
                 $this->queue->queue($move->from, $user, 'service_action', ['type' => 'service_action', 'service' => $stopped['key'], 'action' => 'start'], $stopped['key']);
+            } catch (RuntimeException $e) {
+                report($e);
+            }
+        }
+        // The tunnel goes back to the source, started there before it stops here.
+        if (in_array($move->tunnel['state'] ?? null, ['starting', 'stopping_source', 'moved'], true) && ($token = self::tunnelToken($move->from) ?? self::tunnelToken($move->to)) !== null) {
+            try {
+                $this->queue->queue($move->from, $user, CloudflareTunnel::KIND, ['type' => 'tunnel', 'action' => 'up', 'token' => $token], null, 600);
+                $this->queue->queue($move->to, $user, CloudflareTunnel::KIND, ['type' => 'tunnel', 'action' => 'down'], null, 600);
             } catch (RuntimeException $e) {
                 report($e);
             }
@@ -242,9 +273,11 @@ final class MachineMoves
             $copy->forceFill($ok ? ['state' => 'copied', 'error' => null] : ['state' => 'failed', 'error' => $error])->save();
             $moves[$copy->app->machine_move_id] = $copy->app->move;
         }
-        if ($job->kind === 'service_action') {
-            // The source's apps stopping for the final copy.
-            foreach (MachineMove::query()->where('from_machine_id', $job->machine_id)->where('state', 'switching')->get() as $move) {
+        if (in_array($job->kind, ['service_action', 'firewall_rule', CloudflareTunnel::KIND], true)) {
+            // The source's apps stopping, ports opening, or the tunnel moving.
+            $waiting = MachineMove::query()->whereIn('state', ['copying', 'switching'])
+                ->where(fn ($q) => $q->where('from_machine_id', $job->machine_id)->orWhere('to_machine_id', $job->machine_id))->get();
+            foreach ($waiting as $move) {
                 $moves[$move->id] = $move;
             }
         }
@@ -298,6 +331,8 @@ final class MachineMoves
             'to' => ['id' => $move->to->id, 'name' => $move->to->name, 'address' => $move->to->ip_address],
             'domains' => array_values(array_unique($domains)),
             'stopped' => count($move->stopped ?? []),
+            'firewall' => array_map(fn (array $e) => ['rule' => $e['rule'], 'state' => $e['state'], 'error' => $e['error']], $move->firewall ?? []),
+            'tunnel' => $move->tunnel['state'] ?? null,
             'startedAt' => $move->created_at?->toIso8601String(),
             'switchedAt' => $move->switched_at?->toIso8601String(),
             'finishedAt' => $move->finished_at?->toIso8601String(),
@@ -347,11 +382,83 @@ final class MachineMoves
                 return;
             }
 
+            if ($move->round === 1) {
+                $this->advanceFirewall($move, $user);
+            }
             foreach ($move->apps as $app) {
                 $this->advanceApp($move, $app, $user);
             }
             $this->settle($move, $user);
         });
+    }
+
+    /** Opens the source's ports on the destination one at a time; a port that won't open is reported, not fatal. */
+    private function advanceFirewall(MachineMove $move, User $user): void
+    {
+        $entries = $move->firewall ?? [];
+        foreach ($entries as $i => $entry) {
+            if ($entry['state'] === 'opening') {
+                $job = $entry['job'] === null ? null : DaemonJob::query()->find($entry['job']);
+                if ($job !== null && in_array($job->state, ['queued', 'running'], true)) {
+                    return;
+                }
+                $entries[$i] = $job?->state === 'succeeded'
+                    ? ['state' => 'opened', 'error' => null] + $entry
+                    : ['state' => 'failed', 'error' => mb_substr((string) ($job?->error['message'] ?? self::say('The port couldn’t be opened.')), 0, 500)] + $entry;
+            }
+        }
+        foreach ($entries as $i => $entry) {
+            if ($entry['state'] === 'waiting') {
+                try {
+                    [$port, $proto] = explode('/', $entry['rule']);
+                    $job = $this->queue->queue($move->to, $user, 'firewall_rule', MachineFirewallController::job('open', (int) $port, $proto), null, 120);
+                    $entries[$i] = ['state' => 'opening', 'job' => $job->id] + $entry;
+                    Activity::record($move->workspace_id, 'machine.firewall', $move->to->name, $move->to, $user, ['action' => 'open', 'port' => $entry['rule']]);
+                } catch (RuntimeException $e) {
+                    $entries[$i] = ['state' => 'failed', 'error' => $e->getMessage()] + $entry;
+                }
+                break;
+            }
+        }
+        $move->forceFill(['firewall' => $entries])->save();
+    }
+
+    /**
+     * Moves the source's Cloudflare Tunnel once the apps have their domains:
+     * started on the destination with the same token first, so traffic always
+     * has somewhere to go, then stopped on the source. True once it's moved.
+     */
+    private function advanceTunnel(MachineMove $move, User $user): bool
+    {
+        $tunnel = $move->tunnel;
+        if ($tunnel === null || $tunnel['state'] === 'moved') {
+            return true;
+        }
+        $job = $tunnel['job'] === null ? null : DaemonJob::query()->find($tunnel['job']);
+        if ($job !== null && in_array($job->state, ['queued', 'running'], true)) {
+            return false;
+        }
+        if ($tunnel['state'] !== 'pending' && $job?->state !== 'succeeded') {
+            $move->forceFill(['state' => 'failed', 'error' => self::say('The Cloudflare Tunnel couldn’t be moved: :error', ['error' => (string) ($job?->error['message'] ?? self::say('the job is gone'))])])->save();
+
+            return false;
+        }
+
+        try {
+            [$machine, $step, $next] = match ($tunnel['state']) {
+                'pending' => [$move->to, ['type' => 'tunnel', 'action' => 'up', 'token' => (string) self::tunnelToken($move->from)], 'starting'],
+                'starting' => [$move->from, ['type' => 'tunnel', 'action' => 'down'], 'stopping_source'],
+                default => [null, null, 'moved'],
+            };
+            $id = $machine === null || $step === null ? null : $this->queue->queue($machine, $user, CloudflareTunnel::KIND, $step, null, 600)->id;
+            $move->forceFill(['tunnel' => ['state' => $next, 'job' => $id]])->save();
+        } catch (RuntimeException $e) {
+            $move->forceFill(['state' => 'failed', 'error' => $e->getMessage()])->save();
+
+            return false;
+        }
+
+        return $next === 'moved';
     }
 
     private function advanceApp(MachineMove $move, MachineMoveApp $app, User $user): void
@@ -423,7 +530,8 @@ final class MachineMoves
             return;
         }
 
-        if ($move->round === 1 && $move->apps->every(fn (MachineMoveApp $a) => $a->state === 'ready')) {
+        $opening = collect($move->firewall ?? [])->contains(fn (array $e) => in_array($e['state'], ['waiting', 'opening'], true));
+        if ($move->round === 1 && ! $opening && $move->apps->every(fn (MachineMoveApp $a) => $a->state === 'ready')) {
             // Ready once the destination says every app's containers are running.
             foreach ($move->apps as $app) {
                 $running = self::containers($move->to, $app->name);
@@ -437,6 +545,9 @@ final class MachineMoves
         }
 
         if ($move->round === 2 && $move->apps->every(fn (MachineMoveApp $a) => $a->state === 'switched')) {
+            if (! $this->advanceTunnel($move, $user)) {
+                return;
+            }
             $move->forceFill(['state' => 'switched', 'switched_at' => now()])->save();
             $this->revoke($move, $user);
         }

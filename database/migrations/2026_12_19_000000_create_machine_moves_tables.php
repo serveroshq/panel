@@ -32,6 +32,10 @@ return new class extends Migration
             $table->uuid('receiver_job_id')->nullable()->index();
             // Source containers stopped for the switch-over: [{key, job}]
             $table->json('stopped')->nullable();
+            // Ports ServerOS opened on the source, opened on the destination too: [{rule, state, job, error}]
+            $table->json('firewall')->nullable();
+            // The source's Cloudflare Tunnel, moved at the switch-over: {state, job}
+            $table->json('tunnel')->nullable();
             $table->timestamp('switched_at')->nullable();
             $table->timestamp('finished_at')->nullable();
             $table->timestamps();

@@ -54,7 +54,7 @@ function moveSetup(): array
         'daemon_version' => 'v0.1.1-pre.51',
         'facts' => ['arch' => 'x86_64', 'docker_version' => '27.0.1', 'memory_bytes' => 16 << 30],
         'disks' => [['mount' => '/', 'used' => 5 << 30, 'total' => 160 << 30]],
-        'inventory' => ['services' => [], 'listeners' => [['port' => 22, 'address' => '0.0.0.0', 'proto' => 'tcp']]],
+        'inventory' => ['services' => [], 'listeners' => [['port' => 22, 'address' => '0.0.0.0', 'proto' => 'tcp']], 'firewall' => ['backend' => 'ufw', 'active' => true]],
     ])->save();
 
     moveDeploy($from, 'shop', [
@@ -258,7 +258,26 @@ function destinationRuns(Machine $to): void
     $to->forceFill(['inventory' => ['services' => [
         ['key' => 'docker:web2', 'name' => 'serveros-shop-aaaaaaaaaaaa', 'kind' => 'app', 'status' => 'running', 'details' => ['managed' => 'true', 'backup' => 'tar']],
         ['key' => 'docker:pg2', 'name' => 'serveros-shopdb-postgres-1', 'kind' => 'database', 'status' => 'running', 'details' => ['managed' => 'true', 'compose_project' => 'serveros-shopdb', 'backup' => 'pg_dumpall']],
-    ], 'listeners' => []]])->save();
+    ], 'listeners' => [], 'firewall' => ['backend' => 'ufw', 'active' => true]]])->save();
+}
+
+/** @param  array<string, mixed>  $job */
+function pastJob(Machine $machine, string $kind, array $job, int $minutesAgo): DaemonJob
+{
+    $record = DaemonJob::query()->create([
+        'id' => (string) Str::uuid(), 'machine_id' => $machine->id, 'user_id' => $machine->workspace->owner_id,
+        'kind' => $kind, 'state' => 'succeeded', 'command' => ['job' => $job],
+    ]);
+    $record->forceFill(['created_at' => now()->subMinutes($minutesAgo)])->save();
+
+    return $record;
+}
+
+const MOVE_TUNNEL_ID = '0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0';
+
+function moveTunnelToken(): string
+{
+    return rtrim(strtr(base64_encode((string) json_encode(['a' => 'account', 't' => MOVE_TUNNEL_ID, 's' => 'tunnel-secret'])), '+/', '-_'), '=');
 }
 
 /** Sends and restores every copy waiting, as both machines would. */
@@ -276,10 +295,13 @@ function copyEverything(Machine $from, Machine $to, MachineMove $move): void
 }
 
 /** @return array{0: Workspace, 1: Machine, 2: Machine, 3: string, 4: MachineMove} */
-function moveToReady(): array
+function moveToReady(?Closure $before = null): array
 {
     fakeMoveKeys();
     [$workspace, $from, $to, $url] = moveSetup();
+    if ($before !== null) {
+        $before($from, $to);
+    }
     test()->actingAs($workspace->owner)->postJson($url.'/moves', ['to' => $to->id])->assertAccepted();
     $move = MachineMove::query()->sole();
 
@@ -474,4 +496,61 @@ test('a move keeps the destination’s other receiver keys, and is only seen fro
 
     $this->actingAs($workspace->owner)->get($url.'/settings')
         ->assertInertia(fn (Assert $page) => $page->where('move.id', $move->id)->where('move.state', 'copying'));
+});
+
+test('ports ServerOS opened on the source are opened on the destination before the move is ready', function () {
+    [$workspace, $from, $to, $url, $move] = moveToReady(function (Machine $from) {
+        pastJob($from, 'firewall_rule', ['type' => 'firewall_rule', 'action' => 'open', 'rule' => '8080/tcp'], 30);
+        pastJob($from, 'firewall_rule', ['type' => 'firewall_rule', 'action' => 'open', 'rule' => '9000/udp'], 20);
+        pastJob($from, 'firewall_rule', ['type' => 'firewall_rule', 'action' => 'close', 'rule' => '9000/udp'], 10);
+    });
+
+    expect($this->actingAs($workspace->owner)->get($url.'/machine-file')->json('firewall'))->toBe(['opened' => ['8080/tcp']]);
+
+    // Everything else is copied, but the port is still opening.
+    $opening = moveJobs($to, 'firewall_rule');
+    expect($move->state)->toBe('copying')
+        ->and($opening)->toHaveCount(1)
+        ->and($opening[0]->command['job'])->toBe(['type' => 'firewall_rule', 'action' => 'open', 'rule' => '8080/tcp']);
+
+    finishMoveJob($opening[0]);
+    expect($move->refresh()->state)->toBe('ready')
+        ->and(MachineMoves::present($move)['firewall'])->toBe([['rule' => '8080/tcp', 'state' => 'opened', 'error' => null]]);
+});
+
+test('a Cloudflare Tunnel moves at the switch-over, so DNS needn’t change, and goes back on a rollback', function () {
+    $withTunnel = function (Machine $from) {
+        $from->forceFill(['tunnel' => ['provider' => 'cloudflare', 'tunnel_id' => MOVE_TUNNEL_ID, 'state' => 'connected', 'plain_http' => true, 'since' => now()->toIso8601String()]])->save();
+        pastJob($from, 'tunnel', ['type' => 'tunnel', 'action' => 'up', 'token' => moveTunnelToken()], 60);
+    };
+    fakeMoveKeys();
+    [$workspace, $from, $to, $url] = moveSetup();
+    $withTunnel($from);
+    $check = $this->actingAs($workspace->owner)->postJson($url.'/move-check', ['to' => $to->id])->json();
+    expect(implode("\n", $check['warnings']))->toContain('Cloudflare Tunnel moves to new-box')->not->toContain('Point shop.example.com')
+        ->and($this->actingAs($workspace->owner)->get($url.'/machine-file')->getContent())->toContain(MOVE_TUNNEL_ID)->not->toContain('tunnel-secret');
+
+    [$workspace, $from, $to, $url, $move] = moveToReady($withTunnel);
+    $this->actingAs($workspace->owner)->postJson($url.'/moves/'.$move->id.'/switch')->assertOk();
+    finishMoveJob(moveJobs($from, 'service_action')[0]);
+    copyEverything($from, $to, $move);
+    foreach (MachineMoveApp::query()->where('state', 'deploying_domains')->get() as $app) {
+        finishMoveJob(DaemonJob::query()->findOrFail($app->deploy_job_id));
+    }
+
+    // Started on the destination first, so traffic always has somewhere to go.
+    $up = moveJobs($to, 'tunnel');
+    expect($move->refresh()->state)->toBe('switching')
+        ->and($up)->toHaveCount(1)
+        ->and($up[0]->command['job'])->toBe(['type' => 'tunnel', 'action' => 'up', 'token' => moveTunnelToken()])
+        ->and(json_encode(MachineMoves::present($move)))->not->toContain('tunnel-secret');
+    finishMoveJob($up[0]);
+    $down = collect(moveJobs($from, 'tunnel'))->last();
+    expect($down->command['job'])->toBe(['type' => 'tunnel', 'action' => 'down']);
+    finishMoveJob($down);
+    expect($move->refresh())->state->toBe('switched')->tunnel->toBe(['state' => 'moved', 'job' => null]);
+
+    $this->actingAs($workspace->owner)->postJson($url.'/moves/'.$move->id.'/rollback')->assertOk();
+    expect(collect(moveJobs($from, 'tunnel'))->last()->command['job'])->toBe(['type' => 'tunnel', 'action' => 'up', 'token' => moveTunnelToken()])
+        ->and(collect(moveJobs($to, 'tunnel'))->last()->command['job'])->toBe(['type' => 'tunnel', 'action' => 'down']);
 });

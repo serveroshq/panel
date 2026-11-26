@@ -26,6 +26,8 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
  * @property string|null $receiver_state
  * @property string|null $receiver_job_id
  * @property list<array{key: string, job: string}>|null $stopped
+ * @property list<array{rule: string, state: string, job: string|null, error: string|null}>|null $firewall
+ * @property array{state: string, job: string|null}|null $tunnel
  * @property CarbonImmutable|null $switched_at
  * @property CarbonImmutable|null $finished_at
  * @property CarbonImmutable|null $created_at
@@ -50,6 +52,8 @@ class MachineMove extends Model
         return [
             'private_key' => 'encrypted',
             'stopped' => 'array',
+            'firewall' => 'array',
+            'tunnel' => 'array',
             'switched_at' => 'datetime',
             'finished_at' => 'datetime',
         ];

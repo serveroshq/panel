@@ -3,6 +3,7 @@
 namespace App\Support\Machines;
 
 use App\Mcp\Tools\Deploy\Deploys;
+use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Support\Deploys\AppReleases;
 use App\Support\Deploys\ServiceLabels;
@@ -39,7 +40,34 @@ final class MachineFile
             'apps' => array_map(fn (array $app) => array_diff_key($app, ['services' => true]), $apps),
             'not_moved' => self::notMoved($machine, $inApps),
             'scheduled' => self::scheduled($machine),
+            'firewall' => ['opened' => self::openedPorts($machine)],
+            // Whether a Cloudflare Tunnel serves the apps; never its token.
+            'tunnel' => CloudflareTunnel::active($machine) ? ['provider' => 'cloudflare', 'tunnel_id' => $machine->tunnel['tunnel_id'] ?? null] : null,
         ];
+    }
+
+    /**
+     * Ports ServerOS opened on the machine's firewall and hasn't closed since,
+     * like "8080/tcp", from the firewall changes it made.
+     *
+     * @return list<string>
+     */
+    public static function openedPorts(Machine $machine): array
+    {
+        $rules = [];
+        $jobs = DaemonJob::query()->where('machine_id', $machine->id)->where('kind', 'firewall_rule')
+            ->where('state', 'succeeded')->orderBy('created_at')->get(['command']);
+        foreach ($jobs as $job) {
+            $rule = $job->command['job']['rule'] ?? null;
+            $action = $job->command['job']['action'] ?? null;
+            if (is_string($rule) && preg_match('#^\d{1,5}/(tcp|udp)$#', $rule) === 1 && in_array($action, ['open', 'close'], true)) {
+                $rules[$rule] = $action;
+            }
+        }
+        $opened = array_keys(array_filter($rules, fn (string $action) => $action === 'open'));
+        sort($opened);
+
+        return $opened;
     }
 
     /**
