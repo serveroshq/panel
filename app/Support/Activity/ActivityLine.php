@@ -30,6 +30,7 @@ final class ActivityLine
             'service.reload' => $set('reloaded'),
             'service.adopt' => $set('adopted'),
             'service.repair' => $set('repaired'),
+            'service.image_update' => $set('updated the image of', isset($meta['image']) ? $t('(:image)', ['image' => (string) $meta['image']]) : null),
             'service.clone' => $set('cloned', isset($meta['as']) ? $t(($meta['data'] ?? false) ? 'as :name, with its data' : 'as :name', ['name' => $meta['as']]) : null),
             'service.hide' => $set('hid', 'from the panel'),
             'service.unhide' => $set('showed', 'in the panel again'),
@@ -63,7 +64,20 @@ final class ActivityLine
             }),
             'machine.packages_add' => $set($t('installed :packages on', ['packages' => implode(', ', array_slice(array_map('strval', (array) ($meta['packages'] ?? [])), 0, 6))]), null, 'warn'),
             'machine.reboot' => $set('restarted', null, 'warn'),
+            'machine.docker_prune' => $set('cleaned up Docker on', trim(implode(', ', array_filter([
+                (int) ($meta['images'] ?? 0) > 0 ? $t((int) $meta['images'] === 1 ? '1 image' : ':count images', ['count' => (string) $meta['images']]) : null,
+                (int) ($meta['volumes'] ?? 0) > 0 ? $t((int) $meta['volumes'] === 1 ? '1 volume' : ':count volumes', ['count' => (string) $meta['volumes']]) : null,
+                ($meta['build_cache'] ?? false) ? $t('the build cache') : null,
+            ]))) ?: null, 'warn'),
             'machine.firewall' => $set($t(($meta['action'] ?? null) === 'open' ? 'opened port :port on' : 'closed port :port on', ['port' => $meta['port'] ?? '']), null, ($meta['action'] ?? null) === 'open' ? 'warn' : 'neutral'),
+            'machine.traffic' => $set(($meta['enabled'] ?? null) === true ? 'started counting site traffic on' : 'stopped counting site traffic on'),
+            'machine.traffic_timing' => $set($t('added response times to :site’s access log on', ['site' => (string) ($meta['site'] ?? '')]), null, 'warn'),
+            'machine.traffic_logging' => ($meta['action'] ?? null) === 'remove'
+                ? $set($t('took ServerOS’s log out of :site’s config on', ['site' => (string) ($meta['site'] ?? '')]), null, 'warn')
+                : $set($t('started logging :site on', ['site' => (string) ($meta['site'] ?? '')]), null, 'warn'),
+            'machine.traffic_file' => ($meta['action'] ?? null) === 'remove'
+                ? $set($t('stopped counting the log file :name on', ['name' => (string) ($meta['name'] ?? '')]))
+                : $set($t('started counting the log file :name on', ['name' => (string) ($meta['name'] ?? '')])),
             'machine.tunnel' => $set(($meta['action'] ?? null) === 'up' ? 'put a Cloudflare Tunnel on' : 'took the Cloudflare Tunnel off', null, 'warn'),
             'machine.remove' => $set('removed the machine', null, 'bad'),
             'machine.file' => $set('downloaded the machine file of'),
@@ -273,11 +287,34 @@ final class ActivityLine
                 ($meta['deploy_on_push'] ?? null) === true => $set('turned on deploying each push for', $t('to :branch', ['branch' => (string) ($meta['push_branch'] ?? 'main')])),
                 ($meta['deploy_on_push'] ?? null) === false => $set('turned off deploying each push for', null, 'warn'),
                 isset($meta['push_branch']) => $set('changed the branch that deploys', $t('to :branch', ['branch' => (string) $meta['push_branch']])),
+                ($meta['push_only_newest'] ?? null) === true => $set('set only the newest push to build for'),
+                ($meta['push_only_newest'] ?? null) === false => $set('set every push to build for'),
                 ($meta['snapshot_before'] ?? null) === true => $set('turned on the snapshot before each deploy of'),
                 ($meta['snapshot_before'] ?? null) === false => $set('turned off the snapshot before each deploy of', null, 'warn'),
                 default => $set('changed which database is snapshotted before deploys of'),
             },
+            'app.site' => match (true) {
+                ($meta['maintenance'] ?? null) === true => $set('put up the maintenance page for', null, 'warn'),
+                ($meta['maintenance'] ?? null) === false => $set('took down the maintenance page for', null, 'good'),
+                ($meta['password'] ?? null) === true => $set('put a password on'),
+                ($meta['password'] ?? null) === false => $set('took the password off', null, 'warn'),
+                isset($meta['password_changed']) => $set('changed the password for'),
+                ($meta['www'] ?? null) === true => $set('turned on the www redirect for'),
+                ($meta['www'] ?? null) === false => $set('turned off the www redirect for'),
+                isset($meta['redirects']) => $set('changed the redirects of'),
+                default => $set('changed the maintenance page for'),
+            },
             'app.deploy_key' => $set('made a deploy key for', 'to fetch its private repository'),
+            'app.limits' => ($meta['cpus'] ?? null) === null && ($meta['memory_mb'] ?? null) === null
+                ? $set('took the CPU and memory limits off')
+                : $set('limited', $t('to :limits', ['limits' => implode(', ', array_filter([
+                    isset($meta['cpus']) ? $meta['cpus'].' '.((float) $meta['cpus'] === 1.0 ? 'CPU' : 'CPUs') : null,
+                    isset($meta['memory_mb']) ? $meta['memory_mb'].' MB' : null,
+                ]))])),
+            'registry.add' => $set('added a login for the registry', isset($meta['username']) ? $t('as :username', ['username' => (string) $meta['username']]) : null),
+            'registry.update' => $set('changed the login for the registry', isset($meta['username']) ? $t('to :username', ['username' => (string) $meta['username']]) : null),
+            'registry.remove' => $set('removed the login for the registry', null, 'warn'),
+            'app.push_replaced' => $set('skipped an older push to', $t(':commit, since :newer came after it', ['commit' => (string) ($meta['commit'] ?? ''), 'newer' => (string) ($meta['newer'] ?? '')])),
             'app.push_skipped' => $set('didn’t deploy a push to', $t(':commit to :branch: :reason', ['commit' => (string) ($meta['commit'] ?? ''), 'branch' => (string) ($meta['branch'] ?? ''), 'reason' => rtrim((string) ($meta['reason'] ?? ''), '.')]), 'warn'),
             'backup_destination.update' => $set('changed the backup destination', isset($meta['from']) ? $t('(was :name)', ['name' => $meta['from']]) : null),
             'backup_destination.retry' => $set('set up the backup destination again'),
@@ -381,7 +418,7 @@ final class ActivityLine
             $out['detail'] = $meta['cause'] ?? null;
         }
 
-        if (! $a->byPerson() && in_array($a->action, ['machine.offline', 'machine.online', 'machine.disk_full', 'monitor.down', 'monitor.up', 'backup.failed', 'backup.restore_failed', 'machine.connect', 'service.down', 'service.up', 'service.crash_loop', 'workflow.run', 'workflow.failed', 'workflow.skipped', 'app.push_skipped', 'fix.done', 'fix.failed', 'mcp.revoke', 'domain.active', 'machine.daemon_updated', 'daemon.update_waiting', 'panel.updated', 'panel.update_failed', 'email_domain.unverified', 'cloud.suspend', 'cloud.resume', 'cloud.end', 'cloud.throttle'], true)) {
+        if (! $a->byPerson() && in_array($a->action, ['machine.offline', 'machine.online', 'machine.disk_full', 'monitor.down', 'monitor.up', 'backup.failed', 'backup.restore_failed', 'machine.connect', 'service.down', 'service.up', 'service.crash_loop', 'workflow.run', 'workflow.failed', 'workflow.skipped', 'app.push_skipped', 'app.push_replaced', 'fix.done', 'fix.failed', 'mcp.revoke', 'domain.active', 'machine.daemon_updated', 'daemon.update_waiting', 'panel.updated', 'panel.update_failed', 'email_domain.unverified', 'cloud.suspend', 'cloud.resume', 'cloud.end', 'cloud.throttle'], true)) {
             $out['leads'] = true;
         }
 

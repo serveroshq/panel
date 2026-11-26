@@ -25,7 +25,11 @@ export function jobStatus(
 ): JobStatus {
     switch (state) {
         case 'queued':
-            return { label: trans('Queued'), tone: 'blue', busy: true };
+            return {
+                label: phase === 'waiting' ? trans('Waiting') : trans('Queued'),
+                tone: 'blue',
+                busy: true,
+            };
         case 'running': {
             const step = phase ? phases[phase] : null;
             const percent =

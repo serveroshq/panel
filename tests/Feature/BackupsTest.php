@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Machines\MoveMachines;
 use App\Models\Activity;
 use App\Models\Backup;
 use App\Models\BackupDestination;
@@ -195,6 +196,68 @@ test('another machine is set up as a receiver and becomes ready with its host ke
         ->and($destination->fresh()->forDaemon())->toMatchArray([
             'type' => 'sftp', 'host' => $receiver->ip_address, 'user' => 'serveros-backups', 'host_key' => 'ssh-ed25519 AAAAhost',
         ]);
+});
+
+test('a receiver is always told every key its destinations use, so a removed one stops working there', function () {
+    [$workspace, , $base] = backupWorkspace();
+    $receiver = onlineMachine($workspace, 'vault');
+    foreach (['Vault', 'Vault 2'] as $name) {
+        $this->actingAs($workspace->owner)->post($base.'/backup-destinations', ['type' => 'machine', 'name' => $name, 'machine_id' => $receiver->id])->assertSessionHasNoErrors();
+    }
+    [$first, $second] = BackupDestination::query()->orderBy('id')->get()->all();
+
+    $sent = DaemonJob::query()->where('kind', 'backup_receiver')->orderBy('created_at')->orderBy('id')->get()->pluck('command.job')->all();
+    expect($sent[1])->toMatchArray(['public_key' => $second->public_key, 'public_keys' => [$first->public_key, $second->public_key]]);
+
+    $this->actingAs($workspace->owner)->delete($base."/backup-destinations/{$first->id}")->assertSessionHasNoErrors();
+
+    $last = DaemonJob::query()->where('kind', 'backup_receiver')->orderByDesc('created_at')->orderByDesc('id')->first();
+    expect($last->command['job'])->toMatchArray(['public_key' => '', 'public_keys' => [$second->public_key]]);
+
+    $this->actingAs($workspace->owner)->delete($base."/backup-destinations/{$second->id}")->assertSessionHasNoErrors();
+    expect(DaemonJob::query()->where('kind', 'backup_receiver')->orderByDesc('created_at')->orderByDesc('id')->first()->command['job']['public_keys'])->toBe([]);
+});
+
+test('a receiver that moves workspace takes its destination, and machines left behind lose it and its key', function () {
+    [$workspace, , $base] = backupWorkspace();
+    $receiver = onlineMachine($workspace, 'vault');
+    $mover = onlineMachine($workspace, 'web');
+    $stayer = onlineMachine($workspace, 'db');
+    $this->actingAs($workspace->owner)->post($base.'/backup-destinations', ['type' => 'machine', 'name' => 'Vault', 'machine_id' => $receiver->id])->assertSessionHasNoErrors();
+    $destination = BackupDestination::query()->sole();
+    $oldKey = $destination->public_key;
+    $mover->forceFill(['backup_destination_id' => $destination->id, 'backup_schedule' => 'daily'])->save();
+    $stayer->forceFill(['backup_destination_id' => $destination->id, 'backup_schedule' => 'daily'])->save();
+    $to = Workspace::factory()->create(['owner_id' => $workspace->owner_id]);
+
+    $notes = app(MoveMachines::class)->move(collect([$receiver->fresh(), $mover->fresh()]), $to, $workspace->owner);
+
+    expect($destination->fresh()->workspace_id)->toBe($to->id)
+        ->and(BackupDestination::query()->count())->toBe(1)
+        ->and($mover->fresh()->backup_destination_id)->toBe($destination->id)
+        ->and($stayer->fresh()->backup_destination_id)->toBeNull()
+        ->and($notes)->toContain("db: its backups went to vault, which moved, so they're off until you pick a destination.")
+        ->and($destination->fresh()->public_key)->not->toBe($oldKey);
+    $last = DaemonJob::query()->where('kind', 'backup_receiver')->orderByDesc('created_at')->orderByDesc('id')->first();
+    expect($last->command['job']['public_keys'])->toBe([$destination->fresh()->public_key]);
+});
+
+test('a machine that moves away from a receiver leaves it with a new key', function () {
+    [$workspace, , $base] = backupWorkspace();
+    $receiver = onlineMachine($workspace, 'vault');
+    $mover = onlineMachine($workspace, 'web');
+    $this->actingAs($workspace->owner)->post($base.'/backup-destinations', ['type' => 'machine', 'name' => 'Vault', 'machine_id' => $receiver->id])->assertSessionHasNoErrors();
+    $destination = BackupDestination::query()->sole();
+    $oldKey = $destination->public_key;
+    $mover->forceFill(['backup_destination_id' => $destination->id])->save();
+    $to = Workspace::factory()->create(['owner_id' => $workspace->owner_id]);
+
+    app(MoveMachines::class)->move(collect([$mover->fresh()]), $to, $workspace->owner);
+
+    expect($destination->fresh()->workspace_id)->toBe($workspace->id)
+        ->and($mover->fresh()->backup_destination_id)->toBeNull()
+        ->and($destination->fresh()->public_key)->not->toBe($oldKey)
+        ->and(DaemonJob::query()->where('kind', 'backup_receiver')->orderByDesc('created_at')->orderByDesc('id')->first()->command['job']['public_keys'])->toBe([$destination->fresh()->public_key]);
 });
 
 test('a machine picks a destination and schedule, but never itself', function () {

@@ -663,6 +663,41 @@ test('previews need GitHub connected and a machine with Docker, and stop when tu
     expect($project->environments()->whereNotNull('pull_request')->count())->toBe(0);
 });
 
+function runsOwnCompose(Machine $machine, string $service): void
+{
+    DaemonJob::query()->where('machine_id', $machine->id)->where('service', $service)->get()->each(
+        fn (DaemonJob $job) => $job->forceFill(['command' => ['job' => [...$job->command['job'], 'compose_file' => 'deploy/compose.preview.yaml', 'dockerfile' => null]]])->save(),
+    );
+}
+
+test('a pull request never runs its own Compose file: a project whose app is built from its repository’s Compose file gets no preview', function () {
+    [$workspace, $project, $web] = projectWithPreviews();
+    runsOwnCompose($web, 'shop');
+    $before = count(projectCommands());
+
+    pullRequest('opened', 91, str_repeat('b', 40))->assertStatus(202)->assertJson(['projects' => 1]);
+
+    expect($project->environments()->whereNotNull('pull_request')->count())->toBe(0)
+        ->and(count(projectCommands()))->toBe($before)
+        ->and(Activity::query()->where('workspace_id', $workspace->id)->where('action', 'project.preview_skipped')->sole()->meta['reason'])
+        ->toContain('shop runs its repository’s own Compose file');
+});
+
+test('a preview of an app built from its repository’s Compose file isn’t deployed again with new commits', function () {
+    [$workspace, $project, , , $stage] = projectWithPreviews();
+    pullRequest('opened', 12, str_repeat('c', 40));
+    $preview = $project->environments()->where('pull_request', 12)->sole();
+    projectDeploy($stage, 'shop-pr-12', collect(projectCommands())->last(fn ($c) => ($c['job']['service'] ?? null) === 'shop-pr-12')['job']);
+    runsOwnCompose($stage, 'shop-pr-12');
+    $before = count(projectCommands());
+
+    pullRequest('synchronize', 12, str_repeat('d', 40))->assertStatus(202);
+
+    expect(count(projectCommands()))->toBe($before)
+        ->and($preview->fresh()->head)->toBe(str_repeat('c', 40))
+        ->and(Activity::query()->where('workspace_id', $workspace->id)->where('action', 'project.preview_skipped')->exists())->toBeTrue();
+});
+
 test('containers are matched by their exact deploy, never by a name that merely starts the same', function () {
     $machine = Machine::factory()->create();
     $machine->forceFill(['inventory' => ['services' => [

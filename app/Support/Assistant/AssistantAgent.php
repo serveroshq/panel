@@ -68,7 +68,7 @@ class AssistantAgent
         'install_packages', 'install_updates', 'create_package_rollout', 'open_port', 'close_port', 'reboot_machine',
         'create_workflow', 'update_workflow', 'run_workflow',
         'invite_member', 'change_member_role', 'update_workspace', 'publish_dashboard_theme',
-        'deploy_from_git', 'deploy_template', 'deploy_new_version', 'update_app_settings', 'set_app_domain', 'clone_service', 'connect_project_app',
+        'deploy_from_git', 'deploy_template', 'deploy_new_version', 'update_app_settings', 'update_site_settings', 'set_app_domain', 'clone_service', 'connect_project_app',
         'create_machine_policy', 'update_machine_policy', 'update_backup_settings', 'update_alert_settings', 'start_maintenance',
         'adopt_service', 'mute_monitor', 'pause_monitor', 'post_status_incident', 'update_status_incident',
     ];

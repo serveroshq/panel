@@ -71,8 +71,21 @@ final class Ecosystems
     public static function for(Machine $machine): ?string
     {
         $os = is_array($machine->os_release) ? $machine->os_release : [];
-        $id = strtolower((string) ($os['id'] ?? ''));
-        $version = (string) ($os['version_id'] ?? '');
+
+        $ecosystem = self::forRelease((string) ($os['id'] ?? ''), (string) ($os['version_id'] ?? ''));
+
+        // Machines' updates come from apt and dnf; Alpine is for images.
+        return $ecosystem !== null && str_starts_with($ecosystem, 'Alpine:') ? null : $ecosystem;
+    }
+
+    /**
+     * The OSV ecosystem for an OS release by its os-release ID and
+     * VERSION_ID, if OSV covers it: a machine's, or an image's (Alpine
+     * too, which images use and machines rarely do).
+     */
+    public static function forRelease(string $id, string $version): ?string
+    {
+        $id = strtolower($id);
 
         if ($id === 'ubuntu' && preg_match('/^(\d{2})\.(\d{2})$/', $version, $m)) {
             // LTS is every other April: 20.04, 22.04, 24.04, 26.04.
@@ -80,6 +93,9 @@ final class Ecosystems
         }
         if ($id === 'debian' && preg_match('/^(\d+)/', $version, $m)) {
             return 'Debian:'.$m[1];
+        }
+        if ($id === 'alpine' && preg_match('/^(\d+)\.(\d+)/', $version, $m)) {
+            return 'Alpine:v'.$m[1].'.'.$m[2];
         }
         if (isset(self::RPM[$id]) && preg_match('/^(\d+)/', $version, $m)) {
             return self::RPM[$id].':'.$m[1];

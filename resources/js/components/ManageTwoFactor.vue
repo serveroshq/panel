@@ -2,10 +2,12 @@
 import { Form } from '@inertiajs/vue3';
 import { SolarShieldCheck as ShieldCheck } from '@/lib/solarIcons';
 import { onUnmounted, ref } from 'vue';
+import InputError from '@/components/InputError.vue';
 import TwoFactorRecoveryCodes from '@/components/TwoFactorRecoveryCodes.vue';
 import TwoFactorSetupModal from '@/components/TwoFactorSetupModal.vue';
 import AppButton from '@/components/workspace/AppButton.vue';
 import Tile from '@/components/workspace/Tile.vue';
+import { Input } from '@/components/ui/input';
 import { useTwoFactorAuth } from '@/composables/useTwoFactorAuth';
 import { disable, enable } from '@/routes/two-factor';
 
@@ -85,14 +87,34 @@ onUnmounted(() => clearTwoFactorAuthData());
                         </AppButton>
                     </Form>
                 </template>
-                <Form v-else v-bind="disable.form()" #default="{ processing }">
-                    <AppButton
-                        type="submit"
-                        variant="danger"
-                        :disabled="processing"
-                    >
-                        {{ ' ' + $t('Turn off') + ' ' }}
-                    </AppButton>
+                <Form
+                    v-else
+                    v-bind="disable.form()"
+                    class="flex w-full flex-col gap-1.5 sm:w-auto"
+                    #default="{ errors, processing }"
+                >
+                    <div class="flex flex-wrap items-center gap-2">
+                        <Input
+                            name="code"
+                            class="w-full sm:w-56"
+                            autocomplete="one-time-code"
+                            required
+                            :aria-label="
+                                $t('Code from your app or a recovery code')
+                            "
+                            :placeholder="
+                                $t('Code from your app or a recovery code')
+                            "
+                        />
+                        <AppButton
+                            type="submit"
+                            variant="danger"
+                            :disabled="processing"
+                        >
+                            {{ ' ' + $t('Turn off') + ' ' }}
+                        </AppButton>
+                    </div>
+                    <InputError :message="errors.code" />
                 </Form>
             </div>
 

@@ -63,11 +63,47 @@ class Previews
         return array_values($repos);
     }
 
+    /**
+     * A repository's own Compose file can ask for anything (privileged, the
+     * Docker socket, the host's disk). A preview would run the pull request's
+     * copy of it, so anyone who can push a branch would control the machine.
+     *
+     * @param  array<string, mixed>  $spec
+     */
+    public static function runsOwnCompose(array $spec): bool
+    {
+        return filled($spec['compose_file'] ?? null) && filled($spec['repo'] ?? null);
+    }
+
+    /** The production app that runs the previewed repository's own Compose file, if one does: such a project gets no previews. */
+    public static function composeApp(Project $project): ?string
+    {
+        $repo = strtolower(self::settings($project)['repo']);
+        foreach ($project->production()->nodes()->where('kind', 'app')->with('machine')->get() as $app) {
+            $spec = (array) (Deploys::lastDeploy($app->machine, $app->name)?->command['job'] ?? []);
+            if (self::repoOf($spec) === $repo && self::runsOwnCompose($spec)) {
+                return $app->name;
+            }
+        }
+
+        return null;
+    }
+
+    public static function composeReason(string $app): string
+    {
+        return "{$app} runs its repository’s own Compose file, which can control Docker on the machine, so pull requests don’t get previews.";
+    }
+
     public function opened(Project $project, int $number, string $head): ?ProjectEnvironment
     {
         $settings = self::settings($project);
         $user = $this->actor($project);
         if (! $settings['enabled'] || $user === null) {
+            return null;
+        }
+        if (($app = self::composeApp($project)) !== null) {
+            Activity::system($project->workspace, 'project.preview_skipped', "#{$number} in {$project->name}", meta: ['reason' => self::composeReason($app)]);
+
             return null;
         }
         if (($existing = $this->find($project, $number)) !== null) {
@@ -124,7 +160,7 @@ class Previews
             return;
         }
 
-        $all = true;
+        $apps = [];
         foreach ($environment->nodes()->where('kind', 'app')->with('machine')->get() as $app) {
             if ($app->machine->workspace_id !== $project->workspace_id) {
                 continue;
@@ -134,6 +170,17 @@ class Previews
             if ($last === null || self::repoOf($spec) !== $repo) {
                 continue;
             }
+            // A preview opened before previews stopped running a pull request's own Compose file.
+            if (self::runsOwnCompose($spec)) {
+                Activity::system($project->workspace, 'project.preview_skipped', "#{$number} in {$project->name}", meta: ['reason' => self::composeReason($app->name)]);
+
+                return;
+            }
+            $apps[] = [$app, $spec];
+        }
+
+        $all = true;
+        foreach ($apps as [$app, $spec]) {
             if ($this->queue->unavailable($app->machine, 'deploy') !== null) {
                 $all = false;
 
@@ -199,6 +246,10 @@ class Previews
     private function adjust(array $spec, ProjectNode $original, array $settings, int $number, string $head, array &$addresses): array
     {
         if (self::repoOf($spec) === strtolower($settings['repo'])) {
+            // opened() already refuses these; this covers a deploy that lands while the preview is made.
+            if (self::runsOwnCompose($spec)) {
+                throw new RuntimeException('it runs its repository’s own Compose file, which can control Docker on the machine.');
+            }
             $spec['commit'] = $head;
         }
         if ($settings['domain'] !== null) {

@@ -18,17 +18,18 @@ class LoginResponse implements LoginResponseContract, RegisterResponseContract, 
      */
     public function toResponse($request): Response
     {
-        if ($request->wantsJson()) {
-            return $request->routeIs('register.store')
-                ? new JsonResponse('', 201)
-                : new JsonResponse(['two_factor' => false]);
-        }
-
-        if ($request->routeIs('register.store')) {
+        $registered = $request->routeIs('register.store');
+        if ($registered) {
             $request->session()->put('celebrate_trial', true);
         }
 
         $url = redirect()->intended(Fortify::redirects('login'))->getTargetUrl();
+
+        if ($request->wantsJson()) {
+            return $registered
+                ? new JsonResponse(['redirect' => $url], 201)
+                : new JsonResponse(['two_factor' => false, 'redirect' => $url]);
+        }
 
         return Inertia::location($url);
     }

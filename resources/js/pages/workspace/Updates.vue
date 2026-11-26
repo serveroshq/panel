@@ -13,6 +13,8 @@ import type { Component } from 'vue';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import ProviderName from '@/components/machines/ProviderName.vue';
 import UpdatesDialog from '@/components/machines/UpdatesDialog.vue';
+import ContainerUpdates from '@/components/updates/ContainerUpdates.vue';
+import type { ContainerRow } from '@/components/updates/ContainerUpdates.vue';
 import RolloutDetailDialog from '@/components/updates/RolloutDetailDialog.vue';
 import RolloutDialog from '@/components/updates/RolloutDialog.vue';
 import {
@@ -38,7 +40,7 @@ import { toast } from '@/lib/toast';
 import type { Workspace, WorkspaceAccess } from '@/types';
 import { errorMessage, jobReason } from '@/lib/errors';
 
-type View = 'packages' | 'machines' | 'rollouts';
+type View = 'packages' | 'machines' | 'containers' | 'rollouts';
 
 const props = defineProps<{
     workspace: Workspace;
@@ -48,6 +50,7 @@ const props = defineProps<{
     checking: number[];
     rollouts: Rollout[];
     groups: MachineGroupChoice[];
+    containers: ContainerRow[];
     commandsEnabled: boolean;
     view: View | null;
 }>();
@@ -71,6 +74,13 @@ const views = computed<{ value: View; label: string; count: number }[]>(() => [
         value: 'machines',
         label: trans('By machine'),
         count: props.machines.length,
+    },
+    {
+        value: 'containers',
+        label: trans('Containers'),
+        count: props.containers.filter(
+            (c) => c.state === 'available' || c.vulnerabilities.total > 0,
+        ).length,
     },
     {
         value: 'rollouts',
@@ -401,7 +411,7 @@ const rowButton =
         <template #description>
             {{
                 $t(
-                    'Operating system updates waiting on your machines. Each one is checked about once a day.',
+                    'Operating system updates and newer container images for your machines.',
                 )
             }}
         </template>
@@ -452,7 +462,7 @@ const rowButton =
                 />
             </label>
             <AppButton
-                v-if="canManage"
+                v-if="canManage && view !== 'containers'"
                 size="sm"
                 :disabled="checkingAll"
                 @click="checkAll"
@@ -490,6 +500,7 @@ const rowButton =
 
         <template v-else>
             <p
+                v-if="view !== 'containers'"
                 class="-mt-1 text-[13px]/5 text-(--ds-text-muted) tabular-nums"
                 role="status"
             >
@@ -777,6 +788,12 @@ const rowButton =
                     }}
                 </p>
             </section>
+
+            <ContainerUpdates
+                v-else-if="view === 'containers'"
+                :containers="containers"
+                :can-manage="canManage"
+            />
 
             <section
                 v-else-if="view === 'machines'"

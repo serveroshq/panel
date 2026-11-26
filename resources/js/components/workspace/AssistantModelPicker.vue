@@ -53,7 +53,7 @@ const focusRing =
         <DropdownMenuTrigger as-child>
             <button
                 type="button"
-                class="flex h-8 max-w-[150px] shrink-0 cursor-pointer items-center gap-1 rounded-[7px] px-2 text-[12px]/4 text-(--ds-text-muted) hover:bg-(--ds-hover) hover:text-(--ds-text) disabled:cursor-default disabled:opacity-60"
+                class="flex h-8 max-w-[150px] min-w-0 cursor-pointer items-center gap-1 rounded-[7px] px-2 text-[12px]/4 text-(--ds-text-muted) hover:bg-(--ds-hover) hover:text-(--ds-text) disabled:cursor-default disabled:opacity-60"
                 :class="focusRing"
                 :disabled="streaming"
                 :title="$t('Model: :model', { model: current })"

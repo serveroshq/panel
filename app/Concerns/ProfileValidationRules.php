@@ -3,6 +3,7 @@
 namespace App\Concerns;
 
 use App\Rules\NotDisposableEmail;
+use App\Rules\PersonName;
 use App\Rules\UniqueEmail;
 use Illuminate\Contracts\Validation\ValidationRule;
 
@@ -20,7 +21,7 @@ trait ProfileValidationRules
     /** @return array<int, ValidationRule|array<mixed>|string> */
     protected function nameRules(): array
     {
-        return ['required', 'string', 'max:255'];
+        return ['required', 'string', 'max:255', new PersonName];
     }
 
     /** @return array<int, ValidationRule|array<mixed>|string> */

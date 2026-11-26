@@ -9,6 +9,7 @@ use App\Mcp\Tool;
 use App\Models\Monitor;
 use App\Models\MonitorCheck;
 use App\Models\MonitorIncident;
+use App\Support\Monitors\TelegramAlerts;
 use DateTimeInterface;
 use Illuminate\Validation\Rule;
 
@@ -57,6 +58,7 @@ final class GetMonitor extends Tool
         $workspace = $context->workspace;
         $email = (bool) ($workspace->alert_email ?? true);
         $webhook = filled($workspace->alert_webhook_url);
+        $telegram = TelegramAlerts::configured($workspace);
         $alerts = Monitors::alerts($monitor);
         $open = $monitor->openIncident()->first();
 
@@ -88,8 +90,8 @@ final class GetMonitor extends Tool
             ] : null,
             'alertState' => [
                 ...$alerts,
-                'channels' => ['email' => $email, 'webhook' => $webhook],
-                'wouldAlert' => $monitor->alerts && ! $alerts['muted'] && ! $monitor->paused && ($email || $webhook),
+                'channels' => ['email' => $email, 'webhook' => $webhook, 'telegram' => $telegram],
+                'wouldAlert' => $monitor->alerts && ! $alerts['muted'] && ! $monitor->paused && ($email || $webhook || $telegram),
             ],
         ];
     }

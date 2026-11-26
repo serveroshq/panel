@@ -5,6 +5,7 @@ namespace App\Mcp\Tools\Deploy;
 use App\Http\Controllers\AppVersionController;
 use App\Mcp\McpContext;
 use App\Mcp\Schema;
+use App\Mcp\Scopes;
 use App\Mcp\ToolError;
 use App\Models\DaemonJob;
 use App\Models\DeploySource;
@@ -31,11 +32,36 @@ final class Deploys
     /** @param  array<string, mixed>  $job */
     public function deploy(McpContext $context, Machine $machine, array $job): DaemonJob
     {
+        self::refuseHostControl($context, $job);
+
         try {
             return $context->within(fn () => $this->queue->deploy($machine, $context->user, $job));
         } catch (RuntimeException $e) {
             throw new ToolError($e->getMessage());
         }
+    }
+
+    /**
+     * A repository's own Compose file can ask for anything (privileged, the
+     * Docker socket, the host's disk), so new code or settings for an app
+     * built from one (a Compose file with a repository, not a template's
+     * own stack) need the same "Run commands" access as deploying it
+     * with deploy_template does. Repeating a deploy as it was (retry) sends
+     * nothing new, so it isn't checked.
+     *
+     * @param  array<string, mixed>  $job
+     */
+    private static function refuseHostControl(McpContext $context, array $job): void
+    {
+        $fromRepository = filled($job['compose_file'] ?? null) && filled($job['repo'] ?? null);
+        if (! $fromRepository || $context->allows(Scopes::COMMANDS)) {
+            return;
+        }
+        $app = (string) ($job['service'] ?? 'This app');
+
+        throw new ToolError($context->via === 'assistant'
+            ? "{$app} runs its repository’s own Compose file, which can control Docker on the machine (root access), and Ask AI never changes that. Tell the person to do it from the dashboard."
+            : "{$app} runs its repository’s own Compose file, which can control Docker on the machine (root access), so changing it needs a connection allowed to run commands. Reconnect and allow “Run commands” (it needs two-factor authentication), or do it from the dashboard.");
     }
 
     public function retry(McpContext $context, DaemonJob $job): DaemonJob

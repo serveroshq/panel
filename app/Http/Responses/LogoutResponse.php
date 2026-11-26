@@ -17,12 +17,14 @@ class LogoutResponse implements LogoutResponseContract
      */
     public function toResponse($request): Response
     {
+        $idp = $request->attributes->get(self::REDIRECT);
+        $idp = is_string($idp) && $idp !== '' ? $idp : null;
+
         if ($request->wantsJson()) {
-            return new JsonResponse('', 204);
+            return $idp === null ? new JsonResponse('', 204) : new JsonResponse(['redirect' => $idp]);
         }
 
-        $idp = $request->attributes->get(self::REDIRECT);
-        if (is_string($idp) && $idp !== '') {
+        if ($idp !== null) {
             return $request->header('X-Inertia') ? Inertia::location($idp) : redirect()->away($idp);
         }
 

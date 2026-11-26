@@ -11,6 +11,7 @@ use App\Models\PackageRollout;
 use App\Models\Workspace;
 use App\Support\Audit\Audited;
 use App\Support\DaemonJobQueue;
+use App\Support\Images\ImageUpdates;
 use App\Support\Machines\PackageHolds;
 use App\Support\Machines\PackageRollouts;
 use App\Support\Machines\PackageUpdates;
@@ -44,8 +45,9 @@ class UpdatesController extends Controller
             'groups' => $workspace->machineGroups()->orderBy('name')->get()
                 ->map(fn (MachineGroup $group) => ['id' => $group->id, 'name' => $group->name, 'machineIds' => $machines->where('machine_group_id', $group->id)->pluck('id')->values()->all()])
                 ->filter(fn (array $group) => $group['machineIds'] !== [])->values()->all(),
+            'containers' => ImageUpdates::present($machines),
             'commandsEnabled' => (bool) config('daemon.commands_enabled'),
-            'view' => in_array($request->query('view'), ['packages', 'machines', 'rollouts'], true) ? $request->query('view') : null,
+            'view' => in_array($request->query('view'), ['packages', 'machines', 'containers', 'rollouts'], true) ? $request->query('view') : null,
         ]);
     }
 

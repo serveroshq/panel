@@ -749,6 +749,9 @@ final class AgentTasks
             throw new RuntimeException('GitHub didn’t say what the pull request’s latest commit is.');
         }
         $number = (int) (self::parsePr($pr)[2] ?? 0);
+        if (($app = Previews::composeApp($project)) !== null) {
+            throw new RuntimeException(Previews::composeReason($app));
+        }
 
         return $this->previews->opened($project, $number, $head) ?? throw new RuntimeException('The project couldn’t open another preview. Close one, or raise its limit.');
     }

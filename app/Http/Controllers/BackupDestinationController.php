@@ -8,7 +8,7 @@ use App\Models\Machine;
 use App\Models\Workspace;
 use App\Support\Audit\AuditContext;
 use App\Support\Audit\Audited;
-use App\Support\Backups\ReceiverKey;
+use App\Support\Backups\BackupReceivers;
 use App\Support\Backups\S3Probe;
 use App\Support\DaemonJobQueue;
 use Illuminate\Http\RedirectResponse;
@@ -17,12 +17,11 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
-use RuntimeException;
 
 class BackupDestinationController extends Controller
 {
     #[Audited]
-    public function store(Request $request, Workspace $workspace, S3Probe $probe, ReceiverKey $keys, DaemonJobQueue $queue): RedirectResponse
+    public function store(Request $request, Workspace $workspace, S3Probe $probe, BackupReceivers $receivers, DaemonJobQueue $queue): RedirectResponse
     {
         Gate::authorize('manageMachines', $workspace);
 
@@ -44,7 +43,7 @@ class BackupDestinationController extends Controller
             }
 
             $destination->fill(['name' => trim($data['name']), 'machine_id' => $machine->id])->save();
-            $this->setUpReceiver($request, $destination, $keys, $queue);
+            $receivers->setUp($destination, $request->user());
         }
 
         Activity::record($workspace, 'backup_destination.add', $destination->name, meta: ['type' => $type]);
@@ -83,7 +82,7 @@ class BackupDestinationController extends Controller
     }
 
     #[Audited]
-    public function retry(Request $request, Workspace $workspace, BackupDestination $destination, ReceiverKey $keys, DaemonJobQueue $queue): RedirectResponse
+    public function retry(Request $request, Workspace $workspace, BackupDestination $destination, BackupReceivers $receivers, DaemonJobQueue $queue): RedirectResponse
     {
         abort_unless($destination->workspace_id === $workspace->id && $destination->type === 'machine', 404);
         Gate::authorize('manageMachines', $workspace);
@@ -91,20 +90,25 @@ class BackupDestinationController extends Controller
         if ($destination->machine !== null && ($reason = $queue->unavailable($destination->machine)) !== null) {
             throw ValidationException::withMessages(['machine_id' => $reason]);
         }
-        $this->setUpReceiver($request, $destination, $keys, $queue);
+        $receivers->setUp($destination, $request->user());
         Activity::record($workspace, 'backup_destination.retry', $destination->name);
 
         return back();
     }
 
     #[Audited]
-    public function destroy(Workspace $workspace, BackupDestination $destination): RedirectResponse
+    public function destroy(Request $request, Workspace $workspace, BackupDestination $destination, BackupReceivers $receivers): RedirectResponse
     {
         abort_unless($destination->workspace_id === $workspace->id, 404);
         Gate::authorize('manageMachines', $workspace);
 
         $destination->machines()->update(['backup_schedule' => 'off']);
+        $receiver = $destination->type === 'machine' ? $destination->machine : null;
         $destination->delete();
+        // Its key stops working on the machine that took its backups.
+        if ($receiver !== null) {
+            $receivers->sync($receiver, $request->user());
+        }
         Activity::record($workspace, 'backup_destination.remove', $destination->name);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => "Removed {$destination->name}. Backups already there are untouched."]);
@@ -149,26 +153,5 @@ class BackupDestinationController extends Controller
         }
 
         return ['name' => trim($data['name']), 'settings' => $settings];
-    }
-
-    private function setUpReceiver(Request $request, BackupDestination $destination, ReceiverKey $keys, DaemonJobQueue $queue): void
-    {
-        $pair = $keys->generate();
-        $destination->forceFill([
-            'private_key' => $pair['private'],
-            'public_key' => $pair['public'],
-            'host_key' => null,
-            'status' => 'setting_up',
-            'status_message' => null,
-        ])->save();
-
-        try {
-            $queue->queue($destination->machine, $request->user(), 'backup_receiver', [
-                'type' => 'backup_receiver',
-                'public_key' => $pair['public'],
-            ], null, 120);
-        } catch (RuntimeException $e) {
-            $destination->forceFill(['status' => 'failed', 'status_message' => $e->getMessage()])->save();
-        }
     }
 }

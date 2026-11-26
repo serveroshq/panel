@@ -19,6 +19,8 @@ return [
 
     'log_skip_since' => env('DAEMON_LOG_SKIP_SINCE', '0.1.1-pre.22'),
     'disk_usage_since' => env('DAEMON_DISK_USAGE_SINCE', '0.1.1-pre.19'),
+    // Lists, cleans up and updates container images, and reads their packages.
+    'images_since' => env('DAEMON_IMAGES_SINCE', '0.1.1-pre.49'),
     'clone_since' => env('DAEMON_CLONE_SINCE', '0.1.1-pre.23'),
     'wildcard_domains_since' => env('DAEMON_WILDCARD_DOMAINS_SINCE', '0.1.1-pre.34'),
     'policy_since' => env('DAEMON_POLICY_SINCE', '0.1.1-pre.24'),
@@ -32,6 +34,18 @@ return [
     'host_database_since' => env('DAEMON_HOST_DATABASE_SINCE', '0.1.1-pre.39'),
     'base_dir_since' => env('DAEMON_BASE_DIR_SINCE', '0.1.1-pre.45'),
     'resolve_ref_since' => env('DAEMON_RESOLVE_REF_SINCE', '0.1.1-pre.45'),
+    'site_options_since' => env('DAEMON_SITE_OPTIONS_SINCE', '0.1.1-pre.46'),
+    'traffic_since' => env('DAEMON_TRAFFIC_SINCE', '0.1.1-pre.46'),
+    // Traffic for the sites the machine's own nginx and Apache configs serve,
+    // and response times for one of them on request.
+    'existing_sites_traffic_since' => env('DAEMON_EXISTING_SITES_TRAFFIC_SINCE', '0.1.1-pre.47'),
+    // Traffic for every site the machine serves: Caddy and Traefik, servers
+    // in containers, sites with no access log listed (and their log started
+    // on request), and log files set by hand.
+    'any_site_traffic_since' => env('DAEMON_ANY_SITE_TRAFFIC_SINCE', '0.1.1-pre.48'),
+    // CPU and memory limits per app, and registry logins for private images.
+    'resource_limits_since' => env('DAEMON_RESOURCE_LIMITS_SINCE', '0.1.1-pre.46'),
+    'registry_logins_since' => env('DAEMON_REGISTRY_LOGINS_SINCE', '0.1.1-pre.46'),
     // Restores a snapshot another machine sent it (moving apps between machines).
     'move_since' => env('DAEMON_MOVE_SINCE', '0.1.1-pre.51'),
     'install_url' => env('DAEMON_INSTALL_URL', rtrim((string) env('APP_URL', ''), '/').'/install.sh'),

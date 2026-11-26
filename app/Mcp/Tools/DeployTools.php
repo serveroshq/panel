@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Mcp\ToolGroup;
+use App\Mcp\Tools\Deploy\ChangeSiteLogging;
 use App\Mcp\Tools\Deploy\CheckDomain;
 use App\Mcp\Tools\Deploy\DeployFromGit;
 use App\Mcp\Tools\Deploy\DeployNewVersion;
@@ -10,12 +11,15 @@ use App\Mcp\Tools\Deploy\DeployTemplate;
 use App\Mcp\Tools\Deploy\DetectRepository;
 use App\Mcp\Tools\Deploy\GetApp;
 use App\Mcp\Tools\Deploy\GetConnection;
+use App\Mcp\Tools\Deploy\GetSiteTraffic;
 use App\Mcp\Tools\Deploy\ListDeploys;
+use App\Mcp\Tools\Deploy\ListSiteTraffic;
 use App\Mcp\Tools\Deploy\ListTemplates;
 use App\Mcp\Tools\Deploy\RedeployApp;
 use App\Mcp\Tools\Deploy\RollbackApp;
 use App\Mcp\Tools\Deploy\SetAppDomain;
 use App\Mcp\Tools\Deploy\UpdateAppSettings;
+use App\Mcp\Tools\Deploy\UpdateSiteSettings;
 
 final class DeployTools implements ToolGroup
 {
@@ -29,11 +33,15 @@ final class DeployTools implements ToolGroup
             ListDeploys::class,
             GetApp::class,
             GetConnection::class,
+            ChangeSiteLogging::class,
+            GetSiteTraffic::class,
+            ListSiteTraffic::class,
             DeployNewVersion::class,
             RedeployApp::class,
             RollbackApp::class,
             SetAppDomain::class,
             UpdateAppSettings::class,
+            UpdateSiteSettings::class,
             CheckDomain::class,
         ];
     }

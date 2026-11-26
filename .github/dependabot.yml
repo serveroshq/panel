@@ -14,3 +14,19 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: "CI:"
+  # The self-hosted image's base images, pinned by digest. Same week's wait;
+  # a new major version (Node 24, say) is a change we make on purpose.
+  - package-ecosystem: docker
+    directory: /docker/self-hosted
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      images:
+        patterns: ["*"]
+    commit-message:
+      prefix: "Docker:"

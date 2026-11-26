@@ -312,6 +312,40 @@ test('templates that control Docker on the machine need a connection allowed to 
         ->and(DaemonJob::query()->where('service', 'portainer')->exists())->toBeTrue();
 });
 
+test('an app built from its repository’s own Compose file only changes over a connection allowed to run commands', function () {
+    [$workspace, $machine] = serviceToolsSetup();
+    $live = str_repeat('a', 40);
+    DaemonJob::query()->create([
+        'id' => (string) Str::uuid(), 'machine_id' => $machine->id, 'user_id' => $workspace->owner->id, 'kind' => 'deploy', 'service' => 'shop', 'state' => 'succeeded', 'log' => [],
+        'command' => ['job' => ['type' => 'deploy', 'service' => 'shop', 'repo' => 'https://example.com/acme/shop.git', 'commit' => $live, 'files' => [], 'compose_file' => 'compose.yaml', 'dockerfile' => null, 'env' => ['MAIL' => 'log'], 'domains' => ['shop.example.com'], 'port' => 3100]],
+    ]);
+    $writeOnly = mcpKey($workspace, scopes: [Scopes::READ, Scopes::WRITE]);
+    $other = 'https://example.com/someone/else.git';
+    $theirs = str_repeat('b', 40);
+
+    foreach ([
+        ['deploy_new_version', ['repo' => $other, 'ref' => $theirs]],
+        ['deploy_new_version', ['ref' => $theirs]],
+        ['update_app_settings', ['set' => ['MAIL' => 'smtp']]],
+        ['set_app_domain', ['domain' => 'new.example.com']],
+    ] as [$tool, $arguments]) {
+        $refused = mcpCall($workspace, $writeOnly, $tool, ['machine' => 'web-1', 'app' => 'shop', ...$arguments]);
+        expect($refused['error'])->toBeTrue("{$tool} went through")
+            ->and($refused['text'])->toContain('Run commands');
+    }
+
+    $api = $this->withHeader('Authorization', "Bearer {$writeOnly}")
+        ->postJson("/api/v1/machines/{$machine->id}/apps/shop/deploy", ['repo' => $other, 'ref' => $theirs]);
+    expect($api->json('error'))->not->toBeNull()
+        ->and(DaemonJob::query()->where('state', 'queued')->exists())->toBeFalse();
+
+    expect(mcpCall($workspace, $writeOnly, 'redeploy_app', ['machine' => 'web-1', 'app' => 'shop'])['error'])->toBeFalse();
+
+    $allowed = mcpCall($workspace, mcpKey($workspace), 'deploy_new_version', ['machine' => 'web-1', 'app' => 'shop', 'repo' => $other, 'ref' => $theirs]);
+    expect($allowed['error'])->toBeFalse($allowed['text']);
+    expect(DaemonJob::query()->where('state', 'queued')->get()->pluck('command.job.commit')->all())->toContain($theirs);
+});
+
 test('a failed console command’s output stays hidden from viewers over MCP too', function () {
     [$workspace, $machine] = serviceToolsSetup();
     $viewer = User::factory()->create();

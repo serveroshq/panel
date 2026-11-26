@@ -2202,6 +2202,10 @@ function ago(iso: string | null): string {
                                     'Each pull request gets its own copy of :env on the machine you pick, running the pull request’s code. New commits deploy it again, and it’s removed when the pull request closes. Pull requests from forks never get one.',
                                     { env: environments[0]?.name ?? '' },
                                 ) +
+                                ' ' +
+                                $t(
+                                    'Nor does a project with an app that runs its repository’s own Compose file, since that file can control Docker on the machine.',
+                                ) +
                                 ' '
                             }}
                         </DialogDescription>

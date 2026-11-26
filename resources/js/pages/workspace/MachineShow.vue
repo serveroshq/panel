@@ -3,6 +3,7 @@ import { themeColour } from '@/lib/themeColour';
 import { useUpgradeLink } from '@/composables/useUpgradeLink';
 import { trans } from 'laravel-vue-i18n';
 import DiskUsagePanel from '@/components/machines/DiskUsagePanel.vue';
+import DockerPanel from '@/components/machines/DockerPanel.vue';
 import ProviderName from '@/components/machines/ProviderName.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import {
@@ -1485,6 +1486,16 @@ function usage(mount: string): { percent: number; free: number } | null {
                     :can-manage="canManage"
                     :online="online"
                 />
+                <template v-if="consoleContainers.length && canManage">
+                    <h3 class="pt-2 text-sm font-medium">
+                        {{ $t('Docker images and volumes') }}
+                    </h3>
+                    <DockerPanel
+                        :machine-id="machine.id!"
+                        :can-manage="canManage"
+                        :online="online"
+                    />
+                </template>
                 <h3 class="pt-2 text-sm font-medium">
                     {{ $t('Network interfaces') }}
                 </h3>

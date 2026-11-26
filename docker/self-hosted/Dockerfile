@@ -19,13 +19,18 @@
 # The packages named in REMOVE_PACKAGES are left out (serveroshq/serveros.com,
 # the parts only serveros.com runs); any other stays in. See
 # docs/self-hosting.md.
+#
+# Every image below is pinned to the digest its tag pointed to, so a tag
+# that's moved upstream can't change what gets built. Dependabot raises a
+# pull request when a tag moves (.github/dependabot.yml).
 
-ARG PHP_IMAGE=dunglas/frankenphp:1-php8.4-bookworm
+FROM composer:2@sha256:50ea4d33fdcde1adb0f045547295faa1548b33872e5f789dae5b02ce2fb5de93 AS composer
+FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS node
 
 # The gateway (serveros-gateway) from the daemon's public repository, at
 # the release tag the panel is tested with, which must still be the commit
 # in DAEMON_COMMIT (a tag can be moved; bump both together).
-FROM rust:1-bookworm AS gateway
+FROM rust:1-bookworm@sha256:ade39a710ef85f3506cffcfec3e8a24ba090badef1dff2fb798f71d878833fea AS gateway
 ARG DAEMON_REF=v0.1.1-pre.36
 ARG DAEMON_COMMIT=18704df09a536fe1094be7f83f3e75a940eb0109
 RUN git clone --depth 1 --branch "${DAEMON_REF}" https://github.com/serveroshq/daemon.git /src \
@@ -37,7 +42,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cp target/release/serveros-gateway /usr/local/bin/serveros-gateway
 
 # PHP with the extensions the panel uses.
-FROM ${PHP_IMAGE} AS php
+FROM dunglas/frankenphp:1-php8.4-bookworm@sha256:2721ad9a89b1e34da343f584c063b397012c8c48f0d5727cad657fe2cdf8763f AS php
 RUN install-php-extensions bcmath exif gd intl opcache pcntl pdo_pgsql redis sockets zip \
     && apt-get update \
     && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl libcap2-bin \
@@ -45,9 +50,9 @@ RUN install-php-extensions bcmath exif gd intl opcache pcntl pdo_pgsql redis soc
 
 # Composer and Node build the app: vendor/ and public/build.
 FROM php AS build
-COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
-COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
-COPY --from=node:22-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=composer /usr/bin/composer /usr/local/bin/composer
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
 ENV COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_NO_INTERACTION=1
 WORKDIR /app

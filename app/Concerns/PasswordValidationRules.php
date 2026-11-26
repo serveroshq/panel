@@ -10,7 +10,8 @@ trait PasswordValidationRules
     /** @return array<int, Password|ValidationRule|array<mixed>|string> */
     protected function passwordRules(): array
     {
-        return ['required', 'string', Password::default(), 'confirmed'];
+        // Long enough for any password manager; bcrypt only reads the first 72 bytes anyway.
+        return ['required', 'string', 'max:128', Password::default(), 'confirmed'];
     }
 
     /** @return array<int, Password|ValidationRule|array<mixed>|string> */

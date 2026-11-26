@@ -16,6 +16,7 @@ use App\Support\Monitors\HostResolver;
 use App\Support\Monitors\MonitorAlerts;
 use App\Support\Monitors\MonitorRunner;
 use App\Support\Monitors\MonitorSettings;
+use App\Support\Monitors\TelegramAlerts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -167,29 +168,45 @@ class MonitorController extends Controller
         $data = $request->validate([
             'email' => ['required', 'boolean'],
             'webhook' => ['nullable', 'string', 'max:2000', 'url:https'],
+            ...TelegramAlerts::rules(),
             'muted' => ['sometimes', 'array'],
             'muted.*' => ['string', Rule::in(AlertKinds::keys())],
-        ]);
+        ], TelegramAlerts::messages());
         $webhook = isset($data['webhook']) && trim($data['webhook']) !== '' ? trim($data['webhook']) : null;
 
         if ($webhook !== null && $resolver->resolve((string) parse_url($webhook, PHP_URL_HOST)) === []) {
             throw ValidationException::withMessages(['webhook' => 'That address can’t be reached from the panel.']);
         }
+        $telegram = TelegramAlerts::merge($workspace, $data);
 
         $muted = array_key_exists('muted', $data)
             ? array_values(array_intersect(AlertKinds::keys(), $data['muted']))
             : AlertKinds::muted($workspace);
 
-        $workspace->forceFill(['alert_email' => $data['email'], 'alert_webhook_url' => $webhook, 'alert_muted' => $muted])->save();
-        Activity::record($workspace, 'alerts.update', null, meta: ['email' => (bool) $data['email'], 'webhook' => $webhook !== null, 'muted' => $muted]);
+        $workspace->forceFill([
+            'alert_email' => $data['email'],
+            'alert_webhook_url' => $webhook,
+            'alert_telegram_chat' => $telegram['chat'],
+            'alert_telegram_token' => $telegram['token'],
+            'alert_muted' => $muted,
+        ])->save();
+        Activity::record($workspace, 'alerts.update', null, meta: ['email' => (bool) $data['email'], 'webhook' => $webhook !== null, 'telegram' => $telegram['chat'] !== null, 'muted' => $muted]);
 
         return back();
     }
 
     #[NotAudited('Sends a test alert; nothing changes')]
-    public function testAlert(Request $request, Workspace $workspace, MonitorAlerts $alerts): JsonResponse
+    public function testAlert(Request $request, Workspace $workspace, MonitorAlerts $alerts, TelegramAlerts $telegrams): JsonResponse
     {
         Gate::authorize('manageMachines', $workspace);
+
+        if ($request->input('channel') === 'telegram') {
+            $data = $request->validate([...TelegramAlerts::rules(), 'telegram_chat' => ['required', ...TelegramAlerts::rules()['telegram_chat']]], TelegramAlerts::messages());
+            $telegram = TelegramAlerts::merge($workspace, $data);
+            $error = $telegram['chat'] === null || $telegram['token'] === null ? 'Add the chat id first.' : $telegrams->test($workspace, $telegram['token'], $telegram['chat']);
+
+            return response()->json(['ok' => $error === null, 'error' => $error]);
+        }
 
         $url = $request->validate(['webhook' => ['required', 'string', 'max:2000', 'url:https']])['webhook'];
         $error = $alerts->test($workspace, $url);
@@ -257,14 +274,9 @@ class MonitorController extends Controller
             ->map(fn (Machine $m) => ['id' => $m->id, 'name' => $m->name, 'ip' => $m->ip_address])->all());
     }
 
-    /** @return array{email: bool, webhook: string|null, webhookSet: bool} */
+    /** @return array{email: bool, webhook: string|null, webhookSet: bool, telegram: array{chat: string|null, set: bool}, muted: list<string>} */
     private function alertSettings(Workspace $workspace): array
     {
-        return [
-            'email' => (bool) ($workspace->alert_email ?? true),
-            'webhook' => Gate::allows('manageMachines', $workspace) ? $workspace->alert_webhook_url : null,
-            'webhookSet' => filled($workspace->alert_webhook_url),
-            'muted' => AlertKinds::muted($workspace),
-        ];
+        return AlertKinds::props($workspace, Gate::allows('manageMachines', $workspace));
     }
 }

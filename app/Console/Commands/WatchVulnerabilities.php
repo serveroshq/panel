@@ -129,7 +129,8 @@ class WatchVulnerabilities extends Command
         $list = Vulnerability::query()
             ->whereNull('nvd_checked_at')
             ->where('cve', 'like', 'CVE-%')
-            ->whereHas('findings', fn ($q) => $q->whereNull('resolved_at'))
+            ->where(fn ($q) => $q->whereHas('findings', fn ($q) => $q->whereNull('resolved_at'))
+                ->orWhereHas('imageFindings', fn ($q) => $q->whereNull('resolved_at')))
             // Unrated first: their alerts wait for this.
             ->orderByRaw("case when severity = 'unknown' then 0 else 1 end")
             ->orderByDesc('id')
@@ -153,7 +154,9 @@ class WatchVulnerabilities extends Command
         $list = Vulnerability::query()
             ->where('cve', 'like', 'CVE-%')
             ->where(fn ($q) => $q->whereNull('epss_checked_at')->orWhere('epss_checked_at', '<', now()->subDay()))
-            ->where(fn ($q) => $q->whereHas('findings', fn ($q) => $q->whereNull('resolved_at'))->orWhereNull('announced_at'))
+            ->where(fn ($q) => $q->whereHas('findings', fn ($q) => $q->whereNull('resolved_at'))
+                ->orWhereHas('imageFindings', fn ($q) => $q->whereNull('resolved_at'))
+                ->orWhereNull('announced_at'))
             ->limit(500)
             ->pluck('cve', 'id');
         if ($list->isEmpty()) {

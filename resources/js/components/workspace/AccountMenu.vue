@@ -37,6 +37,8 @@ import { flagUrl } from '@/lib/flags';
 import { changeLocale } from '@/lib/locale';
 import { logout } from '@/routes';
 import { edit } from '@/routes/profile';
+import { profile as workspaceProfile } from '@/routes/workspace/settings';
+import { onWorkspace } from '@/lib/workspaceRoute';
 
 type Props = {
     display?: 'full' | 'avatar';
@@ -59,6 +61,28 @@ const page = usePage<{
     extensions?: { nav: { key: string; label: string; path: string }[] } | null;
 }>();
 const user = computed(() => page.props.auth.user);
+// The profile lives in a workspace's Settings. Inside one, it's that
+// workspace's; outside one (like the workspaces list), it's the pinned
+// workspace's, or the first one's, on its own host. Only someone with no
+// workspace at all gets the standalone page.
+const accountSettings = computed<{ href: string; external: boolean }>(() => {
+    if (page.props.workspace) {
+        return {
+            href: onWorkspace(workspaceProfile(page.props.workspace.slug)).url,
+            external: false,
+        };
+    }
+
+    const all = page.props.workspaces ?? [];
+    const home = all.find((w) => w.pinnedAt !== null) ?? all[0];
+
+    return home
+        ? {
+              href: `${home.url.replace(/\/$/, '')}/settings/profile`,
+              external: true,
+          }
+        : { href: edit().url, external: false };
+});
 const support = computed(
     () =>
         page.props.extensions?.nav.find((item) => item.key === 'support') ??
@@ -162,7 +186,15 @@ const external = 'ml-auto size-3.5 text-(--ds-text-faint)';
             </DropdownMenuLabel>
             <DropdownMenuSeparator class="-mx-1.5 my-1.5" />
             <DropdownMenuItem as-child>
-                <Link :href="edit()" prefetch :class="row">
+                <a
+                    v-if="accountSettings.external"
+                    :href="accountSettings.href"
+                    :class="row"
+                >
+                    <Settings :class="icon" :stroke-width="1.6" />
+                    {{ $t('Account settings') }}
+                </a>
+                <Link v-else :href="accountSettings.href" prefetch :class="row">
                     <Settings :class="icon" :stroke-width="1.6" />
                     {{ $t('Account settings') }}
                 </Link>

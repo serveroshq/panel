@@ -5,7 +5,8 @@ return [
 
     'egress_ip' => env('SERVEROS_EGRESS_IP'),
 
-    'open_source' => (bool) env('SERVEROS_OPEN_SOURCE', false),
+    // The panel and the daemon are both public under the AGPL-3.0.
+    'open_source' => (bool) env('SERVEROS_OPEN_SOURCE', true),
 
     'edition' => env('SERVEROS_EDITION', 'self-hosted'),
 

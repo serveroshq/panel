@@ -16,10 +16,11 @@ Keep keys as whole sentences, so translators see the full thought.
 ## Adding the translations
 
 Add the English key with its translation to `lang/es.json`, `lang/de.json` and
-`lang/hi.json` (alphabetical). Spanish uses "tú" and German "du", like the
-panel's casual English. Hindi uses "आप" and writes everyday tech words the way
-Indian developers say them (सर्वर, ऐप, डिप्लॉय), keeping product names, code
-and `:placeholders` in English. Machine drafts are fine to start; have a native
+`lang/hi.json` (alphabetical). Spanish uses "tú", like the panel's casual
+English. German uses "Sie", which German speakers expect from tools like this.
+Hindi uses "आप" and writes everyday tech words the way Indian developers say
+them (सर्वर, ऐप, डिप्लॉय), keeping product names, code and `:placeholders` in
+English. Machine drafts are fine to start; have a native
 speaker check the pages people see most.
 
 Laravel's own messages (validation, passwords, sign-in) come from

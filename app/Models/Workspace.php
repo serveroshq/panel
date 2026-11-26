@@ -20,6 +20,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Database\Factories\WorkspaceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -65,6 +66,8 @@ use Illuminate\Support\Facades\Storage;
  * @property string $scim_default_role
  * @property int|null $scim_default_custom_role_id
  * @property string|null $alert_webhook_url
+ * @property string|null $alert_telegram_chat
+ * @property string|null $alert_telegram_token
  * @property list<string>|null $alert_muted
  * @property string|null $company_legal_name
  * @property string|null $company_number
@@ -81,6 +84,7 @@ use Illuminate\Support\Facades\Storage;
  * @property-read Membership $pivot
  */
 #[Fillable(['name', 'slug', 'plan', 'billing_interval', 'trial_ends_at'])]
+#[Hidden(['alert_telegram_token'])]
 class Workspace extends Model
 {
     /** @use HasFactory<WorkspaceFactory> */
@@ -112,6 +116,7 @@ class Workspace extends Model
             'mcp_call_limit_override' => 'integer',
             'alert_email' => 'boolean',
             'alert_webhook_url' => 'encrypted',
+            'alert_telegram_token' => 'encrypted',
             'alert_muted' => 'array',
             'dismissed_issues' => 'array',
             'welcome' => 'array',
@@ -287,6 +292,12 @@ class Workspace extends Model
     public function githubInstallations(): HasMany
     {
         return $this->hasMany(GitHubInstallation::class);
+    }
+
+    /** @return HasMany<ContainerRegistry, $this> */
+    public function containerRegistries(): HasMany
+    {
+        return $this->hasMany(ContainerRegistry::class);
     }
 
     /**

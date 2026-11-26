@@ -176,7 +176,8 @@ test('password, two-factor and passkey changes are recorded', function () {
     $this->actingAs($user)->withSession($confirmed)->delete(route('two-factor.disable'));
     $user->forceFill(['two_factor_secret' => encrypt('secret'), 'two_factor_recovery_codes' => encrypt('[]'), 'two_factor_confirmed_at' => now()])->save();
     $this->actingAs($user)->withSession($confirmed)->post(route('two-factor.regenerate-recovery-codes'));
-    $this->actingAs($user)->withSession($confirmed)->delete(route('two-factor.disable'));
+    $codes = $user->fresh()->recoveryCodes();
+    $this->actingAs($user)->withSession($confirmed)->delete(route('two-factor.disable'), ['code' => $codes[0]]);
 
     expect(accountLines($user))->toBe([
         'Changed your password',

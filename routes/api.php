@@ -18,9 +18,9 @@ Route::post('daemon/enrol', DaemonEnrolController::class)->middleware('throttle:
 Route::get('daemon/releases/latest', [DaemonReleaseController::class, 'latest'])->middleware('throttle:60,1');
 Route::post('daemon/releases', [DaemonReleaseController::class, 'store'])->middleware('throttle:20,1');
 Route::put('daemon/releases/{version}/{file}', [DaemonReleaseController::class, 'upload'])->middleware('throttle:20,1');
-Route::post('gateway/hello', [DaemonGatewayController::class, 'hello'])->middleware('throttle:300,1');
-Route::post('gateway/machines/{uid}/ingest', [DaemonGatewayController::class, 'ingest'])->middleware('throttle:600,1');
-Route::post('gateway/machines/{uid}/closed', [DaemonGatewayController::class, 'closed'])->middleware('throttle:300,1');
+Route::post('gateway/hello', [DaemonGatewayController::class, 'hello'])->middleware('throttle:gateway-hello');
+Route::post('gateway/machines/{uid}/ingest', [DaemonGatewayController::class, 'ingest'])->middleware('throttle:gateway-ingest');
+Route::post('gateway/machines/{uid}/closed', [DaemonGatewayController::class, 'closed'])->middleware('throttle:gateway-closed');
 Route::get('internal/tls-check', [WorkspaceDomainController::class, 'tlsCheck'])->name('domains.tls-check');
 Route::post('github/webhook', GitHubWebhookController::class)->middleware('throttle:300,1')->name('github.webhook');
 Route::post('hooks/workflows/{token}', [WorkflowController::class, 'hook'])->middleware('throttle:60,1')->where('token', 'wh_[A-Za-z0-9]{40}')->name('workflows.hook');

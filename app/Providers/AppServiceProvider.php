@@ -120,6 +120,12 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute(6)->by('docs-assistant|'.$request->ip()),
             Limit::perDay(60)->by('docs-assistant-day|'.$request->ip()),
         ]);
+
+        // Every gateway call comes from the gateway's one address, so a plain
+        // throttle shares one counter across the whole fleet. Count per machine.
+        RateLimiter::for('gateway-hello', fn (Request $request) => Limit::perMinute(30)->by('gateway-hello|'.$request->input('hello.machine_id', $request->ip())));
+        RateLimiter::for('gateway-ingest', fn (Request $request) => Limit::perMinute(600)->by('gateway-ingest|'.$request->route('uid')));
+        RateLimiter::for('gateway-closed', fn (Request $request) => Limit::perMinute(60)->by('gateway-closed|'.$request->route('uid')));
     }
 
     protected function configureAccountEmails(): void

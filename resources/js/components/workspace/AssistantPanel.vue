@@ -694,7 +694,7 @@ const focusRing =
                             ? $t('Approve above, or say what to do instead…')
                             : $t('Ask, or tell me what to do…')
                     "
-                    class="max-h-37 min-h-8 grow resize-none bg-transparent py-1.5 text-[13px]/5 text-(--ds-text) outline-none placeholder:text-(--ds-text-faint)"
+                    class="max-h-37 min-h-8 min-w-0 grow resize-none bg-transparent py-1.5 text-[13px]/5 text-(--ds-text) outline-none placeholder:text-(--ds-text-faint)"
                     @input="resize"
                     @keydown="onKeydown"
                     @paste="onPaste"
