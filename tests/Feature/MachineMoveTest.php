@@ -11,6 +11,7 @@ use App\Models\MachineMoveCopy;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Activity\ActivityLine;
+use App\Support\Backups\BackupReceivers;
 use App\Support\Backups\ReceiverKey;
 use App\Support\Machines\MachineMoves;
 use Carbon\CarbonImmutable;
@@ -491,6 +492,11 @@ test('a move keeps the destination’s other receiver keys, and is only seen fro
     expect(moveJobs($to, 'backup_receiver')[0]->command['job']['public_keys'])->toBe(['ssh-ed25519 AAAAotherkey', MOVE_PUBLIC_KEY]);
 
     $move = MachineMove::query()->sole();
+
+    // Backups changing the destination's receiver keep the move's key while it sends.
+    app(BackupReceivers::class)->sync($to, $workspace->owner);
+    expect(collect(moveJobs($to, 'backup_receiver'))->last()->command['job']['public_keys'])->toBe(['ssh-ed25519 AAAAotherkey', MOVE_PUBLIC_KEY]);
+
     $stranger = Workspace::factory()->onPlan(Plan::Pro)->create();
     $this->actingAs($stranger->owner)->getJson('https://'.$stranger->host().'/machines/'.$from->id.'/moves/'.$move->id)->assertNotFound();
 

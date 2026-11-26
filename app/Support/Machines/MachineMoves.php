@@ -5,13 +5,13 @@ namespace App\Support\Machines;
 use App\Http\Controllers\MachineFirewallController;
 use App\Mcp\Tools\Deploy\Deploys;
 use App\Models\Activity;
-use App\Models\BackupDestination;
 use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Models\MachineMove;
 use App\Models\MachineMoveApp;
 use App\Models\MachineMoveCopy;
 use App\Models\User;
+use App\Support\Backups\BackupReceivers;
 use App\Support\Backups\ReceiverKey;
 use App\Support\DaemonJobQueue;
 use App\Support\Deploys\AppReleases;
@@ -611,17 +611,10 @@ final class MachineMoves
         }
     }
 
-    /** @return list<string> keys the destination's receiver keeps for others */
+    /** @return list<string> keys the destination's receiver keeps for its backups and other moves */
     private static function otherKeys(MachineMove $move): array
     {
-        $keys = [
-            ...BackupDestination::query()->where('type', 'machine')->where('machine_id', $move->to_machine_id)
-                ->whereIn('status', ['ready', 'setting_up'])->pluck('public_key')->all(),
-            ...MachineMove::query()->where('to_machine_id', $move->to_machine_id)->whereKeyNot($move->id)
-                ->whereIn('receiver_state', ['setting_up', 'ready'])->pluck('public_key')->all(),
-        ];
-
-        return array_values(array_unique(array_filter($keys, fn ($k) => is_string($k) && $k !== '')));
+        return BackupReceivers::keysFor($move->to, $move);
     }
 
     /** @return array<string, mixed> */
