@@ -55,10 +55,22 @@ final class MachineMoveCheck
                 $warnings[] = self::say(':app is fetched with a deploy key. Add :to’s deploy key to its repository before moving it.', ['app' => $app['name'], 'to' => $to->name]);
             }
             if (in_array('tar', $app['data'], true)) {
-                $warnings[] = self::say(':app keeps files outside its container. They aren’t copied between machines yet, so only its setup would move.', ['app' => $app['name']]);
+                $warnings[] = self::say(':app keeps files outside its container. They’re copied while it runs, then again once it’s stopped for the switch-over.', ['app' => $app['name']]);
             }
             $domains = [...$domains, ...$app['domains']];
             $inApps = [...$inApps, ...$app['services']];
+        }
+
+        if (array_filter($apps, fn (array $app) => $app['data'] !== []) !== []) {
+            if (! DaemonJobQueue::canReceiveMoves($to)) {
+                $blocking[] = self::say(':to’s daemon is too old to receive apps’ data. It updates itself, or run “sudo serverosd update” on it.', ['to' => $to->name]);
+            }
+            if (blank($to->ip_address)) {
+                $blocking[] = self::say('ServerOS doesn’t know :to’s address, so :from can’t send it data.', ['to' => $to->name, 'from' => $from->name]);
+            }
+        }
+        if (MachineMoves::active($from) !== null) {
+            $blocking[] = self::say('A move from :from is already under way.', ['from' => $from->name]);
         }
 
         $warnings = [...$warnings, ...self::capacity($from, $to)];

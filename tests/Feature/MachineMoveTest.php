@@ -2,11 +2,18 @@
 
 use App\Enums\Plan;
 use App\Models\Activity;
+use App\Models\BackupDestination;
 use App\Models\DaemonJob;
 use App\Models\Machine;
+use App\Models\MachineMove;
+use App\Models\MachineMoveApp;
+use App\Models\MachineMoveCopy;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Activity\ActivityLine;
+use App\Support\Backups\ReceiverKey;
+use App\Support\Machines\MachineMoves;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -24,13 +31,13 @@ function moveSetup(): array
     $from->forceFill([
         'uid' => (string) Str::uuid(),
         'last_seen_at' => now(),
-        'daemon_version' => 'v0.1.1-pre.45',
+        'daemon_version' => 'v0.1.1-pre.51',
         'facts' => ['arch' => 'x86_64', 'docker_version' => '27.0.1', 'memory_bytes' => 8 << 30],
         'memory_used_mb' => 2048,
         'disks' => [['mount' => '/', 'used' => 30 << 30, 'total' => 80 << 30]],
         'inventory' => ['services' => [
-            ['key' => 'docker:web', 'name' => 'serveros-shop-aaaaaaaaaaaa', 'kind' => 'app', 'managed' => true, 'origin' => 'created', 'details' => ['managed' => 'true', 'backup' => 'tar']],
-            ['key' => 'docker:pg', 'name' => 'serveros-shopdb-postgres-1', 'kind' => 'database', 'managed' => true, 'origin' => 'created', 'details' => ['managed' => 'true', 'compose_project' => 'serveros-shopdb', 'backup' => 'pg_dumpall']],
+            ['key' => 'docker:web', 'name' => 'serveros-shop-aaaaaaaaaaaa', 'kind' => 'app', 'status' => 'running', 'managed' => true, 'origin' => 'created', 'details' => ['managed' => 'true', 'backup' => 'tar']],
+            ['key' => 'docker:pg', 'name' => 'serveros-shopdb-postgres-1', 'kind' => 'database', 'status' => 'running', 'managed' => true, 'origin' => 'created', 'details' => ['managed' => 'true', 'compose_project' => 'serveros-shopdb', 'backup' => 'pg_dumpall']],
             ['key' => 'docker:legacy', 'name' => 'legacy-api', 'kind' => 'app', 'managed' => true, 'origin' => 'adopted', 'details' => ['managed' => 'true']],
             ['key' => 'systemd:nginx.service', 'name' => 'nginx', 'kind' => 'web_server', 'details' => []],
         ], 'scheduled' => [
@@ -43,7 +50,8 @@ function moveSetup(): array
     $to->forceFill([
         'uid' => (string) Str::uuid(),
         'last_seen_at' => now(),
-        'daemon_version' => 'v0.1.1-pre.45',
+        'ip_address' => '203.0.113.20',
+        'daemon_version' => 'v0.1.1-pre.51',
         'facts' => ['arch' => 'x86_64', 'docker_version' => '27.0.1', 'memory_bytes' => 16 << 30],
         'disks' => [['mount' => '/', 'used' => 5 << 30, 'total' => 160 << 30]],
         'inventory' => ['services' => [], 'listeners' => [['port' => 22, 'address' => '0.0.0.0', 'proto' => 'tcp']]],
@@ -87,7 +95,7 @@ test('the machine file describes what ServerOS deployed without any secret value
 
     $file = $response->json();
     expect($file)->toMatchArray(['kind' => 'serveros-machine', 'version' => 1])
-        ->and($file['machine'])->toMatchArray(['name' => 'old-box', 'arch' => 'x86_64', 'daemon_version' => 'v0.1.1-pre.45'])
+        ->and($file['machine'])->toMatchArray(['name' => 'old-box', 'arch' => 'x86_64', 'daemon_version' => 'v0.1.1-pre.51'])
         ->and(array_column($file['apps'], 'name'))->toBe(['shop', 'shopdb'])
         ->and($file['apps'][0])->toMatchArray([
             'source' => 'git', 'repo' => 'https://github.com/acme/shop', 'env' => ['APP_URL', 'DB_PASSWORD'],
@@ -194,7 +202,8 @@ test('a move warns about a smaller or older destination and blocks cleared uploa
         ->and(implode("\n", $check['warnings']))
         ->toContain('new-box runs an older daemon (v0.1.1-pre.40)')
         ->toContain('new-box has less memory than old-box uses now')
-        ->toContain('new-box has less free disk than old-box uses now');
+        ->toContain('new-box has less free disk than old-box uses now')
+        ->and(implode("\n", $check['blocking']))->toContain('new-box’s daemon is too old to receive apps’ data');
 });
 
 test('the settings page offers the workspace’s other machines to move to', function () {
@@ -215,4 +224,254 @@ test('nothing to move is a blocker', function () {
 
     expect($check['ready'])->toBeFalse()
         ->and($check['blocking'])->toContain('Nothing on new-box was deployed by ServerOS, so there’s nothing to move.');
+});
+
+const MOVE_PUBLIC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAImovekeymovekeymovekeymovekeymovekeymove serveros-backups';
+
+function fakeMoveKeys(): void
+{
+    app()->instance(ReceiverKey::class, new class extends ReceiverKey
+    {
+        public function generate(): array
+        {
+            return ['private' => "-----BEGIN OPENSSH PRIVATE KEY-----\nmove-private\n-----END OPENSSH PRIVATE KEY-----\n", 'public' => MOVE_PUBLIC_KEY];
+        }
+    });
+}
+
+/** @return list<DaemonJob> */
+function moveJobs(Machine $machine, string $kind): array
+{
+    return DaemonJob::query()->where('machine_id', $machine->id)->where('kind', $kind)->oldest()->get()->all();
+}
+
+/** @param  array<string, mixed>  $result */
+function finishMoveJob(DaemonJob $job, string $state = 'succeeded', array $result = [], ?string $error = null): void
+{
+    $job->forceFill(['state' => $state, 'result' => $result, 'error' => $error === null ? null : ['message' => $error], 'finished_at' => now()])->save();
+    app(MachineMoves::class)->jobFinished($job->refresh());
+}
+
+/** The destination reports its copies of the source's containers. */
+function destinationRuns(Machine $to): void
+{
+    $to->forceFill(['inventory' => ['services' => [
+        ['key' => 'docker:web2', 'name' => 'serveros-shop-aaaaaaaaaaaa', 'kind' => 'app', 'status' => 'running', 'details' => ['managed' => 'true', 'backup' => 'tar']],
+        ['key' => 'docker:pg2', 'name' => 'serveros-shopdb-postgres-1', 'kind' => 'database', 'status' => 'running', 'details' => ['managed' => 'true', 'compose_project' => 'serveros-shopdb', 'backup' => 'pg_dumpall']],
+    ], 'listeners' => []]])->save();
+}
+
+/** Sends and restores every copy waiting, as both machines would. */
+function copyEverything(Machine $from, Machine $to, MachineMove $move): void
+{
+    foreach (MachineMoveCopy::query()->where('state', 'sending')->get() as $copy) {
+        finishMoveJob(DaemonJob::query()->findOrFail($copy->backup_job_id), result: [
+            'snapshot' => '1700-move'.$copy->round, 'bytes' => 2048,
+            'location' => "sftp://203.0.113.20/moves/{$move->id}/{$copy->container}/1700-move{$copy->round}",
+        ]);
+    }
+    foreach (MachineMoveCopy::query()->where('state', 'restoring')->get() as $copy) {
+        finishMoveJob(DaemonJob::query()->findOrFail($copy->restore_job_id));
+    }
+}
+
+/** @return array{0: Workspace, 1: Machine, 2: Machine, 3: string, 4: MachineMove} */
+function moveToReady(): array
+{
+    fakeMoveKeys();
+    [$workspace, $from, $to, $url] = moveSetup();
+    test()->actingAs($workspace->owner)->postJson($url.'/moves', ['to' => $to->id])->assertAccepted();
+    $move = MachineMove::query()->sole();
+
+    finishMoveJob(moveJobs($to, 'backup_receiver')[0], result: ['host_key' => 'ssh-ed25519 AAAAhostkey']);
+    destinationRuns($to);
+    foreach (moveJobs($to, 'deploy') as $deploy) {
+        finishMoveJob($deploy, result: ['commit' => $deploy->command['job']['commit'] ?? null]);
+    }
+    copyEverything($from, $to, $move);
+
+    return [$workspace, $from, $to, $url, $move->refresh()];
+}
+
+test('a move deploys every app on the destination without its domains, then copies its data over', function () {
+    fakeMoveKeys();
+    [$workspace, $from, $to, $url] = moveSetup();
+
+    $started = $this->actingAs($workspace->owner)->postJson($url.'/moves', ['to' => $to->id])->assertAccepted()->json();
+    expect($started['state'])->toBe('copying')
+        ->and(array_column($started['apps'], 'name'))->toBe(['shop', 'shopdb'])
+        ->and(json_encode($started))->not->toContain('move-private')->not->toContain('hunter2-secret');
+
+    $receiver = moveJobs($to, 'backup_receiver');
+    expect($receiver)->toHaveCount(1)
+        ->and($receiver[0]->command['job']['public_keys'])->toBe([MOVE_PUBLIC_KEY]);
+
+    $deploys = moveJobs($to, 'deploy');
+    expect(array_map(fn (DaemonJob $j) => $j->service, $deploys))->toBe(['shop', 'shopdb'])
+        ->and($deploys[0]->command['job']['domains'])->toBe([])
+        ->and($deploys[0]->command['job']['env']['DB_PASSWORD'])->toBe('hunter2-secret')
+        ->and(Activity::query()->where('action', 'machine.move_start')->sole()->meta)->toMatchArray(['to' => 'new-box', 'apps' => 2]);
+
+    // Nothing is sent until the receiver is ready and the apps are deployed.
+    expect(moveJobs($from, 'backup_to'))->toBe([]);
+    finishMoveJob($receiver[0], result: ['host_key' => 'ssh-ed25519 AAAAhostkey']);
+    foreach ($deploys as $deploy) {
+        finishMoveJob($deploy, result: ['commit' => $deploy->command['job']['commit'] ?? null]);
+    }
+
+    $sends = moveJobs($from, 'backup_to');
+    $move = MachineMove::query()->sole();
+    expect(array_map(fn (DaemonJob $j) => $j->command['job']['service'], $sends))->toBe(['docker:web', 'docker:pg'])
+        ->and($sends[0]->command['job'])->toMatchArray(['reason' => 'move', 'prefix' => "moves/{$move->id}"])
+        ->and($sends[0]->command['job']['destination'])->toMatchArray(['type' => 'sftp', 'host' => '203.0.113.20', 'user' => 'serveros-backups', 'host_key' => 'ssh-ed25519 AAAAhostkey']);
+
+    // The destination hasn't reported its containers yet, so it's asked to look again.
+    copyEverything($from, $to, $move);
+    expect(moveJobs($to, 'restore'))->toBe([])
+        ->and(moveJobs($to, 'discover'))->not->toBe([]);
+
+    destinationRuns($to);
+    app(MachineMoves::class)->tick(CarbonImmutable::now());
+    $restores = moveJobs($to, 'restore');
+    expect(array_map(fn (DaemonJob $j) => $j->command['job']['service'], $restores))->toBe(['docker:web2', 'docker:pg2'])
+        ->and($restores[0]->command['job'])->toMatchArray(['snapshot' => '1700-move1', 'received' => "moves/{$move->id}/serveros-shop-aaaaaaaaaaaa/1700-move1"]);
+
+    copyEverything($from, $to, $move);
+    expect($move->refresh()->state)->toBe('ready');
+
+    $shown = $this->actingAs($workspace->owner)->getJson($url.'/moves/'.$move->id)->assertOk()->json();
+    expect($shown['can'])->toMatchArray(['switch' => true, 'cancel' => true, 'rollBack' => false])
+        ->and($shown['apps'][0]['copies'][0])->toMatchArray(['state' => 'copied', 'bytes' => 2048]);
+});
+
+test('switching over stops the source’s writers, copies the data again and gives the apps their domains', function () {
+    [$workspace, $from, $to, $url, $move] = moveToReady();
+
+    $this->actingAs($workspace->owner)->postJson($url.'/moves/'.$move->id.'/switch')->assertOk()->assertJsonPath('state', 'switching');
+
+    // The database keeps running so it can be dumped; the app stops first.
+    $stops = moveJobs($from, 'service_action');
+    expect($stops)->toHaveCount(1)
+        ->and($stops[0]->command['job'])->toMatchArray(['service' => 'docker:web', 'action' => 'stop'])
+        ->and(moveJobs($from, 'backup_to'))->toHaveCount(2);
+
+    finishMoveJob($stops[0]);
+    expect(moveJobs($from, 'backup_to'))->toHaveCount(4);
+    copyEverything($from, $to, $move);
+
+    $withDomains = array_values(array_filter(moveJobs($to, 'deploy'), fn (DaemonJob $j) => ($j->command['job']['domains'] ?? []) !== []));
+    expect($withDomains)->toHaveCount(1)
+        ->and($withDomains[0]->command['job']['domains'])->toBe(['shop.example.com']);
+
+    foreach (MachineMoveApp::query()->where('state', 'deploying_domains')->get() as $app) {
+        finishMoveJob(DaemonJob::query()->findOrFail($app->deploy_job_id));
+    }
+    expect($move->refresh())->state->toBe('switched')->receiver_state->toBe('revoked')
+        ->and(collect(moveJobs($to, 'backup_receiver'))->last()->command['job']['public_keys'])->toBe([]);
+
+    $shown = $this->actingAs($workspace->owner)->getJson($url.'/moves/'.$move->id)->json();
+    expect($shown['domains'])->toBe(['shop.example.com'])
+        ->and($shown['to']['address'])->toBe('203.0.113.20');
+
+    $this->actingAs($workspace->owner)->postJson($url.'/moves/'.$move->id.'/finish')->assertOk()->assertJsonPath('state', 'completed');
+    expect(Activity::query()->where('action', 'machine.move_finish')->exists())->toBeTrue()
+        ->and(DaemonJob::query()->where('kind', 'service_remove')->exists())->toBeFalse();
+});
+
+test('rolling back starts the source’s apps again and takes the domains off the destination', function () {
+    [$workspace, $from, $to, $url, $move] = moveToReady();
+    $this->actingAs($workspace->owner)->postJson($url.'/moves/'.$move->id.'/switch')->assertOk();
+    finishMoveJob(moveJobs($from, 'service_action')[0]);
+    copyEverything($from, $to, $move);
+    foreach (MachineMoveApp::query()->where('state', 'deploying_domains')->get() as $app) {
+        finishMoveJob(DaemonJob::query()->findOrFail($app->deploy_job_id));
+    }
+    $deploysBefore = count(moveJobs($to, 'deploy'));
+
+    $this->actingAs($workspace->owner)->postJson($url.'/moves/'.$move->id.'/rollback')->assertOk()->assertJsonPath('state', 'rolled_back');
+
+    $starts = array_values(array_filter(moveJobs($from, 'service_action'), fn (DaemonJob $j) => $j->command['job']['action'] === 'start'));
+    $redeploys = array_slice(moveJobs($to, 'deploy'), $deploysBefore);
+    expect($starts)->toHaveCount(1)
+        ->and($starts[0]->command['job']['service'])->toBe('docker:web')
+        ->and(array_map(fn (DaemonJob $j) => [$j->service, $j->command['job']['domains']], $redeploys))->toBe([['shop', []], ['shopdb', []]]);
+});
+
+test('a failed copy stops the move until it’s tried again', function () {
+    fakeMoveKeys();
+    [$workspace, $from, $to, $url] = moveSetup();
+    $this->actingAs($workspace->owner)->postJson($url.'/moves', ['to' => $to->id])->assertAccepted();
+    $move = MachineMove::query()->sole();
+    finishMoveJob(moveJobs($to, 'backup_receiver')[0], result: ['host_key' => 'k']);
+    destinationRuns($to);
+    foreach (moveJobs($to, 'deploy') as $deploy) {
+        finishMoveJob($deploy, result: ['commit' => $deploy->command['job']['commit'] ?? null]);
+    }
+    foreach (MachineMoveCopy::query()->get() as $copy) {
+        finishMoveJob(DaemonJob::query()->findOrFail($copy->backup_job_id), result: [
+            'snapshot' => '1700-move1', 'location' => "sftp://203.0.113.20/moves/{$move->id}/{$copy->container}/1700-move1",
+        ]);
+    }
+    finishMoveJob(moveJobs($to, 'restore')[0], 'failed', error: 'files.tar.gz does not match its checksum; the snapshot is damaged');
+
+    $shown = $this->actingAs($workspace->owner)->getJson($url.'/moves/'.$move->id)->json();
+    expect($shown['state'])->toBe('failed')
+        ->and($shown['error'])->toContain('does not match its checksum')
+        ->and($shown['can'])->toMatchArray(['retry' => true, 'cancel' => true, 'switch' => false]);
+
+    $this->actingAs($workspace->owner)->postJson($url.'/moves/'.$move->id.'/retry')->assertOk()->assertJsonPath('state', 'copying');
+    expect(moveJobs($to, 'restore'))->toHaveCount(3)
+        ->and(moveJobs($from, 'backup_to'))->toHaveCount(2);
+});
+
+test('the tick picks up a finish it missed and fails a job that’s gone', function () {
+    fakeMoveKeys();
+    [$workspace, , $to, $url] = moveSetup();
+    $this->actingAs($workspace->owner)->postJson($url.'/moves', ['to' => $to->id])->assertAccepted();
+    $move = MachineMove::query()->sole();
+
+    $receiver = moveJobs($to, 'backup_receiver')[0];
+    $receiver->forceFill(['state' => 'succeeded', 'result' => ['host_key' => 'k'], 'finished_at' => now()])->save();
+    DaemonJob::query()->whereKey(moveJobs($to, 'deploy')[0]->id)->delete();
+
+    app(MachineMoves::class)->tick(CarbonImmutable::now());
+
+    expect($move->refresh())->receiver_state->toBe('ready')->state->toBe('failed')
+        ->and($move->error)->toContain('The job is gone');
+});
+
+test('cancelling takes the key back and leaves the copies where they are', function () {
+    fakeMoveKeys();
+    [$workspace, $from, $to, $url] = moveSetup();
+    $this->actingAs($workspace->owner)->postJson($url.'/moves', ['to' => $to->id])->assertAccepted();
+    $this->actingAs($workspace->owner)->postJson($url.'/moves', ['to' => $to->id])->assertConflict()
+        ->assertJsonPath('error', 'A move from old-box is already under way.');
+    $move = MachineMove::query()->sole();
+
+    $this->actingAs($workspace->owner)->postJson($url.'/moves/'.$move->id.'/cancel')->assertOk()->assertJsonPath('state', 'cancelled');
+    $this->actingAs($workspace->owner)->postJson($url.'/moves/'.$move->id.'/switch')->assertConflict();
+
+    expect($move->refresh()->receiver_state)->toBe('revoked')
+        ->and(collect(moveJobs($to, 'backup_receiver'))->last()->command['job']['public_keys'])->toBe([])
+        ->and(MachineMoves::active($from))->toBeNull()
+        ->and(DaemonJob::query()->where('kind', 'service_remove')->exists())->toBeFalse();
+});
+
+test('a move keeps the destination’s other receiver keys, and is only seen from its own workspace', function () {
+    fakeMoveKeys();
+    [$workspace, $from, $to, $url] = moveSetup();
+    (new BackupDestination)->forceFill([
+        'workspace_id' => $workspace->id, 'name' => 'old-box backups', 'type' => 'machine', 'machine_id' => $to->id,
+        'public_key' => 'ssh-ed25519 AAAAotherkey', 'status' => 'ready',
+    ])->save();
+
+    $this->actingAs($workspace->owner)->postJson($url.'/moves', ['to' => $to->id])->assertAccepted();
+    expect(moveJobs($to, 'backup_receiver')[0]->command['job']['public_keys'])->toBe(['ssh-ed25519 AAAAotherkey', MOVE_PUBLIC_KEY]);
+
+    $move = MachineMove::query()->sole();
+    $stranger = Workspace::factory()->onPlan(Plan::Pro)->create();
+    $this->actingAs($stranger->owner)->getJson('https://'.$stranger->host().'/machines/'.$from->id.'/moves/'.$move->id)->assertNotFound();
+
+    $this->actingAs($workspace->owner)->get($url.'/settings')
+        ->assertInertia(fn (Assert $page) => $page->where('move.id', $move->id)->where('move.state', 'copying'));
 });

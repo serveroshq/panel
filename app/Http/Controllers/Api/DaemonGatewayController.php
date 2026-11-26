@@ -22,6 +22,7 @@ use App\Support\Logs\LogSkipRules;
 use App\Support\Machines\CloudflareTunnel;
 use App\Support\Machines\DaemonUpdateNotices;
 use App\Support\Machines\MachineMetadata;
+use App\Support\Machines\MachineMoves;
 use App\Support\Machines\PackageUpdates;
 use App\Support\Projects\ProjectData;
 use App\Support\Projects\ProjectLinks;
@@ -502,6 +503,9 @@ class DaemonGatewayController extends Controller
             }
             if ($job->kind === 'service_exec') {
                 app(ProjectData::class)->jobFinished($job);
+            }
+            if (in_array($job->kind, ['backup_receiver', 'deploy', 'backup_to', 'restore', 'service_action'], true)) {
+                app(MachineMoves::class)->jobFinished($job);
             }
             if ($job->workflow_run_id !== null) {
                 app(WorkflowEngine::class)->jobFinished($job);

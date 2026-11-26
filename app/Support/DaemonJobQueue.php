@@ -395,6 +395,12 @@ class DaemonJobQueue
         return self::atLeast($machine, (string) config('daemon.package_add_since'));
     }
 
+    // Restores a snapshot another machine sent to its receiver, and takes the receiver's keys as an exact list.
+    public static function canReceiveMoves(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.move_since'));
+    }
+
     public static function canQueryHostDatabases(Machine $machine): bool
     {
         return self::atLeast($machine, (string) config('daemon.host_database_since'));

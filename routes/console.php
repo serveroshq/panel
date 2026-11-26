@@ -16,6 +16,7 @@ Schedule::call(fn () => Cache::forever(SchedulerHeartbeat::KEY, now()->timestamp
 
 Schedule::command('backups:run-due')->hourly()->withoutOverlapping();
 Schedule::command('projects:tick')->everyMinute()->withoutOverlapping(5);
+Schedule::command('moves:tick')->everyMinute()->withoutOverlapping(5);
 Schedule::command('logs:prune')->hourly()->withoutOverlapping();
 Schedule::command('logs:flush-buffers')->everyMinute()->withoutOverlapping(5);
 Schedule::command('view-as:close-stale')->everyFiveMinutes()->withoutOverlapping();

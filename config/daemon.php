@@ -32,6 +32,8 @@ return [
     'host_database_since' => env('DAEMON_HOST_DATABASE_SINCE', '0.1.1-pre.39'),
     'base_dir_since' => env('DAEMON_BASE_DIR_SINCE', '0.1.1-pre.45'),
     'resolve_ref_since' => env('DAEMON_RESOLVE_REF_SINCE', '0.1.1-pre.45'),
+    // Restores a snapshot another machine sent it (moving apps between machines).
+    'move_since' => env('DAEMON_MOVE_SINCE', '0.1.1-pre.51'),
     'install_url' => env('DAEMON_INSTALL_URL', rtrim((string) env('APP_URL', ''), '/').'/install.sh'),
     'install_script' => null,
     'releases_url' => env('DAEMON_RELEASES_URL', 'https://releases.serveros.com'),

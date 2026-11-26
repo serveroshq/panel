@@ -67,6 +67,12 @@ final class ActivityLine
             'machine.tunnel' => $set(($meta['action'] ?? null) === 'up' ? 'put a Cloudflare Tunnel on' : 'took the Cloudflare Tunnel off', null, 'warn'),
             'machine.remove' => $set('removed the machine', null, 'bad'),
             'machine.file' => $set('downloaded the machine file of'),
+            'machine.move_start' => $set('started moving the apps of', isset($meta['to']) ? $t('to :name', ['name' => $meta['to']]) : null),
+            'machine.move_switch' => $set('switched over the apps of', isset($meta['to']) ? $t('to :name', ['name' => $meta['to']]) : null, 'warn'),
+            'machine.move_rollback' => $set('rolled back the move of', isset($meta['to']) ? $t('from :name', ['name' => $meta['to']]) : null, 'warn'),
+            'machine.move_finish' => $set('finished moving the apps of', isset($meta['to']) ? $t('to :name', ['name' => $meta['to']]) : null, 'good'),
+            'machine.move_cancel' => $set('cancelled the move of', isset($meta['to']) ? $t('to :name', ['name' => $meta['to']]) : null),
+            'machine.move_retry' => $set('tried the move of', isset($meta['to']) ? $t('to :name again', ['name' => $meta['to']]) : null),
             'machine.data_clear' => $set(match (array_keys(array_intersect_key($meta, array_flip(['logs', 'metrics', 'services'])))) {
                 ['logs'] => isset($meta['skipped_services'])
                     ? $t((int) $meta['skipped_services'] === 1 ? 'deleted logs from 1 skipped service on' : 'deleted logs from :count skipped services on', ['count' => (string) $meta['skipped_services']])

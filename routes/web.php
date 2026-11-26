@@ -303,6 +303,11 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
         Route::post('machines/{machine}/refresh', [MachineScanController::class, 'discover'])->middleware('throttle:20,1')->name('workspace.machines.refresh');
         Route::get('machines/{machine}/machine-file', [MachineMoveController::class, 'file'])->middleware('throttle:20,1')->name('workspace.machines.machine-file');
         Route::post('machines/{machine}/move-check', [MachineMoveController::class, 'check'])->middleware('throttle:20,1')->name('workspace.machines.move-check');
+        Route::post('machines/{machine}/moves', [MachineMoveController::class, 'store'])->middleware('throttle:5,1')->name('workspace.machines.moves.store');
+        Route::get('machines/{machine}/moves/{move}', [MachineMoveController::class, 'show'])->whereNumber('move')->name('workspace.machines.moves.show');
+        foreach (['switch' => 'switchOver', 'rollback' => 'rollBack', 'finish' => 'finish', 'cancel' => 'cancel', 'retry' => 'retry'] as $step => $action) {
+            Route::post("machines/{machine}/moves/{move}/{$step}", [MachineMoveController::class, $action])->whereNumber('move')->middleware('throttle:10,1')->name("workspace.machines.moves.{$step}");
+        }
         Route::post('machines/{machine}/disk-usage', [MachineDiskUsageController::class, 'store'])->middleware('throttle:10,1')->name('workspace.machines.disk-usage.store');
         Route::get('machines/{machine}/disk-usage/{job}', [MachineDiskUsageController::class, 'show'])->name('workspace.machines.disk-usage.show');
         Route::post('machines/{machine}/updates/check', [MachineUpdatesController::class, 'check'])->middleware('throttle:10,1')->name('workspace.machines.updates.check');

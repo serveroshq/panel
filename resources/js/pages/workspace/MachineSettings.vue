@@ -9,6 +9,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
 import ClearDataDialog from '@/components/machines/ClearDataDialog.vue';
 import MovePanel from '@/components/machines/MovePanel.vue';
+import type { Move } from '@/components/machines/MovePanel.vue';
 import type { DataKind } from '@/components/machines/ClearDataDialog.vue';
 import type { Machine } from '@/components/machines/machines';
 import PolicySends from '@/components/machines/PolicySends.vue';
@@ -110,6 +111,7 @@ const props = defineProps<{
     machine: Machine;
     canManage: boolean;
     moveTargets: { id: number; name: string }[];
+    move: Move | null;
     statusPage: StatusPageSettings;
     policy: {
         current: MachinePolicy;
@@ -1287,6 +1289,7 @@ const serviceColumns =
                 :machine-id="machine.id"
                 :machine-name="machine.name"
                 :targets="moveTargets"
+                :move="move"
             />
 
             <section

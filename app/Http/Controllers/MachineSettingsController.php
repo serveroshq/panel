@@ -6,6 +6,7 @@ use App\Enums\MachineEnvironment;
 use App\Http\Resources\MachineResource;
 use App\Models\Activity;
 use App\Models\Machine;
+use App\Models\MachineMove;
 use App\Models\MachinePolicy;
 use App\Models\Monitor;
 use App\Models\StatusPage;
@@ -20,6 +21,7 @@ use App\Support\Logs\LogSkipRules;
 use App\Support\Machines\CloudflareTunnel;
 use App\Support\Machines\MachineDataEraser;
 use App\Support\Machines\MachineMetadata;
+use App\Support\Machines\MachineMoves;
 use App\Support\Machines\MachinePolicies;
 use App\Support\StatusPages\StatusReport;
 use Illuminate\Http\RedirectResponse;
@@ -50,6 +52,8 @@ class MachineSettingsController extends Controller
             'canManage' => Gate::allows('manageMachines', $workspace),
             'moveTargets' => $workspace->machines()->whereKeyNot($machine->id)->orderBy('name')->get(['id', 'name'])
                 ->map(fn (Machine $m) => ['id' => $m->id, 'name' => $m->name])->values(),
+            'move' => ($move = MachineMove::query()->where('from_machine_id', $machine->id)->latest('id')->first()) === null
+                || ($move->finished_at !== null && $move->finished_at->lt(now()->subDays(7))) ? null : MachineMoves::present($move),
             'policy' => $this->policyProps($workspace, $machine),
             'tunnel' => CloudflareTunnel::offered() ? [
                 'supported' => CloudflareTunnel::supported($machine),
