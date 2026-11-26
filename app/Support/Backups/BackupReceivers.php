@@ -4,6 +4,7 @@ namespace App\Support\Backups;
 
 use App\Models\BackupDestination;
 use App\Models\Machine;
+use App\Models\MachineMove;
 use App\Models\User;
 use App\Support\DaemonJobQueue;
 use RuntimeException;
@@ -21,16 +22,31 @@ class BackupReceivers
         private readonly DaemonJobQueue $queue,
     ) {}
 
-    /** @return list<string> the keys every destination on this machine uses */
-    public static function keysFor(Machine $machine): array
+    /**
+     * The keys every destination on this machine uses, and every move still
+     * sending data to it (but `$except`), so neither drops the other's key.
+     *
+     * @return list<string>
+     */
+    public static function keysFor(Machine $machine, ?MachineMove $except = null): array
     {
-        $keys = BackupDestination::query()
-            ->where('type', 'machine')
-            ->where('machine_id', $machine->id)
-            ->whereNotNull('public_key')
-            ->orderBy('id')
-            ->pluck('public_key')
-            ->all();
+        $keys = [
+            ...BackupDestination::query()
+                ->where('type', 'machine')
+                ->where('machine_id', $machine->id)
+                ->whereNotNull('public_key')
+                ->orderBy('id')
+                ->pluck('public_key')
+                ->all(),
+            ...MachineMove::query()
+                ->where('to_machine_id', $machine->id)
+                ->whereIn('receiver_state', ['setting_up', 'ready'])
+                ->whereNotNull('public_key')
+                ->when($except !== null, fn ($q) => $q->whereKeyNot($except?->id))
+                ->orderBy('id')
+                ->pluck('public_key')
+                ->all(),
+        ];
 
         return array_values(array_unique(array_filter($keys, 'is_string')));
     }
