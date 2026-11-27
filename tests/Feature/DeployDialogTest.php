@@ -96,3 +96,54 @@ test('an uploaded Laravel app says which PHP it asks for, for the dialog’s det
 
     File::deleteDirectory(DeploySource::query()->sole()->directory());
 });
+
+test('what the dialog sends for a scanned Laravel 10 app keeps its PHP, checks / for health and carries its build settings', function () {
+    config()->set('daemon.commands_enabled', true);
+    config()->set('daemon.gateway_internal_url', 'http://127.0.0.1:8090');
+    config()->set('daemon.gateway_secret', 'test-gateway-secret');
+    config()->set('services.github.token', null);
+    Http::fake([
+        '127.0.0.1:8090/*' => Http::response(['queued' => true], 202),
+        'api.github.com/repos/acme/shop' => Http::response(['default_branch' => 'main']),
+        'api.github.com/repos/acme/shop/commits/*' => Http::response(['sha' => str_repeat('c', 40)]),
+        '*' => Http::response(null, 404),
+    ]);
+    $workspace = Workspace::factory()->create();
+    $machine = Machine::factory()->for($workspace)->create(['name' => 'web-1', 'ip_address' => '203.0.113.7']);
+    $machine->forceFill(['uid' => (string) Str::uuid(), 'last_seen_at' => now(), 'daemon_version' => '0.1.1-pre.51', 'facts' => ['docker_version' => '27.1']])->save();
+
+    // As DeployServiceDialog posts it after a scan: the detection's php and
+    // health path, the branch, the template's settings, a .env as the dialog
+    // writes one, a setting kept to the build, and only what Advanced changed.
+    $this->actingAs($workspace->owner)->postJson($workspace->url()."/machines/{$machine->id}/deploy", [
+        'template' => 'laravel', 'service' => 'shop', 'port' => null,
+        'repo' => 'https://github.com/acme/shop.git', 'commit' => str_repeat('c', 40), 'branch' => 'main',
+        'health_path' => '/', 'compose_file' => null, 'base_dir' => null, 'php' => '8.1',
+        'domain' => null, 'wildcard' => false, 'proxy' => null, 'https' => null,
+        'env' => ['APP_KEY' => '', 'APP_ENV' => 'production', 'APP_DEBUG' => 'false', 'APP_URL' => '', 'DB_CONNECTION' => 'sqlite', 'LOG_CHANNEL' => 'stderr'],
+        'extra_env' => "APP_NAME=Shop\nMAIL_FROM_NAME=\"\\\${APP_NAME}\"\nCERT=\"one\\ntwo\"\nNPM_TOKEN=abc",
+        'env_flags' => ['NPM_TOKEN' => 'build'],
+        'free_address' => true,
+        'build' => [
+            'volumes' => [['name' => 'storage', 'path' => '/var/www/html/storage']],
+            'release_command' => 'php artisan migrate --force',
+            'health' => ['enabled' => true, 'path' => '/', 'expected_status' => 0, 'start_period_secs' => 120],
+        ],
+    ])->assertAccepted()
+        ->assertJsonPath('domain', 'shop.203-0-113-7.sslip.io')
+        ->assertJsonPath('appUrl', $workspace->url("/machines/{$machine->id}/services/app:shop"));
+
+    $request = collect(Http::recorded())->map(fn (array $pair) => $pair[0])
+        ->filter(fn ($r) => str_ends_with($r->url(), '/commands'))->last();
+    $job = json_decode($request->body(), true)['command']['job'];
+
+    expect($job['health'])->toMatchArray(['path' => '/', 'expected_status' => 0, 'start_period_secs' => 120])
+        ->and($job['files']['.serveros/Dockerfile'])->toContain('serversideup/php:8.1-')
+        ->and($job['volumes'])->toBe([['name' => 'storage', 'path' => '/var/www/html/storage']])
+        ->and($job['release_command'])->toBe('php artisan migrate --force')
+        ->and($job['domains'])->toBe(['shop.203-0-113-7.sslip.io'])
+        ->and($job['env'])->toMatchArray(['APP_NAME' => 'Shop', 'MAIL_FROM_NAME' => '${APP_NAME}', 'CERT' => "one\ntwo", 'APP_ENV' => 'production'])
+        ->and($job['env'])->not->toHaveKey('NPM_TOKEN')
+        ->and($job['env']['APP_KEY'])->toStartWith('base64:')
+        ->and($job['build']['args'])->toHaveKey('NPM_TOKEN');
+});

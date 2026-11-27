@@ -41,12 +41,15 @@ const {
     connectUrl,
     busy = null,
     disabled = false,
+    searchless = false,
 } = defineProps<{
     github: GitHubRepositories | null;
     available: boolean;
     connectUrl: string;
     busy?: string | null;
     disabled?: boolean;
+    /** The query comes from a field outside the list, so it has none of its own. */
+    searchless?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -204,6 +207,7 @@ function submit(): void {
             >
             <span class="min-w-2 flex-1" />
             <label
+                v-if="!searchless"
                 class="flex h-7 w-[236px] max-w-full items-center gap-[7px] rounded-[6px] border-[0.5px] border-[#dcdcdc] bg-[#f5f5f5] px-[9px] shadow-[inset_0_1px_2px_rgb(0_0_0/0.06)] focus-within:border-[#4a4a4a] dark:border-[#2a2a2a] dark:bg-[#101010] dark:shadow-[inset_0_1px_2px_rgb(0_0_0/0.5)]"
             >
                 <FilledIcon
@@ -237,7 +241,11 @@ function submit(): void {
         />
 
         <ul
-            v-else-if="pasted || matches.length || github?.connected"
+            v-else-if="
+                searchless
+                    ? !pasted && github?.connected
+                    : pasted || matches.length || github?.connected
+            "
             class="overflow-clip rounded-[8px] border-[0.5px] border-[#e2e2e2] bg-white shadow-[0_1px_2px_rgb(0_0_0/0.06)] dark:border-[#2a2a2a] dark:bg-[#1c1c1c] dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.04),0_3px_6px_-2px_rgb(0_0_0/0.3),0_1px_1.5px_rgb(0_0_0/0.5)]"
         >
             <li

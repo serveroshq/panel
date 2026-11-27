@@ -65,7 +65,7 @@ function onDrop(event: DragEvent): void {
                     class="truncate text-[12px]/4 tracking-[-0.005em] text-fg-muted"
                     >{{
                         $t(
-                            'Drop a folder or a .zip here, or paste a GitHub link in search.',
+                            'Paste a repository link in search, or drop a folder or a .zip here.',
                         )
                     }}</span
                 >

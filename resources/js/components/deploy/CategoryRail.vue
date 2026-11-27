@@ -17,6 +17,21 @@ const icon = 'text-fg-tertiary group-aria-pressed/rail:text-fg-primary';
         :aria-label="$t('Category')"
     >
         <button
+            type="button"
+            :class="item"
+            :aria-pressed="category === OWN_CODE"
+            @click="category = OWN_CODE"
+        >
+            <FilledIcon name="code-fill" :class="icon" />
+            <span class="min-w-0 flex-1 truncate">{{
+                $t('Your own code')
+            }}</span>
+        </button>
+        <div
+            class="my-1.5 h-[0.5px] w-full shrink-0 bg-[#e8e8e8] dark:bg-[#262626]"
+            aria-hidden="true"
+        />
+        <button
             v-for="option in RAIL"
             :key="option.value"
             type="button"
@@ -32,21 +47,6 @@ const icon = 'text-fg-tertiary group-aria-pressed/rail:text-fg-primary';
                 class="shrink-0 font-ui-mono text-[12px]/4 font-normal text-fg-faint tabular-nums group-aria-pressed/rail:text-fg-secondary"
                 >{{ counts[option.value] ?? 0 }}</span
             >
-        </button>
-        <div
-            class="h-[0.5px] w-full shrink-0 bg-[#e8e8e8] dark:bg-[#262626]"
-            aria-hidden="true"
-        />
-        <button
-            type="button"
-            :class="item"
-            :aria-pressed="category === OWN_CODE"
-            @click="category = OWN_CODE"
-        >
-            <FilledIcon name="upload-fill" :class="icon" />
-            <span class="min-w-0 flex-1 truncate">{{
-                $t('Your own code')
-            }}</span>
         </button>
     </nav>
 </template>
