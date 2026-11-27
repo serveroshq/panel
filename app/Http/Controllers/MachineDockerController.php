@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Models\Workspace;
+use App\Support\Audit\AuditContext;
 use App\Support\Audit\Audited;
 use App\Support\Audit\NotAudited;
 use App\Support\DaemonJobQueue;
@@ -21,7 +22,7 @@ use RuntimeException;
  */
 class MachineDockerController extends Controller
 {
-    private const array KINDS = ['docker_resources', 'docker_prune'];
+    private const array KINDS = ['docker_resources', 'docker_prune', 'docker_install'];
 
     #[NotAudited('A read-only listing of images and volumes')]
     public function store(Request $request, Workspace $workspace, Machine $machine, DaemonJobQueue $queue): JsonResponse
@@ -76,6 +77,41 @@ class MachineDockerController extends Controller
         return response()->json(self::present($job), 202);
     }
 
+    /**
+     * Installs Docker Engine with its Compose and Buildx plugins from
+     * Docker's own packages (Debian, Ubuntu, Fedora and the RHEL family).
+     * Nothing changes on a machine where Docker already runs.
+     */
+    #[Audited]
+    public function install(Request $request, Workspace $workspace, Machine $machine, DaemonJobQueue $queue): JsonResponse
+    {
+        abort_unless($machine->workspace_id === $workspace->id, 404);
+        Gate::authorize('manageMachines', $workspace);
+        $request->validate(['confirm' => ['accepted']], ['confirm.accepted' => __('Confirm you want Docker installed on this machine.')]);
+
+        if (! DaemonJobQueue::canDeployBuild($machine)) {
+            return response()->json(['error' => __('Its ServerOS daemon is too old to install Docker. Update it from the machine’s page first, or run “curl -fsSL https://get.docker.com | sh” on it as root.')], 409);
+        }
+        if (($reason = $queue->unavailable($machine)) !== null) {
+            return response()->json(['error' => $reason], 409);
+        }
+        $running = DaemonJob::query()->where('machine_id', $machine->id)->where('kind', 'docker_install')->whereIn('state', ['queued', 'running'])->latest()->first();
+        if ($running !== null && ! $running->isStale()) {
+            AuditContext::nothingChanged();
+
+            return response()->json(self::present($running), 202);
+        }
+
+        try {
+            $job = $queue->queue($machine, $request->user(), 'docker_install', ['type' => 'docker_install'], null, 900);
+        } catch (RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 503);
+        }
+        Activity::record($workspace, 'machine.docker_install', $machine->name, $machine, $request->user());
+
+        return response()->json(self::present($job), 202);
+    }
+
     public function show(Workspace $workspace, Machine $machine, DaemonJob $job): JsonResponse
     {
         abort_unless($machine->workspace_id === $workspace->id && $job->machine_id === $machine->id && in_array($job->kind, self::KINDS, true), 404);
@@ -107,6 +143,13 @@ class MachineDockerController extends Controller
             'error' => $job->error['message'] ?? null,
             'at' => $job->finished_at?->toIso8601String(),
         ];
+        if ($job->kind === 'docker_install') {
+            return $out + [
+                'version' => is_string($result['version'] ?? null) ? $result['version'] : null,
+                'installed' => (bool) ($result['installed'] ?? false),
+                'log' => array_slice(array_values($job->log ?? []), -50),
+            ];
+        }
         if ($job->kind === 'docker_prune') {
             return $out + [
                 'removedImages' => count($list('images')),
