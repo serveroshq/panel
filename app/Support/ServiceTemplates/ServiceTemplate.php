@@ -4,6 +4,7 @@ namespace App\Support\ServiceTemplates;
 
 use App\Models\Machine;
 use App\Support\DaemonFacts;
+use App\Support\DaemonJobQueue;
 use InvalidArgumentException;
 
 final readonly class ServiceTemplate
@@ -11,6 +12,12 @@ final readonly class ServiceTemplate
     public const KIND_COMPOSE = 'compose';
 
     public const KIND_APP = 'app';
+
+    // A prebuilt image: nothing fetched or built, one release at a time like an app.
+    public const KIND_IMAGE = 'image';
+
+    // An app template with no Dockerfile of its own: Railpack works out the build.
+    public const BUILD_RAILPACK = 'railpack';
 
     public const CATEGORIES = ['Apps', 'Databases', 'Infrastructure', 'Self-hosted', 'Game servers'];
 
@@ -35,6 +42,7 @@ final readonly class ServiceTemplate
         public ?string $notes,
         public ?int $healthRetries = null,
         public ?string $compose = null,
+        public ?string $build = null,
     ) {}
 
     /**
@@ -49,7 +57,7 @@ final readonly class ServiceTemplate
         }
 
         $kind = (string) $data['kind'];
-        if (! in_array($kind, [self::KIND_COMPOSE, self::KIND_APP], true)) {
+        if (! in_array($kind, [self::KIND_COMPOSE, self::KIND_APP, self::KIND_IMAGE], true)) {
             throw new InvalidArgumentException("Service template {$slug} has unknown kind {$kind}.");
         }
         if (! in_array($data['category'], self::CATEGORIES, true)) {
@@ -78,6 +86,7 @@ final readonly class ServiceTemplate
             notes: isset($data['notes']) ? (string) $data['notes'] : null,
             healthRetries: isset($data['health_retries']) ? (int) $data['health_retries'] : null,
             compose: $kind === self::KIND_APP && isset($data['compose']) ? (string) $data['compose'] : null,
+            build: $kind === self::KIND_APP && ($data['build'] ?? null) === self::BUILD_RAILPACK ? self::BUILD_RAILPACK : null,
         );
     }
 
@@ -93,6 +102,24 @@ final readonly class ServiceTemplate
     public function isApp(): bool
     {
         return $this->kind === self::KIND_APP;
+    }
+
+    /** A prebuilt image, run as an app: no repository. */
+    public function isImage(): bool
+    {
+        return $this->kind === self::KIND_IMAGE;
+    }
+
+    /** Built by Railpack from the repository's files, with no Dockerfile. */
+    public function railpack(): bool
+    {
+        return $this->build === self::BUILD_RAILPACK;
+    }
+
+    /** Needs the build settings that only newer daemons read. */
+    public function needsDeployBuild(): bool
+    {
+        return $this->isImage() || $this->railpack();
     }
 
     /** An app that runs the Compose file in its own repository, not a Dockerfile. */
@@ -131,6 +158,8 @@ final readonly class ServiceTemplate
             'portEditable' => $this->portEditable,
             'health' => $this->health,
             'compose' => $this->compose,
+            'build' => $this->isImage() ? 'image' : ($this->railpack() ? 'railpack' : ($this->composeFromRepo() ? 'compose' : ($this->isApp() ? ($this->dockerfile === 'Dockerfile' ? 'dockerfile' : 'template') : null))),
+            'needsUpdate' => $machine !== null && $this->needsDeployBuild() && ! DaemonJobQueue::canDeployBuild($machine),
             'notes' => $this->notesFor($machine),
             'env' => array_map(fn (array $field) => [
                 'key' => $field['key'],

@@ -33,7 +33,7 @@ final class AppReleases
             ->get(['kind', 'service', 'command', 'result'])
             ->filter(fn (DaemonJob $job) => is_string($job->service) && ($job->kind === 'rollback'
                 ? is_string($job->result['commit'] ?? null)
-                : filled($job->command['job']['repo'] ?? null)))
+                : AppDeploys::isApp($job->command['job'] ?? null)))
             ->mapWithKeys(fn (DaemonJob $job) => [$job->service => substr((string) ($job->kind === 'rollback'
                 ? $job->result['commit']
                 : ($job->command['job']['commit'] ?? '')), 0, 12)])

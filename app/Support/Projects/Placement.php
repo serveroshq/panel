@@ -4,6 +4,7 @@ namespace App\Support\Projects;
 
 use App\Models\DaemonJob;
 use App\Models\Machine;
+use App\Support\Deploys\AppDeploys;
 use App\Support\Deploys\AppReleases;
 
 final class Placement
@@ -96,6 +97,6 @@ final class Placement
             ->limit(20)
             ->get();
 
-        return $jobs->first(fn (DaemonJob $job) => filled($job->command['job']['repo'] ?? null)) ?? $jobs->first();
+        return $jobs->first(fn (DaemonJob $job) => AppDeploys::isApp($job->command['job'] ?? null)) ?? $jobs->first();
     }
 }

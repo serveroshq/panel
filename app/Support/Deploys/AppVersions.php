@@ -27,7 +27,7 @@ final class AppVersions
             ->with('user:id,name')
             ->orderByDesc('created_at')
             ->get()
-            ->filter(fn (DaemonJob $job) => filled($job->command['job']['repo'] ?? null) && filled($job->command['job']['commit'] ?? null))
+            ->filter(fn (DaemonJob $job) => AppDeploys::isApp($job->command['job'] ?? null) && filled($job->command['job']['commit'] ?? null))
             ->values();
         $live = AppReleases::live($machine)[$app] ?? null;
 

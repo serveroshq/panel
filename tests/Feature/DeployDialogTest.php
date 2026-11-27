@@ -29,8 +29,8 @@ test('the deploy dialog can offer every machine in the workspace to run on', fun
         ->getJson($workspace->url().'/machines/'.$web->id.'/deploy/taken')
         ->assertOk()
         ->assertJsonPath('machines', [
-            ['id' => $db->id, 'name' => 'db-1', 'provider' => 'DigitalOcean', 'online' => false],
-            ['id' => $web->id, 'name' => 'web-1', 'provider' => 'Hetzner', 'online' => true],
+            ['id' => $db->id, 'name' => 'db-1', 'provider' => 'DigitalOcean', 'online' => false, 'canDeployBuild' => false],
+            ['id' => $web->id, 'name' => 'web-1', 'provider' => 'Hetzner', 'online' => true, 'canDeployBuild' => false],
         ]);
 });
 

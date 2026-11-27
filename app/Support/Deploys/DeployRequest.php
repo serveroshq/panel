@@ -2,9 +2,11 @@
 
 namespace App\Support\Deploys;
 
+use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Models\User;
 use App\Support\DaemonJobQueue;
+use App\Support\Projects\Placement;
 use App\Support\ServiceTemplates\RepositoryDetector;
 use App\Support\ServiceTemplates\ServiceTemplate;
 use App\Support\ServiceTemplates\TemplateDeployment;
@@ -61,8 +63,13 @@ final class DeployRequest
             'proxy' => ['nullable', 'string', Rule::in(array_keys(Machine::PROXIES))],
             'https' => ['sometimes', 'nullable', 'boolean'],
             'env' => ['nullable', 'array'],
-            'env.*' => ['nullable', 'string', 'max:2000'],
-            'extra_env' => ['nullable', 'string', 'max:10000'],
+            'env.*' => ['nullable', 'string', 'max:'.EnvFile::MAX_VALUE_BYTES],
+            'extra_env' => ['nullable', 'string', 'max:'.EnvFile::MAX_BYTES],
+            'build' => ['sometimes', 'nullable', 'array'],
+            ...BuildSettings::rules('build.'),
+            ...BuildSettings::flagRules(),
+            'branch' => ['sometimes', 'nullable', 'string', 'max:200', 'regex:'.DeployOnPush::BRANCH_PATTERN],
+            'free_address' => ['sometimes', 'boolean'],
             'php' => ['nullable', 'string', Rule::in(RepositoryDetector::PHP_VERSIONS)],
             // Nullable either way: the dialog sends null for templates that don't
             // use it, and prohibited still turns down an actual path.
@@ -70,6 +77,86 @@ final class DeployRequest
             // A Compose file is named by its path instead, so only builds take a folder.
             'base_dir' => ['nullable', ...($template->isApp() && ! $template->composeFromRepo() ? [] : ['prohibited']), 'string', 'max:200', 'regex:'.RepositoryDetector::BASE_DIR_PATTERN],
         ];
+    }
+
+    /** @return array<string, string> */
+    public static function templateMessages(): array
+    {
+        return [
+            ...BuildSettings::messages('build.'),
+            'branch.regex' => 'That isn’t a branch name.',
+            'env.*.max' => 'A setting can be at most 64 KB.',
+            'extra_env.max' => 'That’s more than 512 KB of settings. Paste fewer at a time.',
+        ];
+    }
+
+    /**
+     * A template that needs a newer daemon (Railpack, a prebuilt image) is
+     * turned down on an older one, saying what to do.
+     */
+    public static function assertTemplateSupported(Machine $machine, ServiceTemplate $template): void
+    {
+        if ($template->needsDeployBuild() && ! DaemonJobQueue::canDeployBuild($machine)) {
+            throw ValidationException::withMessages(['template' => $machine->name.'’s daemon is too old to '.($template->isImage() ? 'run a prebuilt image' : 'build an app without a Dockerfile').'. It updates itself, or run “sudo serverosd update” on the server, then deploy again.']);
+        }
+    }
+
+    /**
+     * A web app with no domain gets a free address on a newer daemon, when
+     * the machine has a public IPv4 address: <name>.<ip>.sslip.io.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public static function freeDomain(Machine $machine, ServiceTemplate $template, array $data): ?string
+    {
+        if (filled($data['domain'] ?? null) || ($data['free_address'] ?? true) === false || ! $template->web
+            || ! ($template->isApp() || $template->isImage()) || ! DaemonJobQueue::canDeployBuild($machine)) {
+            return null;
+        }
+        $base = self::freeAddressBase($machine);
+
+        return $base === null || ! is_string($data['service'] ?? null) ? null : $data['service'].'.'.$base;
+    }
+
+    /**
+     * Two apps on one machine can't share a domain: the second would take
+     * the first one's site over. Redeploying the same app is fine.
+     *
+     * @throws ValidationException
+     */
+    public static function assertDomainFree(Machine $machine, ?string $domain, string $service, string $field = 'domain'): void
+    {
+        if (blank($domain)) {
+            return;
+        }
+        $owner = self::domainOwner($machine, (string) $domain, $service);
+        if ($owner !== null) {
+            throw ValidationException::withMessages([$field => "{$domain} is already {$owner}’s domain on {$machine->name}. Give this one another, or move {$owner} first."]);
+        }
+    }
+
+    /** The other app on the machine that serves a domain now, if any. */
+    public static function domainOwner(Machine $machine, string $domain, string $except): ?string
+    {
+        $domain = strtolower($domain);
+        $jobs = DaemonJob::query()->where('machine_id', $machine->id)->where('kind', 'deploy')
+            ->where('service', '!=', $except)->whereNotNull('service')
+            ->whereIn('state', ['queued', 'running', 'succeeded'])
+            ->latest()->get();
+        foreach ($jobs->groupBy('service') as $app => $deploys) {
+            $app = (string) $app;
+            $latest = $deploys->first();
+            $live = $latest !== null && ($latest->isActive() || Placement::containers($machine, $app) !== []);
+            if (! $live) {
+                continue;
+            }
+            $domains = array_map('strtolower', array_filter((array) ($latest->command['job']['domains'] ?? []), 'is_string'));
+            if (in_array($domain, $domains, true)) {
+                return $app;
+            }
+        }
+
+        return null;
     }
 
     public static function assertBaseDir(Machine $machine, ?string $baseDir): void
@@ -248,6 +335,13 @@ final class DeployRequest
 
         $rescanning = $user !== null && app(DaemonJobQueue::class)->rescan($machine, $user) !== null;
 
+        // A newer daemon installs Docker itself, from the dashboard.
+        if (DaemonJobQueue::canDeployBuild($machine)) {
+            throw ValidationException::withMessages(['docker' => $rescanning
+                ? 'Docker isn’t showing on '.$machine->name.' yet, so ServerOS is checking the machine again now. If you’ve just installed it, deploy again in a few seconds. If not, install it here first.'
+                : 'Docker isn’t installed on '.$machine->name.'. Install it here first (it takes a few minutes), then deploy again.']);
+        }
+
         throw ValidationException::withMessages(['form' => $rescanning
             ? 'Docker isn’t showing on '.$machine->name.' yet, so ServerOS is checking the machine again now. If you’ve just installed it, deploy again in a few seconds. If not, run `curl -fsSL https://get.docker.com | sh` on it as root first.'
             : 'Docker isn’t installed on '.$machine->name.'. Run `curl -fsSL https://get.docker.com | sh` on it as root, then deploy again.']);
@@ -273,25 +367,63 @@ final class DeployRequest
     }
 
     /**
+     * A repository's own Dockerfile, deployed with build settings: on a
+     * daemon that reads them, a custom app's defaults (a health check that
+     * passes on any answer below 500 after a minute to boot, the shared
+     * network) with what the request's `build` changes. An older daemon
+     * gets the plain job, and is told what it can't do.
+     *
+     * @param  array<string, mixed>  $job  from gitJob()
      * @param  array<string, mixed>  $data
-     * @return array{template: string, generated: list<array{key: string, label: string, value: string}>, kept: list<string>, url: string|null, localUrl: string|null, tunnel: string|null, port: int, notes: string|null}
+     * @return array<string, mixed>
+     */
+    public static function gitBuild(Machine $machine, array $job, array $data): array
+    {
+        $build = is_array($data['build'] ?? null) ? $data['build'] : [];
+        $flags = (array) ($data['env_flags'] ?? []);
+        $new = DaemonJobQueue::canDeployBuild($machine);
+        $job['env'] = (array) $job['env'];
+
+        $settings = BuildSettings::fromSpec($job);
+        if ($new) {
+            $settings->health = [...BuildSettings::CUSTOM_HEALTH, 'path' => (string) ($job['health']['path'] ?? '/')];
+            $settings->network = BuildSettings::NETWORK;
+        } elseif ($build === [] && $flags === []) {
+            $job['env'] = (object) $job['env'];
+
+            return $job;
+        }
+        $settings = $settings->with($build)->withFlags($flags, []);
+        $settings->check($machine, 'build.');
+        $job = $settings->applyValues($settings->apply($job, $new), [], $new, $new);
+        $job['env'] = (object) $job['env'];
+        $job['files'] = (object) $job['files'];
+
+        return $job;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{template: string, generated: list<array{key: string, label: string, value: string}>, kept: list<string>, url: string|null, localUrl: string|null, tunnel: string|null, port: int|null, notes: string|null, domain: string|null}
      */
     public static function templateResult(TemplateDeployment $deployment, array $data): array
     {
         $template = $deployment->template;
         $machine = $deployment->machine;
+        $port = $deployment->port;
 
         return [
             'template' => $template->name,
             'generated' => $deployment->generated,
             'kept' => $deployment->kept,
-            'url' => $template->web && (filled($data['domain'] ?? null) || $machine->localAddress($deployment->port) !== null) ? $deployment->url : null,
-            'localUrl' => $template->web && ! $template->isApp() ? "http://127.0.0.1:{$deployment->port}" : null,
-            'tunnel' => $template->web && ! $template->isApp() && filled($machine->ip_address) && $machine->localAddress($deployment->port) === null
-                ? "ssh -N -L {$deployment->port}:127.0.0.1:{$deployment->port} root@{$machine->ip_address}"
+            'url' => $template->web && (filled($data['domain'] ?? null) || ($port !== null && $machine->localAddress($port) !== null)) ? $deployment->url : null,
+            'localUrl' => $template->web && ! $template->isApp() && $port !== null ? "http://127.0.0.1:{$port}" : null,
+            'tunnel' => $template->web && ! $template->isApp() && $port !== null && filled($machine->ip_address) && $machine->localAddress($port) === null
+                ? "ssh -N -L {$port}:127.0.0.1:{$port} root@{$machine->ip_address}"
                 : null,
-            'port' => $deployment->port,
+            'port' => $port,
             'notes' => $template->notesFor($machine),
+            'domain' => $template->web && filled($data['domain'] ?? null) ? (string) $data['domain'] : null,
         ];
     }
 }

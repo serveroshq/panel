@@ -43,13 +43,20 @@ function sentJob(): array
     return json_decode($command->body(), true)['command']['job'];
 }
 
-test('the catalog has four hundred and forty-nine valid templates and every compose variable is provided', function () {
+test('the catalog has four hundred and fifty-one valid templates and every compose variable is provided', function () {
     $templates = app(ServiceTemplateCatalog::class)->all();
 
-    expect($templates)->toHaveCount(449);
+    expect($templates)->toHaveCount(451);
 
     foreach ($templates as $template) {
         expect(in_array($template->category, ServiceTemplate::CATEGORIES, true))->toBeTrue();
+
+        // Railpack works the build out, and an image has nothing to build.
+        if ($template->railpack() || $template->isImage()) {
+            expect($template->dockerfile)->toBeNull()->and($template->files)->toBe([]);
+
+            continue;
+        }
 
         if ($template->composeFromRepo()) {
             expect($template->isApp())->toBeTrue()->and($template->dockerfile)->toBeNull();
@@ -478,9 +485,10 @@ test('the deploy dialog learns which names and ports are taken, so a second data
 
     $this->actingAs($workspace->owner)->getJson($url.'/taken')
         ->assertOk()
-        ->assertExactJson(['services' => ['postgres', 'shop'], 'ports' => [80, 5432], 'proxy' => null, 'canChooseProxy' => false, 'canChooseHttps' => false, 'freeAddress' => '203-0-113-7.sslip.io', 'machines' => [
-            ['id' => $machine->id, 'name' => $machine->name, 'provider' => $machine->provider, 'online' => true],
-        ]]);
+        ->assertExactJson(['services' => ['postgres', 'shop'], 'ports' => [80, 5432], 'proxy' => null, 'canChooseProxy' => false, 'canChooseHttps' => false, 'freeAddress' => '203-0-113-7.sslip.io',
+            'canDeployBuild' => false, 'canInspect' => false, 'docker' => ['installed' => true, 'canInstall' => false], 'domains' => [], 'machines' => [
+                ['id' => $machine->id, 'name' => $machine->name, 'provider' => $machine->provider, 'online' => true, 'canDeployBuild' => false],
+            ]]);
 
     $this->actingAs(User::factory()->create())->getJson($url.'/taken')->assertForbidden();
 });

@@ -5,7 +5,10 @@ namespace App\Support\ServiceTemplates;
 use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Support\DaemonFacts;
+use App\Support\DaemonJobQueue;
+use App\Support\Deploys\BuildSettings;
 use App\Support\Deploys\DeployRequest;
+use App\Support\Deploys\EnvFile;
 use App\Support\Projects\Placement;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -27,7 +30,14 @@ final class TemplateDeployment
 
     public string $url;
 
-    public int $port;
+    // Null on a newer daemon for an app it reads the port of itself: an
+    // image's or Dockerfile's EXPOSE, or what a Compose file publishes.
+    public ?int $port;
+
+    // Whether the machine's daemon reads build settings, so the spec gets them.
+    public readonly bool $new;
+
+    private ?BuildSettings $settings = null;
 
     /** @param  array<string, mixed>  $input */
     public function __construct(
@@ -35,16 +45,32 @@ final class TemplateDeployment
         public readonly Machine $machine,
         private readonly array $input,
     ) {
-        $this->port = $template->portEditable && isset($input['port'])
-            ? (int) $input['port']
-            : $template->port;
+        $this->new = DaemonJobQueue::canDeployBuild($machine) && ($template->isApp() || $template->isImage());
+        $build = is_array($input['build'] ?? null) ? $input['build'] : [];
+        $given = isset($input['port']) ? (int) $input['port'] : null;
+        if (array_key_exists('port', $build)) {
+            $given = $build['port'] === null || $build['port'] === '' ? null : (int) $build['port'];
+        }
+        $this->port = match (true) {
+            $template->portEditable && $given !== null => $given,
+            $this->new && $template->portEditable && self::readsPort($template) => null,
+            default => $template->port,
+        };
 
         $domain = $this->domain();
-        $this->url = $domain !== null
-            ? (($input['https'] ?? true) ? 'https://' : 'http://').$domain
-            : $machine->localAddress($this->port) ?? 'http://'.($machine->ip_address ?: 'localhost').':'.$this->port;
+        $this->url = match (true) {
+            $domain !== null => (($input['https'] ?? true) ? 'https://' : 'http://').$domain,
+            $this->port !== null => $machine->localAddress($this->port) ?? 'http://'.($machine->ip_address ?: 'localhost').':'.$this->port,
+            default => 'http://'.($machine->ip_address ?: 'localhost'),
+        };
 
         $this->resolveEnv();
+    }
+
+    /** Templates whose port the daemon can read itself, so leaving it empty works. */
+    public static function readsPort(ServiceTemplate $template): bool
+    {
+        return $template->isImage() || $template->composeFromRepo() || ($template->isApp() && $template->dockerfile === 'Dockerfile');
     }
 
     /** @return array<string, mixed> */
@@ -52,7 +78,7 @@ final class TemplateDeployment
     {
         $template = $this->template;
 
-        return [
+        $spec = [
             'type' => 'deploy',
             'service' => $this->input['service'],
             'repo' => $template->isApp() ? $this->input['repo'] : '',
@@ -63,12 +89,94 @@ final class TemplateDeployment
             'env' => (object) $this->env,
             'health' => $this->health(),
             'domains' => DeployRequest::domains($this->domain(), (bool) ($this->input['wildcard'] ?? false)),
-            'port' => $this->port,
+            'port' => $this->port ?? $template->port,
         ];
+        $build = is_array($this->input['build'] ?? null) ? $this->input['build'] : [];
+        if (! $this->new && ($build === [] || ! ($template->isApp() || $template->isImage()))) {
+            return $spec;
+        }
+        // An older daemon gets only what it reads (port, health, the Dockerfile).
+        $settings = $this->new ? $this->settings() : BuildSettings::fromSpec([...$spec, 'env' => $this->env])->with($build);
+        $spec = $settings->applyValues($settings->apply([...$spec, 'files' => $this->files(), 'env' => $this->env], $this->new), $this->env, $this->new);
+        foreach (['env', 'files'] as $map) {
+            $spec[$map] = (object) $spec[$map];
+        }
+
+        return $spec;
+    }
+
+    /**
+     * How it's built and run, on a daemon that reads build settings: the
+     * template's defaults, with what the request's `build` and `env_flags`
+     * change. Custom apps get a health check that passes on any answer
+     * below 500 after a minute to boot; a framework's known health route
+     * (Laravel's /up) still has to answer 200.
+     */
+    public function settings(): BuildSettings
+    {
+        if ($this->settings !== null) {
+            return $this->settings;
+        }
+        $template = $this->template;
+        $method = match (true) {
+            $template->isImage() => BuildSettings::IMAGE,
+            $template->railpack() => BuildSettings::RAILPACK,
+            $template->composeFromRepo() => BuildSettings::COMPOSE,
+            $template->dockerfile !== null && $template->dockerfile !== 'Dockerfile' => BuildSettings::TEMPLATE,
+            default => BuildSettings::DOCKERFILE,
+        };
+        $path = filled($this->input['health_path'] ?? null) ? (string) $this->input['health_path'] : ($template->health ?? '/');
+        $known = $method === BuildSettings::TEMPLATE && $path !== '/';
+        $health = match (true) {
+            ! $template->web || $template->health === null => [...BuildSettings::CUSTOM_HEALTH, 'enabled' => false],
+            $known => ['enabled' => true, 'path' => $path, 'expected_status' => 200, 'timeout_secs' => 30, 'retries' => $template->healthRetries ?? 5, 'start_period_secs' => 60, 'interval_secs' => null],
+            default => [...BuildSettings::CUSTOM_HEALTH, 'path' => $path, 'retries' => max(BuildSettings::CUSTOM_HEALTH['retries'], $template->healthRetries ?? 0)],
+        };
+        $build = is_array($this->input['build'] ?? null) ? $this->input['build'] : [];
+
+        $settings = (new BuildSettings(
+            method: $method,
+            dockerfile: in_array($method, [BuildSettings::DOCKERFILE, BuildSettings::TEMPLATE], true) ? ($template->dockerfile ?? 'Dockerfile') : null,
+            composeFile: $method === BuildSettings::COMPOSE ? $this->composeFile() : null,
+            baseDir: filled($this->input['base_dir'] ?? null) ? (string) $this->input['base_dir'] : null,
+            port: $this->port,
+            health: $health,
+            network: BuildSettings::NETWORK,
+        ))->with(array_diff_key($build, ['port' => true]));
+        $settings->port = $this->port;
+
+        return $this->settings = $settings->withFlags((array) ($this->input['env_flags'] ?? []), array_map('strval', array_keys($this->env)));
+    }
+
+    /**
+     * Turns down build settings this machine's daemon can't do, or that
+     * don't fit together, keyed under build.
+     *
+     * @throws ValidationException
+     */
+    public function check(): void
+    {
+        if ($this->new) {
+            $this->settings()->check($this->machine, 'build.', ! $this->template->isImage());
+
+            return;
+        }
+        $build = is_array($this->input['build'] ?? null) ? $this->input['build'] : [];
+        $flags = (array) ($this->input['env_flags'] ?? []);
+        if ($build === [] && $flags === []) {
+            return;
+        }
+        $spec = $this->job();
+        $spec['env'] = (array) $spec['env'];
+        BuildSettings::fromSpec($spec)->with($build)->withFlags($flags, array_map('strval', array_keys($this->env)))
+            ->check($this->machine, 'build.', ! $this->template->isImage());
     }
 
     public function composeFile(): ?string
     {
+        if ($this->template->isImage()) {
+            return null;
+        }
         if (! $this->template->isApp()) {
             return 'compose.yaml';
         }
@@ -121,8 +229,18 @@ final class TemplateDeployment
         if ($this->template->isApp()) {
             return strtolower((string) $this->input['commit']);
         }
+        if ($this->template->isImage()) {
+            return BuildSettings::imageCommit($this->image());
+        }
 
         return sha1($this->template->slug."\n".json_encode($this->template->files));
+    }
+
+    public function image(): string
+    {
+        $build = is_array($this->input['build'] ?? null) ? $this->input['build'] : [];
+
+        return trim((string) ($build['image'] ?? $this->input['image'] ?? ''));
     }
 
     private function domain(): ?string
@@ -212,7 +330,11 @@ final class TemplateDeployment
             $this->env[$key] = $value;
         }
 
-        $this->env['PORT'] = (string) $this->port;
+        if ($this->port !== null) {
+            $this->env['PORT'] = (string) $this->port;
+        } else {
+            unset($this->env['PORT']);
+        }
         $this->env['DOCKER_BRIDGE'] = DaemonFacts::dockerBridge($this->machine->facts ?? []);
 
         if ($errors !== []) {
@@ -248,31 +370,19 @@ final class TemplateDeployment
     }
 
     /**
+     * Settings pasted as a .env file: export, quotes, values over several
+     * lines and comments all read as dotenv tools read them.
+     *
      * @param  array<string, string>  $errors
      * @return array<string, string>
      */
     private function parseExtraEnv(array &$errors): array
     {
-        $env = [];
-
-        foreach (preg_split('/\R/', (string) ($this->input['extra_env'] ?? '')) ?: [] as $number => $line) {
-            $line = trim($line);
-            if ($line === '' || str_starts_with($line, '#')) {
-                continue;
-            }
-
-            [$key, $value] = array_pad(explode('=', $line, 2), 2, null);
-            $key = trim((string) $key);
-
-            if ($value === null || ! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $key)) {
-                $errors['extra_env'] = 'Line '.($number + 1).' should look like KEY=value.';
-
-                continue;
-            }
-
-            $env[$key] = trim($value);
+        $parsed = EnvFile::parse((string) ($this->input['extra_env'] ?? ''));
+        if ($parsed['errors'] !== []) {
+            $errors['extra_env'] = (string) reset($parsed['errors']);
         }
 
-        return $env;
+        return $parsed['variables'];
     }
 }

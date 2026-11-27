@@ -4,6 +4,7 @@ namespace App\Support\Projects;
 
 use App\Models\DaemonJob;
 use App\Models\ProjectNode;
+use App\Support\Deploys\AppDeploys;
 use App\Support\Deploys\DeployRequest;
 use App\Support\ServiceTemplates\ServiceTemplate;
 use App\Support\ServiceTemplates\ServiceTemplateCatalog;
@@ -130,7 +131,7 @@ final class ProjectFacts
             : (collect($containers)->contains(fn (array $c) => ($c['status'] ?? null) === 'running') ? 'running' : 'stopped');
         $latest = $jobs->first();
         $spec = $jobs->whereIn('state', ['queued', 'running', 'succeeded'])
-            ->first(fn (DaemonJob $job) => filled($job->command['job']['repo'] ?? null))
+            ->first(fn (DaemonJob $job) => AppDeploys::isApp($job->command['job'] ?? null))
             ?? $jobs->firstWhere('state', 'succeeded')
             ?? $jobs->first();
         $failed = $running === null && $latest?->state === 'failed';
