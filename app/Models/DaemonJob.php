@@ -51,6 +51,14 @@ class DaemonJob extends Model
 
     public const STALE_AFTER_MINUTES = 10;
 
+    // Kinds that build or switch an app: quiet for a long while is normal
+    // there, so they're only stale once their own time is up.
+    public const array LONG_KINDS = ['deploy', 'rollback'];
+
+    public const string STOPPED_WAITING = 'Stopped waiting: the daemon never reported back on this job.';
+
+    public const string STOPPED = 'Stopped: ServerOS asked the machine to cancel it.';
+
     protected function casts(): array
     {
         return [
@@ -69,13 +77,39 @@ class DaemonJob extends Model
         return in_array($this->state, ['queued', 'running'], true);
     }
 
-    // A held job is waiting in the panel on purpose, so it's never stale.
+    // A held job is waiting in the panel on purpose, so it's never stale. A
+    // deploy can go quiet for a long build step, so it's stale only once no
+    // word has come for longer than its whole timeout.
     public function isStale(): bool
     {
-        return $this->isActive()
-            && ! $this->held
-            && $this->updated_at !== null
-            && $this->updated_at->lt(now()->subMinutes(self::STALE_AFTER_MINUTES));
+        if (! $this->isActive() || $this->held || $this->updated_at === null) {
+            return false;
+        }
+        $quiet = in_array($this->kind, self::LONG_KINDS, true)
+            ? max(self::STALE_AFTER_MINUTES * 60, $this->timeoutSecs() + 120)
+            : self::STALE_AFTER_MINUTES * 60;
+
+        return $this->updated_at->lt(now()->subSeconds($quiet));
+    }
+
+    public function timeoutSecs(): int
+    {
+        $timeout = $this->command['timeout_secs'] ?? null;
+
+        return is_int($timeout) && $timeout > 0 ? $timeout : 1800;
+    }
+
+    /**
+     * Whether someone stopped waiting on it in the panel while the machine
+     * may still have been working: its last word then is still recorded.
+     */
+    public function stoppedWaiting(): bool
+    {
+        $error = is_array($this->error) ? $this->error : [];
+
+        return $this->state === 'cancelled'
+            && ($error['phase'] ?? null) === 'panel'
+            && (($error['stopped'] ?? false) === true || in_array($error['message'] ?? null, [self::STOPPED_WAITING, self::STOPPED], true));
     }
 
     public function isRetryable(): bool

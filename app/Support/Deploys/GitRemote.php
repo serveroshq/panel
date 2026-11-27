@@ -2,6 +2,8 @@
 
 namespace App\Support\Deploys;
 
+use App\Support\ServiceTemplates\RepositoryDetector;
+
 /**
  * Repository addresses a deploy can fetch from: an HTTPS one, or an SSH one
  * on any git host, fetched with the app's deploy key on the machine.
@@ -27,5 +29,29 @@ final class GitRemote
             : (string) (parse_url($repo, PHP_URL_PATH) ?? $repo);
 
         return (string) preg_replace('#\.git$#', '', trim($path, '/'));
+    }
+
+    /**
+     * A clone address from a pasted link, with the branch and folder a
+     * GitLab (/-/tree/<ref>/<folder>), Gitea or Forgejo (/src/branch/<ref>/…)
+     * or Bitbucket (/src/<ref>/…) link points at.
+     *
+     * @return array{0: string, 1: string|null, 2: string|null}
+     */
+    public static function link(string $url): array
+    {
+        if (self::isSsh($url)) {
+            return [$url, null, null];
+        }
+        $url = rtrim($url, '/');
+        foreach (['#^(https://[^?\#]+?)/-/tree/([^/?\#]+)(?:/([^?\#]+))?$#', '#^(https://[^?\#]+?)/src/branch/([^/?\#]+)(?:/([^?\#]+))?$#', '#^(https://bitbucket\.org/[^/]+/[^/]+)/src/([^/?\#]+)(?:/([^?\#]+))?$#'] as $pattern) {
+            if (preg_match($pattern, $url, $m) === 1) {
+                $folder = isset($m[3]) && preg_match(RepositoryDetector::BASE_DIR_PATTERN, $m[3]) === 1 ? $m[3] : null;
+
+                return [$m[1], rawurldecode($m[2]), $folder];
+            }
+        }
+
+        return [(string) preg_replace('#[?\#].*$#', '', $url), null, null];
     }
 }

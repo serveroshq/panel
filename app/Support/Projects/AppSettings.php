@@ -10,13 +10,14 @@ use App\Models\ProjectLink;
 use App\Models\ProjectNode;
 use App\Models\User;
 use App\Support\DaemonJobQueue;
+use App\Support\Deploys\AppDeploys;
+use App\Support\Deploys\AppEdits;
+use App\Support\Deploys\BuildSettings;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 class AppSettings
 {
-    private const string PUBLIC_ENV = '/^(NEXT_PUBLIC_|VITE_|NUXT_PUBLIC_|PUBLIC_|REACT_APP_|EXPO_PUBLIC_)/';
-
     public function __construct(private readonly DaemonJobQueue $queue) {}
 
     /**
@@ -32,20 +33,20 @@ class AppSettings
      */
     public function readApp(Machine $machine, string $name): array
     {
-        $last = self::lastDeploy($machine, $name);
-        $env = (array) ($last?->command['job']['env'] ?? []);
+        $spec = self::specOf($machine, $name);
+        $flags = $spec === null ? [] : BuildSettings::flagsOf($spec);
         $from = $this->managed($machine, $name);
 
-        $names = array_keys($env);
+        $names = array_keys($flags);
         sort($names);
 
         return [
             'names' => array_map(fn (string $name) => [
                 'name' => $name,
                 'from' => $from[$name] ?? null,
-                'build' => preg_match(self::PUBLIC_ENV, $name) === 1,
+                'build' => $flags[$name]['build'],
             ], $names),
-            'deployed' => $last !== null,
+            'deployed' => $spec !== null,
         ];
     }
 
@@ -60,6 +61,10 @@ class AppSettings
     }
 
     /**
+     * Changes settings by name and deploys the app again with them, on the
+     * commit that's live. A setting a frontend build bakes in (NEXT_PUBLIC_
+     * and the like) reaches the new build too.
+     *
      * @param  array<string, string>  $set
      * @param  list<string>  $remove
      * @return list<string>
@@ -67,54 +72,52 @@ class AppSettings
     public function writeApp(Machine $machine, string $name, array $set, array $remove, User $user): array
     {
         $fail = fn (string $message) => throw ValidationException::withMessages(['settings' => $message]);
-        $managed = $this->managed($machine, $name);
-
-        foreach ([...array_keys($set), ...$remove] as $setting) {
-            if (! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $setting)) {
-                $fail("{$setting} isn’t a setting name: use letters, digits and underscores, not starting with a digit.");
-            }
-            if (preg_match(self::PUBLIC_ENV, (string) $setting)) {
-                $fail("{$setting} is read while the app is built, so it needs a new build to change.");
-            }
-            if (isset($managed[$setting])) {
-                $fail("{$setting} comes from the connection to {$managed[$setting]}. Disconnect it to change it yourself.");
-            }
-        }
-        if (array_intersect(array_keys($set), $remove) !== []) {
-            $fail('A setting can’t be both changed and removed.');
-        }
 
         $last = self::lastDeploy($machine, $name);
-        if ($last === null || ! $last->isRetryable()) {
+        $spec = self::specOf($machine, $name);
+        if ($spec === null || $last === null || ! $last->isRetryable()) {
             $fail("{$name} has no deploy to change yet.");
         }
-        $spec = (array) $last->command['job'];
         $repo = (string) ($spec['repo'] ?? '');
         if (Deploys::fromUpload($repo) && ! (DeploySource::fromRepoUrl($repo)?->usable() ?? false)) {
             $fail("The code uploaded for {$name}’s live version has been cleared. Upload it again first.");
         }
+
+        try {
+            $edit = AppEdits::env($machine, $name, $spec, $set, $remove);
+        } catch (ValidationException $e) {
+            $fail((string) collect($e->errors())->flatten()->first());
+        }
+        if ($edit['changed'] === []) {
+            return [];
+        }
         if (($reason = $this->queue->unavailable($machine, 'deploy')) !== null) {
             $fail($reason);
         }
-
-        $env = array_map('strval', (array) ($spec['env'] ?? []));
-        $next = array_diff_key([...$env, ...$set], array_flip($remove));
-        $changed = array_values(array_unique([
-            ...array_keys(array_filter($set, fn (string $value, string $name) => ($env[$name] ?? null) !== $value, ARRAY_FILTER_USE_BOTH)),
-            ...array_intersect($remove, array_keys($env)),
-        ]));
-        if ($changed === []) {
-            return [];
-        }
-
-        $spec['env'] = (object) $next;
         try {
-            $this->queue->deploy($machine, $user, $spec);
+            $this->queue->deploy($machine, $user, $edit['spec']);
         } catch (RuntimeException $e) {
             $fail($e->getMessage());
         }
 
-        return $changed;
+        return $edit['changed'];
+    }
+
+    /**
+     * The spec an app's settings are read from and written to: its latest
+     * deploy as an app (failed or not), or a stack's latest deploy.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function specOf(Machine $machine, string $name): ?array
+    {
+        $spec = AppDeploys::spec($machine, $name);
+        if ($spec !== null) {
+            return $spec;
+        }
+        $last = self::lastDeploy($machine, $name);
+
+        return $last?->command === null ? null : (array) ($last->command['job'] ?? []);
     }
 
     public static function lastDeploy(Machine $machine, string $name): ?DaemonJob
@@ -125,6 +128,17 @@ class AppSettings
             ->where('service', $name)
             ->latest()
             ->first();
+    }
+
+    /**
+     * Settings a connection in a project manages, by name: what each one
+     * connects the app to.
+     *
+     * @return array<string, string>
+     */
+    public static function managedNames(Machine $machine, string $name): array
+    {
+        return app(self::class)->managed($machine, $name);
     }
 
     /** @return array<string, string> */

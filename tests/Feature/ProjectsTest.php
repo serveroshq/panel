@@ -497,18 +497,24 @@ test('promoting refuses when nothing would change', function () {
         ->assertSessionHasErrors('to');
 });
 
-test('settings refuse bad names, build-time ones and a name both set and removed, and an unchanged save deploys nothing', function () {
+test('settings refuse bad names and a name both set and removed, an unchanged save deploys nothing, and a build-time one reaches the build', function () {
     [$workspace, $project, , , , $base] = projectWithProduction();
     $app = $project->nodes()->where('name', 'shop')->sole();
     $url = $base."/projects/{$project->uid}/nodes/{$app->id}/settings";
 
-    foreach ([['set' => ['1BAD' => 'x']], ['set' => ['VITE_NAME' => 'x']], ['set' => ['A' => '1'], 'remove' => ['A']]] as $payload) {
+    foreach ([['set' => ['1BAD' => 'x']], ['set' => ['A' => '1'], 'remove' => ['A']]] as $payload) {
         $this->actingAs($workspace->owner)->patch($url, $payload)->assertSessionHasErrors('settings');
     }
 
     $before = DaemonJob::query()->where('kind', 'deploy')->where('service', 'shop')->count();
     $this->actingAs($workspace->owner)->patch($url, ['set' => ['APP_ENV' => 'production']])->assertSessionHasNoErrors();
     expect(DaemonJob::query()->where('kind', 'deploy')->where('service', 'shop')->count())->toBe($before);
+
+    // A frontend build bakes VITE_ settings in, so the new build gets it too.
+    $this->actingAs($workspace->owner)->patch($url, ['set' => ['VITE_NAME' => 'Shop']])->assertSessionHasNoErrors();
+    $deploy = collect(projectCommands())->last(fn ($c) => $c['job']['type'] === 'deploy' && $c['job']['service'] === 'shop')['job'];
+    expect($deploy['env']['VITE_NAME'])->toBe('Shop')
+        ->and($deploy['files']['.env.production.local'] ?? '')->toContain('VITE_NAME="Shop"');
 });
 
 test('deleting an environment with its services removes only its containers, data and all', function () {

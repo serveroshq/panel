@@ -46,6 +46,10 @@ return [
     // CPU and memory limits per app, and registry logins for private images.
     'resource_limits_since' => env('DAEMON_RESOURCE_LIMITS_SINCE', '0.1.1-pre.46'),
     'registry_logins_since' => env('DAEMON_REGISTRY_LOGINS_SINCE', '0.1.1-pre.46'),
+    // Railpack and prebuilt images, build settings, volumes, release and
+    // post-deploy commands, the shared network, health start periods,
+    // installing Docker and reading a repository on any git host.
+    'deploy_build_since' => env('DAEMON_DEPLOY_BUILD_SINCE', '0.1.1-pre.51'),
     'install_url' => env('DAEMON_INSTALL_URL', rtrim((string) env('APP_URL', ''), '/').'/install.sh'),
     'install_script' => null,
     'releases_url' => env('DAEMON_RELEASES_URL', 'https://releases.serveros.com'),
