@@ -22,7 +22,15 @@ final class ActivityLine
         };
 
         match ($a->action) {
-            'service.deploy' => $set(($meta['retry'] ?? false) ? 'deployed again' : 'deployed', isset($meta['upload']) ? $t('from :file', ['file' => $meta['upload']]) : null),
+            'service.deploy' => $set(($meta['retry'] ?? false) ? 'deployed again' : (($meta['no_cache'] ?? false) ? 'rebuilt from scratch' : 'deployed'), match (true) {
+                isset($meta['upload']) => $t('from :file', ['file' => $meta['upload']]),
+                ($meta['trigger'] ?? null) === 'push' => $t('after a push to GitHub'),
+                ($meta['trigger'] ?? null) === 'hook' => $t('from its deploy hook'),
+                is_string($meta['trigger'] ?? null) && str_starts_with($meta['trigger'], 'hook:') => $t('from a :provider push to its deploy hook', ['provider' => match (substr($meta['trigger'], 5)) {
+                    'github' => 'GitHub', 'gitlab' => 'GitLab', 'gitea' => 'Gitea', 'bitbucket' => 'Bitbucket', default => substr($meta['trigger'], 5),
+                }]),
+                default => null,
+            }),
             'service.rollback' => $set('rolled back', trim((isset($meta['commit']) && $meta['commit'] !== '' ? $t('to :commit', ['commit' => $meta['commit']]) : '').(($meta['data'] ?? false) ? $t(', with its data') : '')) ?: null, 'warn'),
             'service.start' => $set('started'),
             'service.stop' => $set('stopped', null, 'warn'),
@@ -64,6 +72,7 @@ final class ActivityLine
             }),
             'machine.packages_add' => $set($t('installed :packages on', ['packages' => implode(', ', array_slice(array_map('strval', (array) ($meta['packages'] ?? [])), 0, 6))]), null, 'warn'),
             'machine.reboot' => $set('restarted', null, 'warn'),
+            'machine.docker_install' => $set('installed Docker on'),
             'machine.docker_prune' => $set('cleaned up Docker on', trim(implode(', ', array_filter([
                 (int) ($meta['images'] ?? 0) > 0 ? $t((int) $meta['images'] === 1 ? '1 image' : ':count images', ['count' => (string) $meta['images']]) : null,
                 (int) ($meta['volumes'] ?? 0) > 0 ? $t((int) $meta['volumes'] === 1 ? '1 volume' : ':count volumes', ['count' => (string) $meta['volumes']]) : null,
@@ -298,7 +307,7 @@ final class ActivityLine
             'job.abandon' => $set($t('gave up on the stuck :kind job for', ['kind' => str_replace('_', ' ', (string) ($meta['kind'] ?? ''))]), null, 'warn'),
             'app.settings' => match (true) {
                 ($meta['deploy_on_push'] ?? null) === true => $set('turned on deploying each push for', $t('to :branch', ['branch' => (string) ($meta['push_branch'] ?? 'main')])),
-                ($meta['deploy_on_push'] ?? null) === false => $set('turned off deploying each push for', null, 'warn'),
+                ($meta['deploy_on_push'] ?? null) === false => $set('turned off deploying each push for', ($meta['reason'] ?? null) === 'upload' ? 'since new code was uploaded' : null, 'warn'),
                 isset($meta['push_branch']) => $set('changed the branch that deploys', $t('to :branch', ['branch' => (string) $meta['push_branch']])),
                 ($meta['push_only_newest'] ?? null) === true => $set('set only the newest push to build for'),
                 ($meta['push_only_newest'] ?? null) === false => $set('set every push to build for'),
@@ -318,6 +327,14 @@ final class ActivityLine
                 default => $set('changed the maintenance page for'),
             },
             'app.deploy_key' => $set('made a deploy key for', 'to fetch its private repository'),
+            'app.build' => $set('changed how it builds and runs', isset($meta['changed']) && is_array($meta['changed']) ? $t('(:what)', ['what' => implode(', ', array_map(fn ($field) => str_replace('_', ' ', (string) $field), $meta['changed']))]) : null),
+            'app.hook' => match (true) {
+                ($meta['revoked'] ?? false) === true => $set('turned off the deploy hook for', null, 'warn'),
+                ($meta['regenerated'] ?? false) === true => $set('made a new deploy hook for', 'so the old address stops working'),
+                default => $set('made a deploy hook for'),
+            },
+            'app.schedules' => $set('changed the scheduled commands of'),
+            'app.schedule_skipped' => $set('didn’t run a scheduled command in', $t(':schedule: :reason', ['schedule' => (string) ($meta['schedule'] ?? ''), 'reason' => rtrim((string) ($meta['reason'] ?? ''), '.')]), 'warn'),
             'app.limits' => ($meta['cpus'] ?? null) === null && ($meta['memory_mb'] ?? null) === null
                 ? $set('took the CPU and memory limits off')
                 : $set('limited', $t('to :limits', ['limits' => implode(', ', array_filter([
@@ -435,7 +452,7 @@ final class ActivityLine
             $out['detail'] = $t(($meta['reason'] ?? null) === 'left' ? 'They left the workspace.' : 'Their access expired.');
         }
 
-        if (! $a->byPerson() && in_array($a->action, ['machine.offline', 'machine.online', 'machine.disk_full', 'monitor.down', 'monitor.up', 'backup.failed', 'backup.restore_failed', 'machine.connect', 'service.down', 'service.up', 'service.crash_loop', 'workflow.run', 'workflow.failed', 'workflow.skipped', 'app.push_skipped', 'app.push_replaced', 'fix.done', 'fix.failed', 'mcp.revoke', 'domain.active', 'machine.daemon_updated', 'daemon.update_waiting', 'panel.updated', 'panel.update_failed', 'email_domain.unverified', 'cloud.suspend', 'cloud.resume', 'cloud.end', 'cloud.throttle', 'machine.ssh_access.failed', 'machine.ssh_access.end'], true)) {
+        if (! $a->byPerson() && in_array($a->action, ['machine.offline', 'machine.online', 'machine.disk_full', 'monitor.down', 'monitor.up', 'backup.failed', 'backup.restore_failed', 'machine.connect', 'service.down', 'service.up', 'service.crash_loop', 'workflow.run', 'workflow.failed', 'workflow.skipped', 'app.push_skipped', 'app.push_replaced', 'app.schedule_skipped', 'fix.done', 'fix.failed', 'mcp.revoke', 'domain.active', 'machine.daemon_updated', 'daemon.update_waiting', 'panel.updated', 'panel.update_failed', 'email_domain.unverified', 'cloud.suspend', 'cloud.resume', 'cloud.end', 'cloud.throttle', 'machine.ssh_access.failed', 'machine.ssh_access.end'], true)) {
             $out['leads'] = true;
         }
 

@@ -11,10 +11,12 @@ use App\Support\Audit\AuditContext;
 use App\Support\Audit\Audited;
 use App\Support\DaemonJobQueue;
 use App\Support\Deploys\AppDatabase;
+use App\Support\Deploys\AppDeploys;
 use App\Support\Deploys\AppLimits;
 use App\Support\Deploys\AppVersions;
 use App\Support\Deploys\DeployOnPush;
 use App\Support\Deploys\DeployRequest;
+use App\Support\Deploys\EnvFile;
 use App\Support\Deploys\ServiceLabels;
 use App\Support\DeploySources\DeploySourcePacker;
 use App\Support\Projects\AppSettings;
@@ -45,7 +47,7 @@ class AppVersionController extends Controller
             ->where('state', 'succeeded')
             ->latest()
             ->get()
-            ->first(fn (DaemonJob $job) => filled($job->command['job']['repo'] ?? null));
+            ->first(fn (DaemonJob $job) => AppDeploys::isApp($job->command['job'] ?? null));
     }
 
     #[Audited]
@@ -60,14 +62,14 @@ class AppVersionController extends Controller
             throw ValidationException::withMessages(['source' => 'That upload has expired. Upload it again.']);
         }
 
-        $last = self::lastDeployOf($machine, $service);
-        abort_if($last === null, 404, 'This service wasn’t deployed from code.');
+        $last = AppDeploys::spec($machine, $service);
+        abort_if($last === null || AppDeploys::isImage($last), 404, 'This service wasn’t deployed from code.');
 
         if (($reason = $queue->unavailable($machine, 'deploy')) !== null) {
             return response()->json(['error' => $reason], 409);
         }
 
-        $job = [...$last->command['job'], 'repo' => $source->repoUrl(), 'commit' => $source->commit];
+        $job = [...$last, 'repo' => $source->repoUrl(), 'commit' => $source->commit];
 
         try {
             $record = $queue->deploy($machine, $request->user(), $job);
@@ -75,7 +77,16 @@ class AppVersionController extends Controller
             return response()->json(['error' => $e->getMessage()], 503);
         }
 
-        return response()->json(['jobId' => $record->id, 'state' => 'queued'], 202);
+        // Uploaded code has no repository to push to, so deploying each push stops.
+        $stopped = DeployOnPush::setting($machine, $service)['on'];
+        if ($stopped) {
+            $settings = $machine->app_settings ?? [];
+            $settings[$service]['deploy_on_push'] = false;
+            $machine->forceFill(['app_settings' => $settings])->save();
+            Activity::record($workspace, 'app.settings', $service, $machine, meta: ['deploy_on_push' => false, 'reason' => 'upload']);
+        }
+
+        return response()->json(['jobId' => $record->id, 'state' => 'queued', 'pushDeploysStopped' => $stopped], 202);
     }
 
     #[Audited]
@@ -106,7 +117,7 @@ class AppVersionController extends Controller
     {
         Gate::authorize('manageMachines', $workspace);
         abort_unless($machine->workspace_id === $workspace->id, 404);
-        abort_unless(filled(AppSettings::lastDeploy($machine, $service)?->command['job']['repo'] ?? null), 404, 'This service wasn’t deployed from code.');
+        abort_unless(AppDeploys::isApp(AppSettings::lastDeploy($machine, $service)?->command['job'] ?? null), 404, 'This service wasn’t deployed from code.');
 
         return response()->json($settings->readApp($machine, $service));
     }
@@ -116,11 +127,11 @@ class AppVersionController extends Controller
     {
         Gate::authorize('manageMachines', $workspace);
         abort_unless($machine->workspace_id === $workspace->id, 404);
-        abort_unless(filled(AppSettings::lastDeploy($machine, $service)?->command['job']['repo'] ?? null), 404, 'This service wasn’t deployed from code.');
+        abort_unless(AppDeploys::isApp(AppSettings::lastDeploy($machine, $service)?->command['job'] ?? null), 404, 'This service wasn’t deployed from code.');
         $data = $request->validate([
-            'set' => ['array', 'max:50'],
-            'set.*' => ['nullable', 'string', 'max:10000'],
-            'remove' => ['array', 'max:50'],
+            'set' => ['array', 'max:'.EnvFile::MAX_VARIABLES],
+            'set.*' => ['nullable', 'string', 'max:'.EnvFile::MAX_VALUE_BYTES],
+            'remove' => ['array', 'max:'.EnvFile::MAX_VARIABLES],
             'remove.*' => ['string', 'max:128'],
         ]);
 
@@ -140,7 +151,8 @@ class AppVersionController extends Controller
     {
         Gate::authorize('manageMachines', $workspace);
         abort_unless($machine->workspace_id === $workspace->id, 404);
-        abort_if(self::lastDeployOf($machine, $service) === null, 404, 'This service wasn’t deployed from code.');
+        $spec = AppDeploys::spec($machine, $service);
+        abort_if($spec === null, 404, 'This service wasn’t deployed from code.');
 
         $databases = array_map(fn (array $s) => ServiceLabels::identity($s), AppDatabase::candidates($machine));
         $data = $request->validate([
@@ -151,8 +163,8 @@ class AppVersionController extends Controller
             'push_only_newest' => ['sometimes', 'boolean'],
         ], ['database.in' => 'That database isn’t on this machine.', 'push_branch.regex' => 'That isn’t a branch name.']);
 
-        if (($data['deploy_on_push'] ?? false) && DeployOnPush::repoName(self::lastDeployOf($machine, $service)?->command['job']['repo'] ?? null) === null) {
-            return response()->json(['errors' => ['deploy_on_push' => ['Deploying each push works for apps deployed from a GitHub repository.']]], 422);
+        if (($data['deploy_on_push'] ?? false) && ($problem = DeployOnPush::cannotWatch($workspace, $spec['repo'] ?? null)) !== null) {
+            return response()->json(['message' => $problem, 'errors' => ['deploy_on_push' => [$problem]]], 422);
         }
 
         $settings = $machine->app_settings ?? [];
@@ -239,8 +251,9 @@ class AppVersionController extends Controller
             throw ValidationException::withMessages(['domain' => 'It’s already on that domain.']);
         }
         DeployRequest::assertWildcard($machine, $data['domain'], $wildcard);
+        DeployRequest::assertDomainFree($machine, $data['domain'], $service);
 
-        $fromGit = filled($job['repo'] ?? null) && ! str_contains((string) $job['repo'], '/api/deploy-sources/');
+        $fromGit = filled($job['repo'] ?? null) && ! str_contains((string) $job['repo'], '/api/deploy-sources/') || AppDeploys::isImage($job);
         $source = $fromGit ? null : DeploySource::fromRepoUrl($job['repo'] ?? null);
         if (! $fromGit && ($source === null || $source->workspace_id !== $workspace->id || ! $source->usable())) {
             throw ValidationException::withMessages(['domain' => 'The uploaded code for this app has been cleared. Upload it again as a new version, then change the domain.']);

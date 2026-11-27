@@ -3,6 +3,7 @@
 namespace App\Support\Deploys;
 
 use App\Models\DaemonJob;
+use App\Support\DaemonJobQueue;
 use Illuminate\Support\Str;
 
 final class DeployFailure
@@ -12,7 +13,7 @@ final class DeployFailure
     private const LOG_LINES = 60;
 
     /**
-     * @return array{cause: string, fix: string, command?: string, alternative?: string, install?: array{label: string, packages: list<string>}}|null
+     * @return array{cause: string, fix: string, command?: string, alternative?: string, install?: array{label: string, packages: list<string>}, docker?: bool, settings?: string, cleanup?: bool}|null
      */
     public static function explain(DaemonJob $job): ?array
     {
@@ -29,6 +30,8 @@ final class DeployFailure
             );
         }
 
+        $spec = (array) ($job->command['job'] ?? []);
+
         return self::fromError(
             is_string($error['phase'] ?? null) ? $error['phase'] : '',
             is_string($error['message'] ?? null) ? $error['message'] : '',
@@ -37,20 +40,27 @@ final class DeployFailure
                 ...array_values(array_filter(is_array($error['output_tail'] ?? null) ? $error['output_tail'] : [], 'is_string')),
             ],
             $job->state === 'timed_out',
+            is_string($spec['build']['method'] ?? null) ? $spec['build']['method'] : null,
+            DaemonJobQueue::canDeployBuild($job->machine),
+            is_array($spec['health'] ?? null) ? (int) ($spec['health']['expected_status'] ?? 200) : null,
         );
     }
 
     /**
      * @param  list<string>  $output
-     * @return array{cause: string, fix: string, command?: string, alternative?: string, install?: array{label: string, packages: list<string>}}|null
+     * @return array{cause: string, fix: string, command?: string, alternative?: string, install?: array{label: string, packages: list<string>}, docker?: bool, settings?: string, cleanup?: bool}|null
      */
-    public static function fromError(string $phase, string $message, array $output, bool $timedOut = false): ?array
+    public static function fromError(string $phase, string $message, array $output, bool $timedOut = false, ?string $method = null, bool $installsDocker = false, ?int $expected = null): ?array
     {
         $text = $message."\n".implode("\n", $output);
         $has = fn (string $pattern): bool => preg_match($pattern, $text) === 1;
 
-        if ($has('/Failed to find executable docker|docker: (command )?not found/i')) {
-            return [
+        if ($has('/Failed to find executable docker|docker: (command )?not found|docker is not installed/i')) {
+            return $installsDocker ? [
+                'cause' => 'Docker isn’t installed on this machine, and every deploy needs it.',
+                'fix' => 'Install it here (it takes a few minutes), then deploy again.',
+                'docker' => true,
+            ] : [
                 'cause' => 'Docker isn’t installed on this machine, and every deploy needs it.',
                 'fix' => 'Install it here and ServerOS retries the deploy, or run this on the machine as root, then retry:',
                 'command' => 'curl -fsSL https://get.docker.com | sh',
@@ -85,12 +95,44 @@ final class DeployFailure
             return null;
         }
 
-        if ($has('/no space left on device/i')) {
+        if ($has('/no space left on device|disk (is )?full|not enough (free )?space/i')) {
             return [
                 'cause' => 'The machine ran out of disk space during the deploy.',
-                'fix' => 'Free some space, then retry. Old Docker images and build cache are often the biggest:',
+                'fix' => 'Free some space, then retry. Old Docker images and build cache are often the biggest: clean them up on the machine’s page, or run',
                 'command' => 'docker system prune',
+                'cleanup' => true,
             ];
+        }
+
+        if ($phase === 'release' || $has('/release command (failed|exited|timed out)/i')) {
+            return [
+                'cause' => 'The release command failed, so the new version was never started. The live one, if any, keeps serving.',
+                'fix' => 'The lines above show what it printed. Fix it (or what it runs, like a migration), or change the release command in the app’s build settings, then deploy again.',
+                'settings' => 'release_command',
+            ];
+        }
+
+        if ($method === BuildSettings::RAILPACK && $has('/could not (determine|detect) how to build|no provider (matched|found|detected)|failed to (generate|create) (a )?build plan|unable to (determine|detect)|no start command|could not find a start command/i')) {
+            return [
+                'cause' => 'Railpack couldn’t tell how to build or start this app: it found no language it knows, or nothing to run.',
+                'fix' => 'Set a start command in the app’s build settings (like npm start or python main.py), or add a Dockerfile to the repository and build with that.',
+                'settings' => 'start_command',
+            ];
+        }
+        if ($method === BuildSettings::IMAGE) {
+            if ($has('/unauthorized|authentication required|denied: |incorrect username or password|failed to authorize/i')) {
+                return [
+                    'cause' => 'The registry turned down the login for this image, so it couldn’t be pulled.',
+                    'fix' => 'Check the login for its registry in Settings › General › Container registries (a token needs permission to read packages), then deploy again.',
+                ];
+            }
+            if ($has('/pull access denied|manifest unknown|manifest for \S+ not found|not found|repository does not exist|invalid reference format/i')) {
+                return [
+                    'cause' => 'The image couldn’t be pulled: its name or tag is wrong, or it’s private.',
+                    'fix' => 'Check the image in the app’s build settings. For a private one, add a login for its registry in Settings › General › Container registries, then deploy again.',
+                    'settings' => 'image',
+                ];
+            }
         }
         if ($has('/JavaScript heap out of memory|Cannot allocate memory|\bENOMEM\b|exit code:? 137|exited 137|\bOOMKilled\b|^\s*Killed\s*$/im')) {
             return [
@@ -217,13 +259,28 @@ final class DeployFailure
             if ($has('/not accepting connections|Connection refused/i')) {
                 return [
                     'cause' => 'The app started, but nothing answered on its port, so the new version was never switched in. The old one, if any, is still running.',
-                    'fix' => 'Make the app listen on 0.0.0.0 (not localhost or 127.0.0.1) and on the port set for it. The app’s logs show whether it crashed on start.',
+                    'fix' => 'Make the app listen on 0.0.0.0 (not localhost or 127.0.0.1) and on the port set for it (the PORT setting), or change the port in the app’s build settings. Its logs show whether it crashed on start.',
+                    'settings' => 'port',
                 ];
             }
             if ($has('/returned HTTP 5\d\d/i')) {
                 return [
                     'cause' => 'The app started but answers with an error, so the new version was never switched in. The old one, if any, is still running.',
                     'fix' => 'The app’s logs say why. Usually it’s a missing environment variable, or a database it can’t reach.',
+                ];
+            }
+            if (preg_match('/returned HTTP ([1-4]\d\d)/i', $text, $status) === 1) {
+                return [
+                    'cause' => "The app answers its health check with HTTP {$status[1]}".($expected !== null && $expected > 0 ? ", not the {$expected} it was set to expect" : '').', so the new version was never switched in. The old one, if any, is still running.',
+                    'fix' => 'Change the health check path to one the app answers, or let it pass on any answer, in the app’s build settings.',
+                    'settings' => 'health',
+                ];
+            }
+            if ($has('/timed out|timeout|deadline exceeded|no answer/i')) {
+                return [
+                    'cause' => 'The app didn’t answer its health check in time, so the new version was never switched in. The old one, if any, is still running.',
+                    'fix' => 'If it’s slow to start, give it a longer start period in the app’s build settings. Its logs show whether it crashed on start or listens on another port.',
+                    'settings' => 'health',
                 ];
             }
 

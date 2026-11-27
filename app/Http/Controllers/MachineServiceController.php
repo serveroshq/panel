@@ -20,6 +20,8 @@ use App\Support\ConsoleLock;
 use App\Support\DaemonJobQueue;
 use App\Support\Databases\DatabaseConsole;
 use App\Support\Deploys\AppDatabase;
+use App\Support\Deploys\AppDeploys;
+use App\Support\Deploys\AppPage;
 use App\Support\Deploys\AppReleases;
 use App\Support\Deploys\AppVersions;
 use App\Support\Deploys\CommitMessages;
@@ -162,6 +164,8 @@ class MachineServiceController extends Controller
                 ], AppVersions::for($machine, $deploy->service)),
                 'variables' => app(AppSettings::class)->readApp($machine, (string) $deploy->service)['names'],
             ],
+            'deploy' => ($name = self::appName($found)) === null ? null : AppPage::props($machine, $name),
+            'deployHistory' => Inertia::defer(fn () => ($name = self::appName($found)) === null ? [] : AppDeploys::history($machine, $name, 20)->map(fn (DaemonJob $job) => AppDeploys::row($job))->values()->all()),
             'siteTraffic' => self::siteTraffic($machine, $found),
             'commandsEnabled' => (bool) config('daemon.commands_enabled'),
             'files' => fn () => [
@@ -818,7 +822,9 @@ class MachineServiceController extends Controller
     {
         $service = null;
         if (str_starts_with($key, 'app:')) {
-            $service = AppReleases::find($machine, substr($key, 4));
+            $app = substr($key, 4);
+            // An app's live release, a container of its Compose stack, or its page with none yet.
+            $service = AppReleases::find($machine, $app) ?? (Placement::containers($machine, $app)[0] ?? null) ?? self::notRunning($machine, $app);
         } else {
             foreach ($machine->inventory['services'] ?? [] as $candidate) {
                 if (is_array($candidate) && ($candidate['key'] ?? null) === $key) {
@@ -834,6 +840,7 @@ class MachineServiceController extends Controller
         return [
             ...$service,
             'app' => $release !== null && isset(AppReleases::live($machine)[$release['app']]) ? $release['app'] : null,
+            'missing' => (bool) ($service['missing'] ?? false),
             'label' => ServiceLabels::for($machine, $service),
             'found' => ContainerNames::found($service),
             'icon' => ServiceLabels::iconUrl($machine, $service),
@@ -841,6 +848,55 @@ class MachineServiceController extends Controller
             'hidden' => ServiceLabels::isHidden($machine, $service),
             'logsMuted' => ServiceLabels::logsMuted($machine, $service),
             'container' => str_starts_with((string) $service['key'], 'docker:'),
+        ];
+    }
+
+    /**
+     * The app a service belongs to, by its release's name: also an app whose
+     * latest deploy failed (it isn't live), and one with no container yet.
+     *
+     * @param  array<string, mixed>  $found
+     */
+    private static function appName(array $found): ?string
+    {
+        if (($found['missing'] ?? false) === true) {
+            return (string) $found['name'];
+        }
+        if (is_string($found['app'] ?? null)) {
+            return $found['app'];
+        }
+        // A container of an app run from its repository's Compose file.
+        $project = (string) ($found['details']['compose_project'] ?? '');
+        if (str_starts_with($project, 'serveros-')) {
+            return substr($project, strlen('serveros-'));
+        }
+        $release = AppReleases::parse(is_string($found['name'] ?? null) ? $found['name'] : null);
+
+        return $release['app'] ?? null;
+    }
+
+    /**
+     * An app ServerOS deployed that has no container on the machine: its
+     * first deploy failed, or it's deploying for the first time. Its page
+     * still opens, so its settings can be fixed and it can be deployed again.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function notRunning(Machine $machine, string $app): ?array
+    {
+        if (AppDeploys::current($machine, $app) === null || Placement::containers($machine, $app) !== []) {
+            return null;
+        }
+
+        return [
+            'key' => "app:{$app}",
+            'name' => $app,
+            'kind' => 'app',
+            'manager' => 'docker',
+            'status' => 'not_deployed',
+            'ports' => [],
+            'details' => ['managed' => 'true'],
+            'missing' => true,
         ];
     }
 
