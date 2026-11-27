@@ -55,7 +55,14 @@ final class DeployFailure
         $text = $message."\n".implode("\n", $output);
         $has = fn (string $pattern): bool => preg_match($pattern, $text) === 1;
 
-        if ($has('/Failed to find executable docker|docker: (command )?not found|docker is not installed/i')) {
+        if ($phase === 'docker' && $has('/Docker is installed but isn[\'’]t running/i')) {
+            return [
+                'cause' => 'Docker is installed on this machine but isn’t running, so nothing could be built or started.',
+                'fix' => 'Start it on the machine as root, then deploy again:',
+                'command' => 'systemctl enable --now docker',
+            ];
+        }
+        if ($has('/Failed to find executable docker|docker: (command )?not found|docker is not installed|Docker isn[\'’]t installed on this machine/i')) {
             return $installsDocker ? [
                 'cause' => 'Docker isn’t installed on this machine, and every deploy needs it.',
                 'fix' => 'Install it here (it takes a few minutes), then deploy again.',
@@ -67,7 +74,7 @@ final class DeployFailure
                 'install' => ['label' => 'Install Docker', 'packages' => self::DOCKER_PACKAGES],
             ];
         }
-        if ($has("/buildx component is missing|docker: 'compose' is not a docker command|unknown command: docker compose/i")) {
+        if ($has("/buildx component is missing|docker: 'compose' is not a docker command|unknown command: docker compose|Docker Compose isn['’]t installed|needs Docker's buildx plugin/i")) {
             return [
                 'cause' => 'Docker is installed, but without its build and Compose plugins (Ubuntu’s docker.io leaves them out).',
                 'fix' => 'Run this on the machine as root, then retry:',
@@ -95,9 +102,9 @@ final class DeployFailure
             return null;
         }
 
-        if ($has('/no space left on device|disk (is )?full|not enough (free )?space/i')) {
+        if ($phase === 'disk' || $has('/no space left on device|disk (is )?full|not enough (free )?space/i')) {
             return [
-                'cause' => 'The machine ran out of disk space during the deploy.',
+                'cause' => $phase === 'disk' ? 'The machine has too little free disk space to build, so the deploy stopped before starting.' : 'The machine ran out of disk space during the deploy.',
                 'fix' => 'Free some space, then retry. Old Docker images and build cache are often the biggest: clean them up on the machine’s page, or run',
                 'command' => 'docker system prune',
                 'cleanup' => true,
@@ -112,21 +119,21 @@ final class DeployFailure
             ];
         }
 
-        if ($method === BuildSettings::RAILPACK && $has('/could not (determine|detect) how to build|no provider (matched|found|detected)|failed to (generate|create) (a )?build plan|unable to (determine|detect)|no start command|could not find a start command/i')) {
+        if ($method === BuildSettings::RAILPACK && $has('/could not (determine|detect) how to build|couldn[\'’]t tell how to (build|start)|no provider (matched|found|detected)|failed to (generate|create) (a )?build plan|unable to (determine|detect)|no start command|could not find a start command/i')) {
             return [
                 'cause' => 'Railpack couldn’t tell how to build or start this app: it found no language it knows, or nothing to run.',
                 'fix' => 'Set a start command in the app’s build settings (like npm start or python main.py), or add a Dockerfile to the repository and build with that.',
                 'settings' => 'start_command',
             ];
         }
-        if ($method === BuildSettings::IMAGE) {
-            if ($has('/unauthorized|authentication required|denied: |incorrect username or password|failed to authorize/i')) {
+        if ($method === BuildSettings::IMAGE || $phase === 'pull') {
+            if ($has('/unauthorized|authentication required|denied: |incorrect username or password|failed to authorize|wouldn[\'’]t let this machine pull/i')) {
                 return [
                     'cause' => 'The registry turned down the login for this image, so it couldn’t be pulled.',
                     'fix' => 'Check the login for its registry in Settings › General › Container registries (a token needs permission to read packages), then deploy again.',
                 ];
             }
-            if ($has('/pull access denied|manifest unknown|manifest for \S+ not found|not found|repository does not exist|invalid reference format/i')) {
+            if ($has('/pull access denied|manifest unknown|manifest for \S+ not found|not found|repository does not exist|invalid reference format|isn[\'’]t in its registry/i')) {
                 return [
                     'cause' => 'The image couldn’t be pulled: its name or tag is wrong, or it’s private.',
                     'fix' => 'Check the image in the app’s build settings. For a private one, add a login for its registry in Settings › General › Container registries, then deploy again.',
@@ -256,20 +263,20 @@ final class DeployFailure
         }
 
         if ($phase === 'health') {
-            if ($has('/not accepting connections|Connection refused/i')) {
+            if ($has('/(?:not|nothing is) accepting connections|Connection refused/i')) {
                 return [
                     'cause' => 'The app started, but nothing answered on its port, so the new version was never switched in. The old one, if any, is still running.',
                     'fix' => 'Make the app listen on 0.0.0.0 (not localhost or 127.0.0.1) and on the port set for it (the PORT setting), or change the port in the app’s build settings. Its logs show whether it crashed on start.',
                     'settings' => 'port',
                 ];
             }
-            if ($has('/returned HTTP 5\d\d/i')) {
+            if ($has('/(?:returned|answered) HTTP 5\d\d/i')) {
                 return [
                     'cause' => 'The app started but answers with an error, so the new version was never switched in. The old one, if any, is still running.',
                     'fix' => 'The app’s logs say why. Usually it’s a missing environment variable, or a database it can’t reach.',
                 ];
             }
-            if (preg_match('/returned HTTP ([1-4]\d\d)/i', $text, $status) === 1) {
+            if (preg_match('/(?:returned|answered) HTTP ([1-4]\d\d)/i', $text, $status) === 1) {
                 return [
                     'cause' => "The app answers its health check with HTTP {$status[1]}".($expected !== null && $expected > 0 ? ", not the {$expected} it was set to expect" : '').', so the new version was never switched in. The old one, if any, is still running.',
                     'fix' => 'Change the health check path to one the app answers, or let it pass on any answer, in the app’s build settings.',
@@ -290,7 +297,7 @@ final class DeployFailure
             ];
         }
 
-        if ($timedOut || $has('/ timed out$/m')) {
+        if ($timedOut || $phase === 'timeout' || $has('/ timed out$/m')) {
             return [
                 'cause' => 'The deploy took too long and was stopped.',
                 'fix' => 'Builds that download a lot or compile from source can be slow on small machines. Retry once (later builds reuse what was downloaded), or slim the build down.',

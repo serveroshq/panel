@@ -134,3 +134,26 @@ test('the most telling line of a failure’s output is picked out', function (ar
     'empty' => [[], null],
     'not text' => [[['nested'], 42], null],
 ]);
+
+test('the daemon’s own wording for new deploy failures gets a plain explanation', function (string $phase, string $message, string $expected) {
+    expect(causeOf($phase, $message))->toContain($expected);
+})->with([
+    'health status' => ['health', 'the health check failed: / answered HTTP 404, expected HTTP 200 (or a redirect)', 'HTTP 404'],
+    'health error' => ['health', 'the health check failed: / answered HTTP 502, expected any answer below 500', 'answers with an error'],
+    'health refused' => ['health', 'the health check failed: nothing is accepting connections on port 3000', 'nothing answered on its port'],
+    'health slow' => ['health', 'the health check failed: no answer from / within 10 seconds', 'in time'],
+    'docker missing' => ['docker', 'Docker isn\'t installed on this machine', 'Docker isn’t installed'],
+    'docker stopped' => ['docker', 'Docker is installed but isn\'t running', 'isn’t running'],
+    'compose missing' => ['docker', 'Docker Compose isn\'t installed on this machine', 'plugins'],
+    'buildx missing' => ['docker', 'building without a Dockerfile needs Docker\'s buildx plugin, which isn\'t installed here', 'plugins'],
+    'disk' => ['disk', 'only 1.2 GB is free on the disk Docker keeps images on (/var/lib/docker), and a build needs at least 2.0 GB', 'too little free disk space'],
+    'pull denied' => ['pull', 'the registry wouldn\'t let this machine pull ghcr.io/acme/api:1', 'turned down the login'],
+    'pull missing' => ['pull', 'ghcr.io/acme/api:9 isn\'t in its registry', 'couldn’t be pulled'],
+    'timeout' => ['timeout', 'the deploy ran out of time', 'took too long'],
+]);
+
+test('a Railpack app it can’t work out says to set a start command', function () {
+    $why = DeployFailure::fromError('build', 'Railpack couldn\'t tell how to start this app', [], method: 'railpack');
+
+    expect($why['settings'] ?? null)->toBe('start_command');
+});
