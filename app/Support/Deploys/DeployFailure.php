@@ -212,48 +212,53 @@ final class DeployFailure
             ];
         }
 
-        if ($has('/Missing script: "?build"?/i')) {
-            return [
-                'cause' => 'The build runs “npm run build”, but package.json has no build script.',
-                'fix' => 'Add a "build" script to package.json, or remove the build step from the Dockerfile, then push and redeploy.',
-            ];
+        // What a build prints only explains a failure in the build: once it
+        // has been checked or served, earlier build lines are history.
+        if (! in_array($phase, ['health', 'verify', 'proxy', 'release'], true)) {
+            if ($has('/Missing script: "?build"?/i')) {
+                return [
+                    'cause' => 'The build runs “npm run build”, but package.json has no build script.',
+                    'fix' => 'Add a "build" script to package.json, or remove the build step from the Dockerfile, then push and redeploy.',
+                ];
+            }
+            if ($has('/can only install packages when your package\.json and package-lock\.json.* are in sync|npm ci.* can only install with an existing package-lock/is')) {
+                return [
+                    'cause' => 'package-lock.json is missing or doesn’t match package.json, so “npm ci” won’t install.',
+                    'fix' => 'Run “npm install” locally, commit the updated package-lock.json, push and redeploy.',
+                ];
+            }
+            if ($has('/The engine "node" is incompatible|Unsupported engine|requires Node\.js|Node\.js version .* is required/i')) {
+                return [
+                    'cause' => 'The project needs a different version of Node.js than the build used.',
+                    'fix' => 'Change the Node version in the Dockerfile’s FROM line (for example node:22-alpine) to one the project supports.',
+                ];
+            }
+            if ($has('/requires php [^\n]*your php version|Root composer\.json requires php/i')) {
+                return [
+                    'cause' => 'The project needs a different version of PHP than the build used.',
+                    'fix' => 'Change the PHP version in the Dockerfile’s FROM line to the one composer.json asks for.',
+                ];
+            }
+            if ($has('/Your requirements could not be resolved|Your lock file does not contain a compatible set of packages/i')) {
+                return [
+                    'cause' => 'Composer couldn’t install the PHP packages: composer.lock doesn’t fit this PHP version or its extensions.',
+                    'fix' => 'The lines above say which package and why. Usually it’s a missing PHP extension to add in the Dockerfile, or a lock file to update with “composer update” locally.',
+                ];
+            }
+            if ($has('/No matching distribution found for|Could not find a version that satisfies the requirement/i')) {
+                return [
+                    'cause' => 'pip couldn’t find a Python package the project needs, at that version.',
+                    'fix' => 'Check requirements.txt: the version may not exist, or may need a newer Python in the Dockerfile.',
+                ];
+            }
+            if ($has('/failed to compute cache key|COPY failed|failed to calculate checksum of ref .*not found/i')) {
+                return [
+                    'cause' => 'The Dockerfile copies a file that isn’t in the repository.',
+                    'fix' => 'It’s often ignored by .gitignore or .dockerignore, or only exists on your computer. Commit it, or change the COPY line, then push and redeploy.',
+                ];
+            }
         }
-        if ($has('/can only install packages when your package\.json and package-lock\.json.* are in sync|npm ci.* can only install with an existing package-lock/is')) {
-            return [
-                'cause' => 'package-lock.json is missing or doesn’t match package.json, so “npm ci” won’t install.',
-                'fix' => 'Run “npm install” locally, commit the updated package-lock.json, push and redeploy.',
-            ];
-        }
-        if ($has('/The engine "node" is incompatible|Unsupported engine|requires Node\.js|Node\.js version .* is required/i')) {
-            return [
-                'cause' => 'The project needs a different version of Node.js than the build used.',
-                'fix' => 'Change the Node version in the Dockerfile’s FROM line (for example node:22-alpine) to one the project supports.',
-            ];
-        }
-        if ($has('/requires php [^\n]*your php version|Root composer\.json requires php/i')) {
-            return [
-                'cause' => 'The project needs a different version of PHP than the build used.',
-                'fix' => 'Change the PHP version in the Dockerfile’s FROM line to the one composer.json asks for.',
-            ];
-        }
-        if ($has('/Your requirements could not be resolved|Your lock file does not contain a compatible set of packages/i')) {
-            return [
-                'cause' => 'Composer couldn’t install the PHP packages: composer.lock doesn’t fit this PHP version or its extensions.',
-                'fix' => 'The lines above say which package and why. Usually it’s a missing PHP extension to add in the Dockerfile, or a lock file to update with “composer update” locally.',
-            ];
-        }
-        if ($has('/No matching distribution found for|Could not find a version that satisfies the requirement/i')) {
-            return [
-                'cause' => 'pip couldn’t find a Python package the project needs, at that version.',
-                'fix' => 'Check requirements.txt: the version may not exist, or may need a newer Python in the Dockerfile.',
-            ];
-        }
-        if ($has('/failed to compute cache key|COPY failed|failed to calculate checksum of ref .*not found/i')) {
-            return [
-                'cause' => 'The Dockerfile copies a file that isn’t in the repository.',
-                'fix' => 'It’s often ignored by .gitignore or .dockerignore, or only exists on your computer. Commit it, or change the COPY line, then push and redeploy.',
-            ];
-        }
+
         $variable = self::missingVariable($text);
         if ($variable !== null) {
             return [

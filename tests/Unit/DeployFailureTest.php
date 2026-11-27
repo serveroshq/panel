@@ -157,3 +157,14 @@ test('a Railpack app it can’t work out says to set a start command', function 
 
     expect($why['settings'] ?? null)->toBe('start_command');
 });
+
+test('a health check failure isn’t blamed on a build line from earlier in the log', function () {
+    $why = DeployFailure::fromError('health', 'release never became healthy: Connection reset by peer (os error 104)', [
+        'npm error Missing script: "build"',
+        'Successfully built 008ac12e32fc',
+        'health check attempt 5/5: Connection reset by peer (os error 104)',
+    ]);
+
+    expect($why['cause'])->toContain('health check')
+        ->and($why['cause'])->not->toContain('build script');
+});
