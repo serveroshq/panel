@@ -8,13 +8,18 @@ use App\Mcp\Schema;
 use App\Mcp\Scopes;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
+use App\Support\Deploys\AppCommits;
+use App\Support\Deploys\AppDeploys;
+use App\Support\Deploys\AppReleases;
 use App\Support\Deploys\DeployRequest;
+use App\Support\Deploys\GitRemote;
+use RuntimeException;
 
 final class DeployNewVersion extends Tool
 {
     public function __construct(
-        private readonly RefResolver $refs,
         private readonly Deploys $deploys,
+        private readonly AppCommits $commits,
     ) {}
 
     public function name(): string
@@ -29,9 +34,9 @@ final class DeployNewVersion extends Tool
 
     public function description(): string
     {
-        return 'Ships new code for an app ServerOS already built from code on a machine: its last successful deploy is sent again with only the code changed, so its domain, environment, port and health check stay as they are. The new version starts beside the live one and only takes over once it passes its health check; if it fails, the old one keeps serving. '
+        return 'Ships new code for an app ServerOS already built from code on a machine: its latest deploy (even one that failed) is sent again with only the code changed, so its domain, settings, port and health check stay as they are. The new version starts beside the live one and only takes over once it passes its health check; if it fails, the old one keeps serving. '
             .'Check with the person first: say the app, the machine and the commit. '
-            .'app is the name it was deployed as (list_deploys or get_app; "app:<name>" and its service key work too). ref is a branch, tag or full commit of its repository (default: the default branch’s latest commit), resolved to an exact commit. '
+            .'app is the name it was deployed as (list_deploys or get_app; "app:<name>" and its service key work too). ref is a branch, tag or full commit of its repository (default: the latest commit of the branch it follows, get_app’s branch), resolved to an exact commit; an SSH repository is looked up by the machine with the app’s deploy key. '
             .'Apps whose code was uploaded as a .zip keep their upload address private: give repo (an HTTPS Git repository (public, or a private GitHub one the workspace has connected)) to build from that instead, or upload the new .zip on the app’s page in the dashboard. repo also moves a Git app to another repository. '
             .'Deploying the commit that’s already live is refused: to run the same version again, use redeploy_app. Returns the queued job; follow it with get_job or list_deploys.';
     }
@@ -70,14 +75,17 @@ final class DeployNewVersion extends Tool
         $machine = $context->machine($args['machine']);
         $app = Deploys::appName($context, $machine, $args['app']);
 
-        $last = Deploys::lastCodeDeploy($machine, $app);
-        if ($last === null) {
-            throw new ToolError("{$app} on {$machine->name} wasn’t deployed from code, so it has no code to replace. Ready-made stacks are redeployed with redeploy_app, or deployed again with deploy_template.");
+        $last = AppDeploys::spec($machine, $app);
+        if ($last === null || AppDeploys::isImage($last)) {
+            throw new ToolError("{$app} on {$machine->name} wasn’t deployed from code, so it has no code to replace. Ready-made stacks and images are redeployed with redeploy_app, or deployed again with deploy_template.");
         }
 
         $this->deploys->requireAvailable($machine);
+        if (($busy = AppDeploys::busy($machine, $app)) !== null) {
+            throw new ToolError("{$app} is deploying now (job {$busy->id}). Wait for it to finish first.");
+        }
 
-        $current = (string) ($last->command['job']['repo'] ?? '');
+        $current = (string) ($last['repo'] ?? '');
         $repo = filled($args['repo'] ?? null) ? trim((string) $args['repo']) : null;
         if ($repo === null) {
             if (Deploys::fromUpload($current)) {
@@ -85,15 +93,22 @@ final class DeployNewVersion extends Tool
             }
             $repo = $current;
         }
-        Deploys::check(fn () => DeployRequest::assertPublicRepo($repo));
+        if (! GitRemote::isSsh($repo) || $repo !== $current) {
+            Deploys::check(fn () => DeployRequest::assertPublicRepo($repo));
+        }
 
-        $resolved = $this->refs->resolve($repo, $args['ref'] ?? null, $context->workspace);
-        $live = strtolower((string) ($last->command['job']['commit'] ?? ''));
-        if ($resolved['commit'] === $live && $repo === $current) {
+        $ref = $args['ref'] ?? ($repo === $current ? AppDeploys::branch($machine, $app) : null);
+        try {
+            $resolved = $this->commits->resolve($machine, $context->user, $app, [...$last, 'repo' => $repo], $ref);
+        } catch (RuntimeException $e) {
+            throw new ToolError($e->getMessage());
+        }
+        $live = strtolower((string) (AppReleases::live($machine)[$app] ?? ''));
+        if ($live !== '' && str_starts_with($resolved['commit'], $live) && $repo === $current) {
             throw new ToolError("{$app} is already running ".substr($live, 0, 7).($resolved['ref'] !== null ? " (the latest on {$resolved['ref']})" : '').'. To deploy the same version again, use redeploy_app.');
         }
 
-        $spec = [...$last->command['job'], 'repo' => $repo, 'commit' => $resolved['commit']];
+        $spec = [...$last, 'repo' => $repo, 'commit' => $resolved['commit']];
         $job = $this->deploys->deploy($context, $machine, $spec);
         $job = $context->waitForJob($job, (int) ($args['wait'] ?? 0));
 
@@ -105,7 +120,7 @@ final class DeployNewVersion extends Tool
             'repo' => $repo,
             'ref' => $resolved['ref'],
             'commit' => $resolved['commit'],
-            'previousCommit' => $live,
+            'previousCommit' => $live === '' ? null : $live,
             'domains' => array_values($spec['domains'] ?? []),
             'job' => Present::job($job, 20),
             'deploymentsUrl' => $context->url("/machines/{$machine->id}?job={$job->id}"),

@@ -10,6 +10,9 @@ use App\Mcp\Tool;
 use App\Mcp\ToolError;
 use App\Models\DaemonJob;
 use App\Models\DeploySource;
+use App\Support\DaemonJobQueue;
+use App\Support\Deploys\AppDeploys;
+use App\Support\Deploys\BuildSettings;
 
 final class RedeployApp extends Tool
 {
@@ -29,7 +32,8 @@ final class RedeployApp extends Tool
     {
         return 'Sends a deploy again exactly as it was sent (same code, settings, domain and any generated passwords), as the dashboard’s Redeploy button on a deploy does. Works for apps built from code and for template stacks. '
             .'By default it redeploys what’s live now: the app’s latest successful deploy. An up-to-date daemon starts the same commit beside the running container and switches over once it’s healthy, with no downtime, and skips the build when nothing changed; an older daemon replaces it in place, a moment of downtime. Pass job (a deploy id from list_deploys or get_app’s versions) to send an earlier deploy of the app again instead: that rolls the app back to that version, settings included. '
-            .'Check with the person first: say the app, the machine and which version. A deploy still under way can’t be sent again until it has gone quiet for 10 minutes; then it is marked cancelled and sent anew. Returns the new job; follow it with get_job or list_deploys.';
+            .'no_cache builds it from scratch (no layer cache, and not reusing the image already built for that commit), on an up-to-date daemon, for an app ServerOS builds. To deploy the latest commit of its branch instead, use deploy_new_version. '
+            .'Check with the person first: say the app, the machine and which version. A deploy still under way can’t be sent again until it has been quiet for longer than its timeout (30 minutes); then it is stopped and sent anew. Returns the new job; follow it with get_job or list_deploys.';
     }
 
     public function inputSchema(): array
@@ -38,6 +42,7 @@ final class RedeployApp extends Tool
             'machine' => Schema::machine(),
             'app' => Schema::string('The app or stack: the name it was deployed as (like shop), or app:<name>.', maxLength: 300),
             'job' => Schema::string('A deploy of this app to send again (its id, from list_deploys or get_app). Defaults to its live version.', maxLength: 64),
+            'no_cache' => Schema::boolean('Build it from scratch, with no build cache (an up-to-date daemon, and an app ServerOS builds).'),
             'wait' => Deploys::waitSchema(),
         ], ['machine', 'app']);
     }
@@ -53,6 +58,7 @@ final class RedeployApp extends Tool
             'machine' => ['required', Deploys::reference()],
             'app' => ['required', Deploys::reference()],
             'job' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'no_cache' => ['sometimes', 'boolean'],
             'wait' => Deploys::waitRules(),
         ]);
 
@@ -89,15 +95,24 @@ final class RedeployApp extends Tool
             throw new ToolError('The code uploaded for that version has been cleared, so it can’t be deployed again. Upload it again on the app’s page in the dashboard.');
         }
 
-        if ($job->isActive()) {
-            $job->forceFill([
-                'state' => 'cancelled',
-                'error' => ['phase' => 'panel', 'message' => 'Stopped waiting: the daemon never reported back on this job.'],
-                'finished_at' => now(),
-            ])->save();
+        $noCache = (bool) ($args['no_cache'] ?? false);
+        if ($noCache) {
+            $method = BuildSettings::fromSpec((array) $job->command['job'])->method;
+            if (! DaemonJobQueue::canDeployBuild($machine) || ! in_array($method, [BuildSettings::RAILPACK, BuildSettings::DOCKERFILE, BuildSettings::TEMPLATE], true)) {
+                throw new ToolError(DaemonJobQueue::canDeployBuild($machine) ? 'Only an app ServerOS builds can be built from scratch.' : "{$machine->name}’s daemon is too old to build from scratch. It updates itself, or run “sudo serverosd update” on the server.");
+            }
+        }
+        if (($busy = AppDeploys::busy($machine, $app, $job->id)) !== null) {
+            throw new ToolError("{$app} is deploying now (job {$busy->id}). Wait for it to finish first.");
         }
 
-        $retry = $this->deploys->retry($context, $job);
+        if ($job->isActive()) {
+            app(DaemonJobQueue::class)->stopWaiting($job);
+        }
+
+        $retry = $noCache
+            ? $this->deploys->deploy($context, $machine, [...(array) $job->command['job']], noCache: true)
+            : $this->deploys->retry($context, $job);
         $retry = $context->waitForJob($retry, (int) ($args['wait'] ?? 0));
         $spec = $job->command['job'] ?? [];
 

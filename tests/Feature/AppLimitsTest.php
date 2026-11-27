@@ -121,7 +121,10 @@ test('MCP sets limits, and get_app shows them as set and as applied', function (
         ->and($result['data']['limits'])->toEqual(['cpus' => 2, 'memoryMb' => 1024])
         ->and(sentDeploys()[0]['limits'])->toBe(['cpu_millis' => 2000, 'memory_mb' => 1024]);
 
-    // One left out stays; a machine's daemon reports what it applied.
+    // One left out stays; a machine's daemon reports what it applied. A
+    // change waits for the deploy before it to finish.
+    expect(mcpCall($workspace, $key, 'update_app_settings', ['machine' => 'web-1', 'app' => 'shop', 'limits' => ['memory_mb' => 2048]])['text'])->toContain('deploying now');
+    DaemonJob::query()->where('state', 'queued')->update(['state' => 'failed']);
     mcpCall($workspace, $key, 'update_app_settings', ['machine' => 'web-1', 'app' => 'shop', 'limits' => ['memory_mb' => 2048]]);
     expect(AppLimits::setting($machine->fresh(), 'shop'))->toBe(['cpus' => 2.0, 'memoryMb' => 2048]);
     expect(mcpCall($workspace, $key, 'update_app_settings', ['machine' => 'web-1', 'app' => 'shop', 'limits' => ['cpus' => 64]])['text'])->toContain('web-1 has 4 CPUs');

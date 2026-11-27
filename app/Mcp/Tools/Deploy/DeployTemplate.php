@@ -10,7 +10,10 @@ use App\Mcp\Tool;
 use App\Mcp\ToolError;
 use App\Models\AppInstall;
 use App\Models\Machine;
+use App\Support\Deploys\AppDeploys;
+use App\Support\Deploys\BuildSettings;
 use App\Support\Deploys\DeployRequest;
+use App\Support\Deploys\EnvFile;
 use App\Support\ServiceTemplates\RepositoryDetector;
 use App\Support\ServiceTemplates\ServiceTemplate;
 use App\Support\ServiceTemplates\ServiceTemplateCatalog;
@@ -36,12 +39,13 @@ final class DeployTemplate extends Tool
 
     public function description(): string
     {
-        return 'Deploys a service template on a machine, exactly as the dashboard’s “Deploy service” dialog does: a ready-made stack (postgres, wordpress, a game server…: kind "stack") or an app framework that builds an HTTPS Git repository (public, or a private GitHub one the workspace has connected) with ServerOS’s Dockerfile (laravel, nextjs, django…: kind "app"). list_templates shows the keys and each template’s settings; detect_repository picks the template for a GitHub repository. '
+        return 'Deploys a service template on a machine, exactly as the dashboard’s “Deploy service” dialog does: a ready-made stack (postgres, wordpress, a game server…: kind "stack"), an app framework that builds an HTTPS Git repository (public, or a private GitHub one the workspace has connected) with ServerOS’s Dockerfile (laravel, nextjs, django…: kind "app"), auto-build (Railpack works out how to build and start any repository without a Dockerfile), custom-dockerfile and compose-file (the repository’s own), or docker-image (a prebuilt image: give image). auto-build and docker-image need an up-to-date daemon. list_templates shows the keys and each template’s settings; detect_repository picks the template for a repository. '
             .'Check with the person before deploying: say the machine, the template, the name and the domain. It runs on their real machine. '
             .'name is what it’s deployed as (lowercase letters, digits and dashes; defaults to the repository’s or template’s name, as the dialog fills it in). If something is already deployed under that name on the machine, this replaces it (a new release of it, with these settings), so it refuses unless replace is true: to ship new code for an existing app use deploy_new_version instead, and confirm replacing with the person. '
             .'For app templates give repo, and ref: a branch, tag or commit (the default branch’s latest commit when left out); it is resolved to an exact commit, which is what gets deployed. '
             .'domain (web templates only) serves it at https://domain with a certificate the machine gets itself once DNS points there (check_domain shows whether it does). Without a domain a stack only listens on the machine’s 127.0.0.1; the answer says how to reach it (localUrl, and an SSH tunnel command). '
-            .'env sets the template’s settings by key; leave secrets empty to have them generated. Settings marked accept (a licence like Minecraft’s EULA) must be true: ask the person to accept it, never accept it for them. Other environment variables go in extra_env (KEY=value lines, or an object). '
+            .'env sets the template’s settings by key; leave secrets empty to have them generated. Settings marked accept (a licence like Minecraft’s EULA) must be true: ask the person to accept it, never accept it for them. Other environment variables go in extra_env (a .env file: KEY=value lines, export and quotes allowed, or an object). On an up-to-date daemon every setting reaches both the build and the running app; env_flags limits one to either. '
+            .'On an up-to-date daemon a web app without a domain gets a free one (<name>.<ip>.sslip.io) when the machine has a public IPv4 address (free_address: false turns that off), custom apps get a health check that passes on any answer below 500 after a minute to boot, and build changes how it’s built and run (volumes, a release command like migrations, Railpack’s commands, the health check, port null to read the image’s or Dockerfile’s EXPOSE). '
             .'Returns the queued job, the URL it will open at, its port and notes, and `generated`: passwords and keys made for it. They are shown ONCE: give them to the person now; ServerOS won’t show them again. Follow the deploy with get_job or list_deploys; it takes a few minutes.';
     }
 
@@ -61,10 +65,14 @@ final class DeployTemplate extends Tool
             'domain' => Schema::string('Web templates only: the domain to serve it at, like app.example.com. Leave out for none.', maxLength: 253),
             'wildcard' => Schema::boolean('Also serve every subdomain one level under the domain (*.domain), each getting its own certificate the first time it’s visited. Needs domain, and a wildcard DNS record (*.domain) pointing at the machine.'),
             'env' => ['type' => 'object', 'description' => 'The template’s settings by key (list_templates with template shows them), like {"WP_TITLE": "Field notes"}. Values are text; a setting to accept takes "true", once the person has accepted it. Leave secrets out to have them generated.', 'additionalProperties' => ['type' => 'string']],
-            'extra_env' => Schema::string('More environment variables, as KEY=value lines (like "MAIL_MAILER=log\nAPI_URL=https://api.example.com").', maxLength: 10000),
+            'extra_env' => Schema::string('More environment variables, as a .env file (like "MAIL_MAILER=log\nAPI_URL=https://api.example.com"): export, quotes and quoted values over several lines work.', maxLength: 524288),
             'proxy' => Schema::string('The reverse proxy that serves the domain: caddy (the default), nginx, apache or traefik. Picking one the machine doesn’t use yet moves every site on it over first. nginx, Apache and Traefik serve wildcard subdomains over plain HTTP. Only with domain.', array_keys(Machine::PROXIES)),
             'https' => Schema::boolean('Serve the domain over HTTPS (default true): a certificate and HTTP redirected to it. false serves plain HTTP, for a CDN or proxy in front that does HTTPS. Only with domain.'),
             'replace' => Schema::boolean('Deploy even though something is already deployed under this name on the machine, replacing it. Only after the person agrees.'),
+            'image' => Schema::string('docker-image only: the image to run, like ghcr.io/you/app:1.4 or nginx:alpine. Private images use the workspace’s registry logins.', maxLength: 300),
+            'build' => Deploys::buildSchema('How it’s built and run, on an up-to-date daemon (get_app shows an app’s as build). Left out: the template’s defaults.'),
+            'env_flags' => Deploys::envFlagsSchema(),
+            'free_address' => Schema::boolean('Give a web app without a domain a free <name>.<ip>.sslip.io address (default true, on an up-to-date daemon with a public IPv4 address).'),
             'wait' => Deploys::waitSchema(),
         ], ['machine', 'template']);
     }
@@ -99,8 +107,11 @@ final class DeployTemplate extends Tool
             'env' => ['sometimes', 'nullable', 'array'],
             'extra_env' => ['sometimes', 'nullable'],
             'replace' => ['sometimes', 'boolean'],
+            'image' => ['sometimes', 'nullable', 'string', 'max:300'],
+            'free_address' => ['sometimes', 'boolean'],
+            ...Deploys::buildRules(),
             'wait' => Deploys::waitRules(),
-        ]);
+        ], BuildSettings::messages('build.'));
 
         $machine = $context->machine($args['machine']);
         $this->deploys->requireAvailable($machine);
@@ -127,8 +138,17 @@ final class DeployTemplate extends Tool
             }
         }
 
+        $build = is_array($args['build'] ?? null) ? $args['build'] : [];
+        if (filled($args['image'] ?? null)) {
+            $build['image'] = trim((string) $args['image']);
+        }
+        if ($template->isImage() && blank($build['image'] ?? null)) {
+            throw new ToolError('docker-image runs a prebuilt image: give image, like ghcr.io/you/app:1.4.');
+        }
+        Deploys::check(fn () => DeployRequest::assertTemplateSupported($machine, $template));
+
         $input = array_filter([
-            'service' => filled($args['name'] ?? null) ? trim((string) $args['name']) : self::defaultName($template, $repo),
+            'service' => filled($args['name'] ?? null) ? trim((string) $args['name']) : self::defaultName($template, $repo ?? ($build['image'] ?? null)),
             'port' => $args['port'] ?? null,
             'repo' => $repo,
             'health_path' => $args['health_path'] ?? null,
@@ -140,6 +160,9 @@ final class DeployTemplate extends Tool
             'https' => isset($args['https']) ? (bool) $args['https'] : null,
             'env' => $env,
             'extra_env' => $extra,
+            'build' => $build,
+            'env_flags' => $args['env_flags'] ?? null,
+            'free_address' => $args['free_address'] ?? null,
         ], fn ($value) => $value !== null && $value !== '' && $value !== []);
 
         $rules = DeployRequest::templateRules($template);
@@ -152,13 +175,21 @@ final class DeployTemplate extends Tool
             $input['commit'] = $resolved['commit'];
         }
 
-        $data = $this->validate($input, $rules, Deploys::messages());
+        $data = $this->validate($input, $rules, [...Deploys::messages(), ...DeployRequest::templateMessages()]);
+        if (($free = DeployRequest::freeDomain($machine, $template, $data)) !== null) {
+            $data['domain'] = $free;
+        }
 
         if (! ($args['replace'] ?? false) && ($existing = Deploys::existing($machine, $data['service'])) !== null) {
             throw new ToolError("{$existing} Deploying {$template->name} as {$data['service']} would replace it. Choose another name, use deploy_new_version to ship new code for an app, or, if the person agrees to replace it, call again with replace: true.");
         }
 
         $deployment = Deploys::check(fn () => new TemplateDeployment($template, $machine, $data));
+        Deploys::check(fn () => $deployment->check());
+        if ($template->composeFromRepo() && $deployment->port === null && filled($data['domain'] ?? null)) {
+            throw new ToolError('The Compose file publishes no port, so the domain has nowhere to send visitors: give port, or publish one in the Compose file.');
+        }
+        Deploys::check(fn () => DeployRequest::assertDomainFree($machine, $template->web ? ($data['domain'] ?? null) : null, $data['service']));
         Deploys::check(fn () => DeployRequest::assertDocker($machine, $context->user));
         Deploys::check(fn () => DeployRequest::assertWildcard($machine, $template->web ? ($data['domain'] ?? null) : null, (bool) ($data['wildcard'] ?? false)));
         Deploys::check(fn () => DeployRequest::assertComposeFromRepo($machine, $template));
@@ -168,6 +199,9 @@ final class DeployTemplate extends Tool
         $https = Deploys::check(fn () => DeployRequest::https($machine, $template->web ? ($data['domain'] ?? null) : null, $args['https'] ?? null));
         $job = $this->deploys->deploy($context, $machine, DeployRequest::withBaseDir(DeployRequest::withHttps(DeployRequest::withProxy($deployment->job(), is_string($proxy) ? $proxy : null), is_bool($https) ? $https : null), $data['base_dir'] ?? null));
         AppInstall::record($machine, $context->user, $template->slug, $job->id, 'mcp');
+        if ($resolved !== null) {
+            AppDeploys::rememberBranch($machine, $data['service'], $resolved['ref']);
+        }
         $job = $context->waitForJob($job, (int) ($args['wait'] ?? 0));
         $result = DeployRequest::templateResult($deployment, $data);
 
@@ -201,11 +235,14 @@ final class DeployTemplate extends Tool
             throw new ToolError("{$template->name} doesn’t run a Compose file from the repository: leave out compose_file, or use compose-file.");
         }
         if (! $template->isApp()) {
-            foreach (['repo', 'ref', 'health_path'] as $key) {
+            foreach ($template->isImage() ? ['repo', 'ref'] : ['repo', 'ref', 'health_path', 'image'] as $key) {
                 if (filled($args[$key] ?? null)) {
-                    throw new ToolError("{$template->name} is a ready-made stack, not built from code: leave out {$key}.");
+                    throw new ToolError($template->isImage() ? "{$template->name} runs a prebuilt image, not built from code: leave out {$key}." : "{$template->name} is a ready-made stack, not built from code: leave out {$key}.");
                 }
             }
+        }
+        if ($template->isApp() && filled($args['image'] ?? null)) {
+            throw new ToolError("{$template->name} builds a repository: leave out image, or use docker-image.");
         }
         if (! $template->portEditable && isset($args['port']) && (int) $args['port'] !== $template->port) {
             throw new ToolError("{$template->name} always listens on port {$template->port}: leave out port.");
@@ -261,10 +298,7 @@ final class DeployTemplate extends Tool
                 throw new ToolError("extra_env.{$key} must be text or a number.");
             }
             $value = is_bool($value) ? ($value ? 'true' : 'false') : (string) $value;
-            if (preg_match('/[\r\n]/', $value)) {
-                throw new ToolError("extra_env.{$key} must be on one line.");
-            }
-            $lines[] = "{$key}={$value}";
+            $lines[] = EnvFile::line($key, $value);
         }
 
         return implode("\n", $lines);
@@ -272,7 +306,11 @@ final class DeployTemplate extends Tool
 
     public static function defaultName(ServiceTemplate $template, ?string $repo): string
     {
-        $fromTemplate = substr((string) preg_replace('/[^a-z0-9-]/', '-', $template->slug === 'custom-dockerfile' || $template->composeFromRepo() ? 'app' : $template->slug), 0, 63);
+        $fromTemplate = substr((string) preg_replace('/[^a-z0-9-]/', '-', $template->slug === 'custom-dockerfile' || $template->composeFromRepo() || $template->railpack() || $template->isImage() ? 'app' : $template->slug), 0, 63);
+        // An image is named after its repository, without the tag or digest.
+        if ($template->isImage() && $repo !== null) {
+            $repo = (string) preg_replace('#(@sha256:[a-f0-9]+|:[^/:]+)$#', '', $repo);
+        }
 
         return $repo !== null && $repo !== '' ? (DetectRepository::serviceName($repo) ?: $fromTemplate) : $fromTemplate;
     }

@@ -9,6 +9,8 @@ use App\Mcp\Scopes;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
 use App\Models\Machine;
+use App\Support\Deploys\AppDeploys;
+use App\Support\Deploys\BuildSettings;
 use App\Support\Deploys\DeployRequest;
 
 final class DeployFromGit extends Tool
@@ -30,10 +32,10 @@ final class DeployFromGit extends Tool
 
     public function description(): string
     {
-        return 'Builds an HTTPS Git repository (public, or a private GitHub one the workspace has connected) with the Dockerfile at its root and runs it on a machine: the daemon clones the exact commit, builds it, starts it beside any previous version, checks health_path answers 200, and only then switches over (the old version keeps serving if the new one fails). '
+        return 'Builds an HTTPS Git repository (public, or a private GitHub one the workspace has connected) with its own Dockerfile and runs it on a machine: the daemon clones the exact commit, builds it, starts it beside any previous version, checks it answers, and only then switches over (the old version keeps serving if the new one fails). '
             .'Check with the person before deploying: say the machine, the repository, the commit and the domain. '
-            .'ref is a branch, tag or full commit (default: the default branch’s latest commit); it is resolved to an exact commit, which the answer gives. GitHub repositories are resolved through GitHub, others by reading the repository’s branches and tags over HTTPS. '
-            .'port is the port the app listens on inside its container. domain (optional) serves it at https://domain, with a certificate the machine gets itself once DNS points there (check_domain). This sets no environment variables: for those, or for frameworks without a Dockerfile, use deploy_template (template custom-dockerfile builds your own Dockerfile and takes settings). '
+            .'ref is a branch, tag or full commit (default: the default branch’s latest commit); it is resolved to an exact commit, which the answer gives, and the branch is what the app follows from then on (its push deploys and deploying its latest commit). GitHub repositories are resolved through GitHub, others by reading the repository’s branches and tags over HTTPS. '
+            .'port is the port the app listens on inside its container. On an up-to-date daemon the health check passes on any answer below 500 at health_path after a minute to boot, and build changes how it’s built and run (another Dockerfile path or stage, volumes, a release command like migrations, the health check, port null to read the Dockerfile’s EXPOSE); an older daemon checks health_path answers 200. domain (optional) serves it at https://domain, with a certificate the machine gets itself once DNS points there (check_domain). This sets no environment variables: for those, or for code without a Dockerfile (Railpack, template auto-build), use deploy_template. '
             .'If something is already deployed under name on the machine, this replaces it, so it refuses unless replace is true: for a new version of an existing app use deploy_new_version. '
             .'Returns the queued job and the deploy’s details; it takes a few minutes, so follow it with get_job or list_deploys.';
     }
@@ -52,6 +54,7 @@ final class DeployFromGit extends Tool
             'proxy' => Schema::string('The reverse proxy that serves the domain: caddy (the default), nginx, apache or traefik. Picking one the machine doesn’t use yet moves every site on it over first. nginx, Apache and Traefik serve wildcard subdomains over plain HTTP. Only with domain.', array_keys(Machine::PROXIES)),
             'https' => Schema::boolean('Serve the domain over HTTPS (default true): a certificate and HTTP redirected to it. false serves plain HTTP, for a CDN or proxy in front that does HTTPS. Only with domain.'),
             'replace' => Schema::boolean('Deploy even though something is already deployed under this name on the machine, replacing it. Only after the person agrees.'),
+            'build' => Deploys::buildSchema('How it’s built and run, on an up-to-date daemon (get_app shows an app’s as build). Left out: its Dockerfile at the root, with the defaults above.'),
             'wait' => Deploys::waitSchema(),
         ], ['machine', 'repo', 'port']);
     }
@@ -80,8 +83,9 @@ final class DeployFromGit extends Tool
             'proxy' => ['sometimes', 'nullable', 'string', 'in:caddy,nginx,apache,traefik'],
             'https' => ['sometimes', 'nullable', 'boolean'],
             'replace' => ['sometimes', 'boolean'],
+            ...Deploys::buildRules(),
             'wait' => Deploys::waitRules(),
-        ]);
+        ], BuildSettings::messages('build.'));
 
         $machine = $context->machine($args['machine']);
         $this->deploys->requireAvailable($machine);
@@ -109,11 +113,14 @@ final class DeployFromGit extends Tool
 
         Deploys::check(fn () => DeployRequest::assertDocker($machine, $context->user));
         Deploys::check(fn () => DeployRequest::assertWildcard($machine, $data['domain'] ?? null, (bool) ($data['wildcard'] ?? false)));
+        Deploys::check(fn () => DeployRequest::assertDomainFree($machine, $data['domain'] ?? null, $data['service']));
 
         $proxy = Deploys::check(fn () => DeployRequest::proxy($machine, $data['domain'] ?? null, $args['proxy'] ?? null));
         $https = Deploys::check(fn () => DeployRequest::https($machine, $data['domain'] ?? null, $args['https'] ?? null));
         $spec = DeployRequest::withHttps(DeployRequest::withProxy(DeployRequest::gitJob($data), is_string($proxy) ? $proxy : null), is_bool($https) ? $https : null);
+        $spec = Deploys::check(fn () => DeployRequest::gitBuild($machine, $spec, ['build' => $args['build'] ?? [], 'env_flags' => $args['env_flags'] ?? []]));
         $job = $this->deploys->deploy($context, $machine, $spec);
+        AppDeploys::rememberBranch($machine, $spec['service'], $resolved['ref']);
         $job = $context->waitForJob($job, (int) ($args['wait'] ?? 0));
 
         return [
@@ -125,10 +132,10 @@ final class DeployFromGit extends Tool
             'ref' => $resolved['ref'],
             'commit' => $spec['commit'],
             'port' => $spec['port'],
-            'healthPath' => $spec['health']['path'],
+            'healthPath' => $spec['health']['path'] ?? null,
             'domain' => $spec['domains'][0] ?? null,
             'wildcard' => DeployRequest::isWildcard($spec['domains']),
-            'url' => isset($spec['domains'][0]) ? (($spec['https'] ?? true) ? 'https://' : 'http://').$spec['domains'][0] : $machine->localAddress($spec['port']),
+            'url' => isset($spec['domains'][0]) ? (($spec['https'] ?? true) ? 'https://' : 'http://').$spec['domains'][0] : (is_int($spec['port']) ? $machine->localAddress($spec['port']) : null),
             'job' => Present::job($job, 20),
             'deploymentsUrl' => $context->url("/machines/{$machine->id}?job={$job->id}"),
             'next' => 'It builds on the machine and passes its health check before it goes live; that takes a few minutes. Follow it with get_job (id '.$job->id.') or list_deploys.',

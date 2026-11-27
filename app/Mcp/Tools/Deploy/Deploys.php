@@ -12,6 +12,7 @@ use App\Models\DeploySource;
 use App\Models\Machine;
 use App\Support\DaemonJobQueue;
 use App\Support\Deploys\AppReleases;
+use App\Support\Deploys\BuildSettings;
 use App\Support\Deploys\DeployFailure;
 use Closure;
 use Illuminate\Support\Arr;
@@ -30,12 +31,12 @@ final class Deploys
     }
 
     /** @param  array<string, mixed>  $job */
-    public function deploy(McpContext $context, Machine $machine, array $job): DaemonJob
+    public function deploy(McpContext $context, Machine $machine, array $job, bool $noCache = false): DaemonJob
     {
         self::refuseHostControl($context, $job);
 
         try {
-            return $context->within(fn () => $this->queue->deploy($machine, $context->user, $job));
+            return $context->within(fn () => $this->queue->deploy($machine, $context->user, $job, noCache: $noCache));
         } catch (RuntimeException $e) {
             throw new ToolError($e->getMessage());
         }
@@ -232,6 +233,59 @@ final class Deploys
         }
     }
 
+    /**
+     * The `build` argument: how an app is built and run, as the app's build
+     * settings in the dashboard have it. Every field may be left out.
+     *
+     * @return array<string, mixed>
+     */
+    public static function buildSchema(string $description): array
+    {
+        $text = fn (string $what, int $max = BuildSettings::MAX_COMMAND) => ['type' => ['string', 'null'], 'description' => $what, 'maxLength' => $max];
+
+        return [...Schema::object([
+            'method' => Schema::string('How the image is made: railpack (Railpack works it out, no Dockerfile needed), dockerfile (the repository’s Dockerfile), compose (its Compose file) or image (a prebuilt image). Railpack and image need an up-to-date daemon.', BuildSettings::METHODS),
+            'dockerfile' => $text('dockerfile: the Dockerfile’s path in the repository (default Dockerfile).', 200),
+            'target' => $text('dockerfile: the build stage to build (docker build --target).', 128),
+            'compose_file' => $text('compose: the Compose file’s path in the repository (default compose.yaml).', 200),
+            'image' => $text('image: the image to run, like ghcr.io/you/app:1.4. Private images use the workspace’s registry logins.', 300),
+            'install_command' => $text('railpack: replaces the install command it works out.'),
+            'build_command' => $text('railpack: replaces the build command it works out.'),
+            'start_command' => $text('railpack: replaces the start command it works out.'),
+            'base_dir' => $text('The app’s folder in its repository, for a monorepo, like apps/web.', 200),
+            'port' => ['type' => ['integer', 'null'], 'minimum' => 1, 'maximum' => 65535, 'description' => 'The port it listens on in its container. Null on an up-to-date daemon reads the image’s EXPOSE (or what a Compose file publishes).'],
+            'health' => [...Schema::object([
+                'enabled' => Schema::boolean('Check the new version answers before switching to it (default on). Off only checks it keeps running.'),
+                'path' => Schema::string('The path to ask, like / or /health.', maxLength: 200),
+                'expected_status' => Schema::integer('The HTTP status that counts as up; 0 for any answer below 500.', 0, 599),
+                'timeout_secs' => Schema::integer('Seconds each try may take.', 1, 120),
+                'retries' => Schema::integer('Failed tries allowed after the start period.', 1, 60),
+                'start_period_secs' => Schema::integer('Seconds it gets to boot before failed tries count.', 0, 900),
+                'interval_secs' => ['type' => ['integer', 'null'], 'minimum' => 1, 'maximum' => 300, 'description' => 'Seconds between tries.'],
+            ]), 'description' => 'The health check before a new version takes over.'],
+            'volumes' => Schema::array(Schema::object([
+                'name' => Schema::string('Lowercase letters, digits, dots, dashes and underscores, like data.', maxLength: 63),
+                'path' => Schema::string('The folder in the container, like /data.', maxLength: 500),
+            ], ['name', 'path']), 'Named volumes kept between deploys.', BuildSettings::MAX_VOLUMES),
+            'release_command' => $text('Run once in the new version before it serves (migrations, say). If it fails, the deploy fails and the live version keeps serving.'),
+            'post_deploy_command' => $text('Run in the new container once it’s live. A failure is only a warning.'),
+            'submodules' => Schema::boolean('Fetch the repository’s submodules (default on).'),
+            'lfs' => Schema::boolean('Fetch its Git LFS files (default on).'),
+        ]), 'description' => $description];
+    }
+
+    /** @return array<string, mixed> */
+    public static function envFlagsSchema(): array
+    {
+        return ['type' => 'object', 'description' => 'Where each setting goes, by name: "runtime" (only the running app), "build" (only the build: Dockerfile ARGs, Railpack’s build) or "both" (the default). Needs an up-to-date daemon for anything but both.', 'additionalProperties' => ['type' => 'string', 'enum' => ['build', 'runtime', 'both']]];
+    }
+
+    /** @return array<string, list<mixed>> */
+    public static function buildRules(): array
+    {
+        return ['build' => ['sometimes', 'nullable', 'array'], ...BuildSettings::rules('build.'), ...BuildSettings::flagRules()];
+    }
+
     /** @return array<string, mixed> */
     public static function waitSchema(): array
     {
@@ -271,9 +325,9 @@ final class Deploys
             'health_path.regex' => 'health_path must be a path starting with /, like /health.',
             'domain.regex' => 'Enter a domain like app.example.com.',
             'env.array' => 'env must be an object of setting names to values.',
-            'env.*.max' => 'Each setting can be at most 2000 characters.',
+            'env.*.max' => 'Each setting can be at most 64 KB.',
             'env.*.string' => 'Each setting must be text (or true/false for the ones to accept).',
-            'extra_env.max' => 'extra_env can be at most 10000 characters.',
+            'extra_env.max' => 'extra_env can be at most 512 KB.',
         ];
     }
 }

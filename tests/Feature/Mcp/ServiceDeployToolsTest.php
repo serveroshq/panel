@@ -155,6 +155,8 @@ test('every tool that changes a service, group, job or deploy records it', funct
         ['deploy_template', ['machine' => 'web-1', 'template' => 'postgres', 'name' => 'db'], 'service.deploy'],
     ];
     foreach ($calls as [$tool, $arguments, $action]) {
+        // Each deploy finishes before the next, which waits for it otherwise.
+        DaemonJob::query()->where('kind', 'deploy')->whereIn('state', ['queued', 'running'])->update(['state' => 'succeeded']);
         $before = Activity::query()->count();
         $result = mcpCall($workspace, $key, $tool, $arguments);
         expect($result['error'])->toBeFalse("{$tool}: {$result['text']}");
@@ -239,21 +241,24 @@ test('update_app_settings changes only the named settings and deploys the live c
     $result = mcpCall($workspace, $key, 'update_app_settings', ['machine' => 'web-1', 'app' => 'shop', 'set' => ['TOKEN_SHA' => 'hash-9f3c', 'MAIL' => 'log'], 'remove' => ['OLD']]);
 
     expect($result['error'])->toBeFalse($result['text'])
-        ->and($result['data'])->toMatchArray(['replaced' => ['TOKEN_SHA'], 'added' => [], 'removed' => ['OLD'], 'settings' => ['TOKEN_SHA', 'MAIL']])
+        ->and($result['data'])->toMatchArray(['replaced' => ['TOKEN_SHA'], 'added' => [], 'removed' => ['OLD'], 'settings' => ['MAIL', 'PORT', 'TOKEN_SHA']])
         ->and($result['text'])->not->toContain('hash-9f3c');
     $job = DaemonJob::query()->where('state', 'queued')->sole();
     expect($job->command['job'])->toMatchArray([
         'commit' => str_repeat('a', 40),
         'domains' => ['shop.example.com'],
         'port' => 3100,
-        'env' => ['TOKEN_SHA' => 'hash-9f3c', 'MAIL' => 'log'],
+        // An up-to-date daemon gets PORT too. Settings from before build
+        // settings only ever reached the running app, so they still do.
+        'env' => ['TOKEN_SHA' => 'hash-9f3c', 'MAIL' => 'log', 'PORT' => '3100'],
     ]);
+    expect($job->command['job']['build'])->not->toHaveKey('args');
 
     foreach ([
-        [['set' => ['NEXT_PUBLIC_URL' => 'x']], 'read while the app is built'],
         [['remove' => ['NOPE']], 'isn’t one of shop’s settings'],
         [['set' => ['1BAD' => 'x']], 'isn’t a setting name'],
-        [[], 'Say which settings to change'],
+        [[], 'Say what to change'],
+        [['set' => ['MAIL' => 'smtp']], 'deploying now'],
     ] as [$change, $message]) {
         $refused = mcpCall($workspace, $key, 'update_app_settings', ['machine' => 'web-1', 'app' => 'shop', ...$change]);
         expect($refused['error'])->toBeTrue()->and($refused['text'])->toContain($message);
@@ -340,6 +345,7 @@ test('an app built from its repository’s own Compose file only changes over a 
         ->and(DaemonJob::query()->where('state', 'queued')->exists())->toBeFalse();
 
     expect(mcpCall($workspace, $writeOnly, 'redeploy_app', ['machine' => 'web-1', 'app' => 'shop'])['error'])->toBeFalse();
+    DaemonJob::query()->where('state', 'queued')->update(['state' => 'succeeded']);
 
     $allowed = mcpCall($workspace, mcpKey($workspace), 'deploy_new_version', ['machine' => 'web-1', 'app' => 'shop', 'repo' => $other, 'ref' => $theirs]);
     expect($allowed['error'])->toBeFalse($allowed['text']);
