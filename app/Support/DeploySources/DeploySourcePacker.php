@@ -178,25 +178,15 @@ class DeploySourcePacker
     {
         $files = array_values(array_diff(scandir($root) ?: [], ['.', '..', '.git']));
         $contents = [];
-        foreach (RepositoryDetector::MANIFESTS as $manifest) {
+        foreach ([...RepositoryDetector::MANIFESTS, ...RepositoryDetector::HINTS, ...RepositoryDetector::ENV_EXAMPLES] as $manifest) {
             if (is_file($root.'/'.$manifest)) {
                 $contents[$manifest] = (string) file_get_contents($root.'/'.$manifest, length: 512 * 1024);
             }
         }
 
-        $match = $this->detector->match($files, $contents);
-
-        return [
-            'detected' => $match !== null,
-            'template' => $match['template'] ?? null,
-            'framework' => $match['framework'] ?? null,
-            'type' => $match['type'] ?? null,
-            'reasons' => $match['reasons'] ?? [],
-            'php' => $match['php'] ?? null,
-            'healthPath' => $match['healthPath'] ?? null,
-            'composeFile' => $match['composeFile'] ?? null,
-            'composePort' => $match['composePort'] ?? null,
-        ];
+        // The same as a repository: its port, example settings, and Railpack
+        // for code no template knows.
+        return $this->detector->describe($files, $contents);
     }
 
     /** @param  list<string>  $args */

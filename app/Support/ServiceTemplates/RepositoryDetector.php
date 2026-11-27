@@ -707,7 +707,7 @@ class RepositoryDetector
         }
 
         if ($response->status() === 403 || $response->status() === 429) {
-            throw ValidationException::withMessages(['repository' => 'GitHub is rate limiting us. Try again in a few minutes.']);
+            throw GitHubRateLimited::withMessages(['repository' => 'GitHub is rate limiting us. Try again in a few minutes.']);
         }
 
         return $response->successful() ? $response->json() : null;

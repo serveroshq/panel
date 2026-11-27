@@ -2,6 +2,7 @@
 
 use App\Mcp\ToolError;
 use App\Mcp\Tools\Deploy\RefResolver;
+use App\Models\Machine;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\ServiceTemplates\RepositoryDetector;
@@ -163,4 +164,24 @@ test('a Compose file in a folder is named by its path from the root', function (
 
     $found = app(RepositoryDetector::class)->detect('https://github.com/acme/app/tree/main/deploy');
     expect($found)->template->toBe('compose-file')->composeFile->toBe('deploy/compose.yaml')->baseDir->toBe('deploy');
+});
+
+test('when GitHub rate limits detection, a machine that can read repositories reads it instead', function () {
+    Http::fake(['api.github.com/*' => Http::response(['message' => 'API rate limit exceeded'], 403, ['X-RateLimit-Remaining' => '0'])]);
+    $workspace = Workspace::factory()->create();
+    $machine = Machine::factory()->for($workspace)->create();
+    $machine->forceFill(['daemon_version' => '0.1.1-pre.51'])->save();
+    $old = Machine::factory()->for($workspace)->create();
+    $old->forceFill(['daemon_version' => '0.1.1-pre.40'])->save();
+
+    $this->actingAs($workspace->owner)
+        ->postJson(detectUrl($workspace), ['repository' => 'https://github.com/acme/app', 'machine' => $machine->id])
+        ->assertUnprocessable()
+        ->assertJsonPath('inspect', true);
+
+    $this->actingAs($workspace->owner)
+        ->postJson(detectUrl($workspace), ['repository' => 'https://github.com/acme/app', 'machine' => $old->id])
+        ->assertUnprocessable()
+        ->assertJsonMissingPath('inspect')
+        ->assertJsonValidationErrors(['repository' => 'rate limiting']);
 });

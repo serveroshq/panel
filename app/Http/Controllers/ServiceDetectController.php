@@ -7,6 +7,7 @@ use App\Models\Workspace;
 use App\Support\Audit\NotAudited;
 use App\Support\DaemonJobQueue;
 use App\Support\Deploys\GitRemote;
+use App\Support\ServiceTemplates\GitHubRateLimited;
 use App\Support\ServiceTemplates\RepositoryDetector;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -37,6 +38,20 @@ class ServiceDetectController extends Controller
             ], 422);
         }
 
-        return response()->json($detector->detect($data['repository'], $workspace, $machine instanceof Machine ? DaemonJobQueue::canDeployBuild($machine) : true));
+        try {
+            return response()->json($detector->detect($data['repository'], $workspace, $machine instanceof Machine ? DaemonJobQueue::canDeployBuild($machine) : true));
+        } catch (GitHubRateLimited $limited) {
+            // GitHub's API is out of requests for now: the machine can read
+            // a public repository itself, with no limit.
+            if (! $machine instanceof Machine || ! DaemonJobQueue::canDeployBuild($machine)) {
+                throw $limited;
+            }
+
+            return response()->json([
+                'message' => 'GitHub is busy, so the machine reads the repository.',
+                'errors' => ['repository' => ['GitHub is busy, so the machine you deploy to reads the repository instead.']],
+                'inspect' => true,
+            ], 422);
+        }
     }
 }
