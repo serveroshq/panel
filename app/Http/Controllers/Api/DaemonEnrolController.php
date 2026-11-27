@@ -10,6 +10,7 @@ use App\Models\Machine;
 use App\Models\Workspace;
 use App\Support\DaemonCertificateAuthority;
 use App\Support\DaemonFacts;
+use App\Support\Integrations\Servers\CloudServers;
 use App\Support\Machines\MachineMetadata;
 use App\Support\Machines\MachinePolicies;
 use App\Support\TeamPush;
@@ -129,6 +130,7 @@ class DaemonEnrolController extends Controller
             MachineMetadata::apply($machine, $enrolment->metadata ?? []);
             $machine->forceFill(['log_ip_masking' => MachinePolicies::for($machine)->log_ip_masking])->save();
             $enrolment->update(['used_at' => now(), 'machine_id' => $machine->id]);
+            app(CloudServers::class)->claim($enrolment, $machine);
             // A package's machine says what it's doing in its own words.
             if ($enrolment->hosted_by === null) {
                 if ($enrolment->user !== null || $enrolment->impersonation_session_id !== null) {

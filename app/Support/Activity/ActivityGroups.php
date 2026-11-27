@@ -15,7 +15,7 @@ final class ActivityGroups
         'backups' => ['Backups', ['backup.', 'backups.', 'backup_destination.']],
         'workflows' => ['Workflows, agents and fixes', ['workflow.', 'fix.', 'agent.']],
         'members' => ['Members and roles', ['member.', 'role.']],
-        'workspace' => ['Workspace and billing', ['workspace.', 'plan.', 'billing.', 'domain.', 'panel.']],
+        'workspace' => ['Workspace and billing', ['workspace.', 'plan.', 'billing.', 'domain.', 'panel.', 'integration.']],
         'security' => ['Security, MCP and API', ['security.', 'sign_in.', 'sso.', 'email_domain.', 'mcp.', 'ai.', 'api.', 'scim.', 'activity.']],
     ];
 

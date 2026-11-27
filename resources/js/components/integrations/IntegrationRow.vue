@@ -1,8 +1,17 @@
 <script setup lang="ts">
+import { Link } from '@inertiajs/vue3';
 import DashButton from '@/components/dash/DashButton.vue';
 import StatusBadge from '@/components/dash/StatusBadge.vue';
+import FilledIcon from '@/components/icons/FilledIcon.vue';
 import IntegrationLogo from '@/components/integrations/IntegrationLogo.vue';
 import type { Integration } from '@/components/integrations/integrations';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { workspacePath } from '@/lib/workspaceRoute';
 
 const { integration } = defineProps<{ integration: Integration }>();
@@ -48,8 +57,39 @@ defineEmits<{ act: [integration: Integration] }>();
         </ul>
         <div class="flex w-[92px] shrink-0 justify-end max-sm:w-auto">
             <template v-if="integration.action">
+                <DropdownMenu v-if="integration.action.accounts?.length">
+                    <DropdownMenuTrigger as-child>
+                        <DashButton
+                            :label="integration.action.label"
+                            :aria-label="`${integration.action.label} ${integration.name}`"
+                        />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                        class="ds-modal min-w-52 font-ui"
+                        align="end"
+                    >
+                        <DropdownMenuItem
+                            v-for="account in integration.action.accounts"
+                            :key="account.id"
+                            as-child
+                        >
+                            <Link :href="workspacePath(account.href)">
+                                <IntegrationLogo
+                                    :logo="integration.logo"
+                                    small
+                                />
+                                {{ account.label }}
+                            </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem @select="$emit('act', integration)">
+                            <FilledIcon name="plus-fill" />
+                            {{ $t('Connect another') }}
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
                 <DashButton
-                    v-if="
+                    v-else-if="
                         integration.action.href &&
                         !integration.action.unavailable
                     "

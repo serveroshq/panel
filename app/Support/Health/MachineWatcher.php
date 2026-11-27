@@ -5,6 +5,7 @@ namespace App\Support\Health;
 use App\Enums\MachineEnvironment;
 use App\Models\Activity;
 use App\Models\Machine;
+use App\Support\Integrations\Incidents\IncidentRouter;
 use App\Support\Monitors\MonitorAlerts;
 
 class MachineWatcher
@@ -66,11 +67,13 @@ class MachineWatcher
                 "Nothing from it since {$machine->last_seen_at->diffForHumans()}.",
                 'It may be down or unreachable, or the ServerOS daemon stopped. Check it in your provider’s console; if it’s running, restart the daemon with “systemctl restart serverosd”.',
             ], $url, true, 'Open the machine', ['machine' => ['id' => $machine->id, 'name' => $machine->name]]);
+            app(IncidentRouter::class)->machineOffline($machine);
             $sent++;
         } elseif ($online && isset($state['offline'])) {
             $seconds = now()->getTimestamp() - $state['offline'];
             unset($state['offline']);
             Activity::system($machine->workspace_id, 'machine.online', $machine->name, $machine, ['seconds' => $seconds]);
+            app(IncidentRouter::class)->machineOnline($machine, $seconds);
             $maintenance || $this->alerts->notify($machine->workspace, 'machine.online', "{$machine->name} is reporting again", [
                 'Back after '.MonitorAlerts::duration($seconds).' without a report.',
             ], $url, false, 'Open the machine', ['machine' => ['id' => $machine->id, 'name' => $machine->name]]);

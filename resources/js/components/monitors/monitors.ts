@@ -226,6 +226,7 @@ export type MonitorIncidentRow = {
     cause: string;
     seconds: number;
     tone: OutageTone;
+    issues?: { key: string; url: string }[];
 };
 
 export type MonitorCheckRow = {

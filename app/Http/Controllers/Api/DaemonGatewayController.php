@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\ApplyMachinePolicy;
+use App\Jobs\PointCloudflareDomains;
+use App\Jobs\SyncGitLabHooks;
 use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Models\MachineSample;
@@ -20,6 +22,8 @@ use App\Support\Files\FileJobs;
 use App\Support\Fixes\FixRunner;
 use App\Support\Health\JobAlerts;
 use App\Support\Images\ImageUpdates;
+use App\Support\Integrations\GitLab\GitLabHooks;
+use App\Support\Integrations\Sentry\SentryReleases;
 use App\Support\Logs\LogIngest;
 use App\Support\Logs\LogSkipRules;
 use App\Support\Machines\CloudflareTunnel;
@@ -40,6 +44,7 @@ use App\Support\Workflows\WorkflowEvents;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
+use Throwable;
 
 use function Illuminate\Support\defer;
 
@@ -320,6 +325,13 @@ class DaemonGatewayController extends Controller
                         if (is_array($inventory)) {
                             $changes['inventory'] = $this->withoutService($inventory, $job->service);
                             $changes['services_count'] = ServiceLabels::shownCount($machine, $changes['inventory']['services'] ?? []);
+                            try {
+                                if (app(GitLabHooks::class)->removed($machine, $job->service, $inventory, $changes['inventory'])) {
+                                    SyncGitLabHooks::dispatch($machine->workspace_id);
+                                }
+                            } catch (Throwable $e) {
+                                report($e);
+                            }
                         }
                     }
 
@@ -578,6 +590,8 @@ class DaemonGatewayController extends Controller
             if ($job->kind === 'service_exec') {
                 app(ProjectData::class)->jobFinished($job);
             }
+            PointCloudflareDomains::afterJob($job);
+            app(SentryReleases::class)->jobFinished($job);
             if ($job->workflow_run_id !== null) {
                 app(WorkflowEngine::class)->jobFinished($job);
             }

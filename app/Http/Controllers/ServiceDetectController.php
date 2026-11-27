@@ -7,6 +7,7 @@ use App\Models\Workspace;
 use App\Support\Audit\NotAudited;
 use App\Support\DaemonJobQueue;
 use App\Support\Deploys\GitRemote;
+use App\Support\Integrations\GitLab\GitLabDetector;
 use App\Support\ServiceTemplates\GitHubRateLimited;
 use App\Support\ServiceTemplates\RepositoryDetector;
 use Illuminate\Http\JsonResponse;
@@ -16,7 +17,7 @@ use Illuminate\Support\Facades\Gate;
 class ServiceDetectController extends Controller
 {
     #[NotAudited('Looks at a repository; nothing changes')]
-    public function __invoke(Request $request, Workspace $workspace, RepositoryDetector $detector): JsonResponse
+    public function __invoke(Request $request, Workspace $workspace, RepositoryDetector $detector, GitLabDetector $gitlab): JsonResponse
     {
         Gate::authorize('manageMachines', $workspace);
 
@@ -26,8 +27,9 @@ class ServiceDetectController extends Controller
         ]);
         $machine = isset($data['machine']) ? $workspace->machines()->find($data['machine']) : null;
 
-        // Other hosts are read by the machine (deploy/inspect), not GitHub's API.
-        if (! RepositoryDetector::onGitHub($data['repository'])) {
+        // Other hosts are read by the machine (deploy/inspect), not GitHub's
+        // API. GitLab projects are read through GitLab's API instead.
+        if (! RepositoryDetector::onGitHub($data['repository']) && ! $gitlab->handles($data['repository'], $workspace)) {
             $repository = trim($data['repository']);
             $looksLikeRepo = GitRemote::isSsh($repository) || str_starts_with(strtolower($repository), 'https://');
 

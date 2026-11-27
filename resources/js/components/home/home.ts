@@ -4,6 +4,7 @@ import { workspacePath } from '@/lib/workspaceRoute';
 export type HomeIssue = HealthIssue & {
     brief: string;
     dismissible: boolean;
+    linked?: { key: string; url: string } | null;
 };
 
 export type HomeOverview = {

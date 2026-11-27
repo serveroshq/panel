@@ -5,6 +5,7 @@ namespace App\Support\Integrations;
 use App\Models\BackupDestination;
 use App\Models\ContainerRegistry;
 use App\Models\GitHubInstallation;
+use App\Models\Integration;
 use App\Models\Machine;
 use App\Models\User;
 use App\Models\Workflow;
@@ -20,8 +21,9 @@ use Illuminate\Support\Facades\Gate;
 
 /**
  * @phpstan-type Target array{href?: string, alerts?: bool}
- * @phpstan-type Connection array{key: string, name: string, logo: string|null, detail: string, target: Target|null}
- * @phpstan-type State array{connected: bool, detail: string|null, manage: Target|null, setup: Target|null, ability: string, hint?: array{text: string, href: string|null, label: string|null}}
+ * @phpstan-type Connection array{key: string, name: string, logo: string|null, detail: string, target: Target|null, failing?: bool}
+ * @phpstan-type Account array{id: int, label: string, href: string, detail: string, failing: bool}
+ * @phpstan-type State array{connected: bool, detail: string|null, manage: Target|null, setup: Target|null, ability: string, hint?: array{text: string, href: string|null, label: string|null}, connect?: string, accounts?: list<Account>}
  */
 final class WorkspaceIntegrations
 {
@@ -50,7 +52,7 @@ final class WorkspaceIntegrations
     private array $extras = [];
 
     /**
-     * @return array{integrations: list<array<string, mixed>>, connections: list<Connection>, canConnect: bool}
+     * @return array{integrations: list<array<string, mixed>>, connections: list<Connection>, canConnect: bool, providers: array<string, array<string, mixed>>}
      */
     public function props(Workspace $workspace, User $user): array
     {
@@ -68,6 +70,9 @@ final class WorkspaceIntegrations
             ...$this->storage(),
             ...$this->ai(),
         ];
+        foreach ($this->accounts() as $key => $state) {
+            $states[$key] = isset($states[$key]) ? $this->besidePanelState($key, $states[$key], $state) : $state;
+        }
 
         $canConnect = $this->machines || Gate::forUser($user)->allows(self::SETTINGS, $workspace);
         $integrations = [];
@@ -84,7 +89,18 @@ final class WorkspaceIntegrations
                 'action' => $this->action($state, $connected, $allowed, $canConnect),
             ];
 
-            if ($connected) {
+            if ($connected && isset($state['accounts'])) {
+                foreach ($state['accounts'] as $account) {
+                    $connections[] = [
+                        'key' => 'integration-'.$account['id'],
+                        'name' => $account['label'],
+                        'logo' => $entry['logo'],
+                        'detail' => $account['detail'],
+                        'target' => $allowed ? ['href' => $account['href']] : null,
+                        'failing' => $account['failing'],
+                    ];
+                }
+            } elseif ($connected) {
                 $connections[] = [
                     'key' => $entry['key'],
                     'name' => $entry['name'],
@@ -95,10 +111,18 @@ final class WorkspaceIntegrations
             }
         }
 
+        $providers = [];
+        if ($this->machines) {
+            foreach (app(IntegrationProviders::class)->all() as $key => $provider) {
+                $providers[$key] = $provider->toArray();
+            }
+        }
+
         return [
             'integrations' => $integrations,
             'connections' => [...$connections, ...$this->extras],
             'canConnect' => $canConnect,
+            'providers' => $providers,
         ];
     }
 
@@ -108,6 +132,16 @@ final class WorkspaceIntegrations
      */
     private function action(?array $state, bool $connected, bool $allowed, bool $canConnect): ?array
     {
+        if (isset($state['connect'])) {
+            $accounts = $state['accounts'] ?? [];
+
+            return match (true) {
+                ! $allowed => null,
+                $accounts === [] => ['label' => self::t('Connect'), 'connect' => $state['connect']],
+                count($accounts) === 1 => ['label' => self::t('Manage'), 'href' => $accounts[0]['href']],
+                default => ['label' => self::t('Manage'), 'connect' => $state['connect'], 'accounts' => array_map(fn (array $a) => ['id' => $a['id'], 'label' => $a['label'], 'href' => $a['href']], $accounts)],
+            };
+        }
         if ($state === null || ($state['setup'] === null && ! $connected)) {
             return $canConnect ? ['label' => self::t('Connect'), 'unavailable' => true, ...(isset($state['hint']) ? ['hint' => $state['hint']] : [])] : null;
         }
@@ -117,6 +151,67 @@ final class WorkspaceIntegrations
         $target = $connected ? $state['manage'] : $state['setup'];
 
         return $target === null ? null : ['label' => $connected ? self::t('Manage') : self::t('Connect'), ...$target];
+    }
+
+    /**
+     * A built provider whose catalogue key the panel already uses another
+     * way (Cloudflare tunnels): its accounts take the row, and what the
+     * panel does stays in the Connected list beside them.
+     *
+     * @param  State  $panel
+     * @param  State  $accounts
+     * @return State
+     */
+    private function besidePanelState(string $key, array $panel, array $accounts): array
+    {
+        if ($panel['connected']) {
+            $entry = collect(IntegrationCatalogue::all())->firstWhere('key', $key);
+            $this->extras[] = [
+                'key' => $key,
+                'name' => $entry['name'] ?? $key,
+                'logo' => $entry['logo'] ?? null,
+                'detail' => (string) $panel['detail'],
+                'target' => Gate::forUser($this->user)->allows($panel['ability'], $this->workspace) ? $panel['manage'] : null,
+            ];
+        }
+
+        return [...$accounts, 'connected' => $accounts['connected'] || $panel['connected']];
+    }
+
+    /**
+     * The accounts connected through a built provider (Hetzner Cloud…).
+     *
+     * @return array<string, State>
+     */
+    private function accounts(): array
+    {
+        $connected = $this->workspace->integrations()->orderBy('created_at')->orderBy('id')->get()->groupBy('provider');
+        $states = [];
+
+        foreach (app(IntegrationProviders::class)->all() as $key => $provider) {
+            $accounts = array_values($connected->get($key, collect())->map(fn (Integration $integration) => [
+                'id' => $integration->id,
+                'label' => $integration->label,
+                'href' => '/integrations/'.$integration->id,
+                'detail' => $integration->status === Integration::FAILING
+                    ? self::t('Needs a new token')
+                    : $provider->summary($integration),
+                'failing' => $integration->status === Integration::FAILING,
+            ])->all());
+            $first = $accounts[0] ?? null;
+
+            $states[$key] = [
+                'connected' => $first !== null,
+                'detail' => $first['detail'] ?? null,
+                'manage' => $first === null ? null : ['href' => $first['href']],
+                'setup' => null,
+                'ability' => self::MACHINES,
+                'connect' => $key,
+                'accounts' => $accounts,
+            ];
+        }
+
+        return $states;
     }
 
     /** @return State */

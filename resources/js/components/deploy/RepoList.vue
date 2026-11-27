@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Check } from '@lucide/vue';
+import { trans } from 'laravel-vue-i18n';
 import { computed, ref, watch } from 'vue';
 import BrandLogo from '@/components/dash/BrandLogo.vue';
 import FilledIcon from '@/components/icons/FilledIcon.vue';
@@ -21,6 +22,9 @@ export type Repository = {
     branch: string;
     pushed?: string;
     language?: string | null;
+    provider?: 'github' | 'gitlab';
+    visibility?: 'public' | 'internal' | 'private';
+    account?: number;
 };
 
 export type GitHubAccount = {
@@ -35,17 +39,44 @@ export type GitHubRepositories = {
     repositories: Repository[];
 };
 
+export type GitLabAccount = {
+    id: number;
+    login: string;
+    label: string;
+    host: string;
+    connectedBy: string | null;
+    error: string | null;
+};
+
+export type GitLabRepositories = {
+    connected: boolean;
+    accounts: GitLabAccount[];
+    repositories: Repository[];
+};
+
+type Source = {
+    key: string;
+    provider: 'github' | 'gitlab';
+    label: string;
+    connectedBy: string | null;
+    has: (repository: Repository) => boolean;
+};
+
 const {
     github,
+    gitlab = undefined,
     available,
     connectUrl,
+    gitlabConnectUrl = null,
     busy = null,
     disabled = false,
     searchless = false,
 } = defineProps<{
     github: GitHubRepositories | null;
+    gitlab?: GitLabRepositories | null;
     available: boolean;
     connectUrl: string;
+    gitlabConnectUrl?: string | null;
     busy?: string | null;
     disabled?: boolean;
     /** The query comes from a field outside the list, so it has none of its own. */
@@ -58,57 +89,115 @@ const emit = defineEmits<{
 
 const query = defineModel<string>('query', { default: '' });
 
-const accounts = computed(() => github?.accounts ?? []);
+const connected = computed(
+    () => Boolean(github?.connected) || Boolean(gitlab?.connected),
+);
+
+const sources = computed<Source[]>(() => [
+    ...(github?.connected ? (github.accounts ?? []) : []).map(
+        (item): Source => ({
+            key: `github:${item.login}`,
+            provider: 'github',
+            label: item.login,
+            connectedBy: item.connectedBy,
+            has: (repository) =>
+                repository.provider !== 'gitlab' &&
+                repository.name
+                    .toLowerCase()
+                    .startsWith(`${item.login.toLowerCase()}/`),
+        }),
+    ),
+    ...(gitlab?.accounts ?? []).map((item): Source => ({
+        key: `gitlab:${item.id}`,
+        provider: 'gitlab',
+        label:
+            item.host === 'gitlab.com'
+                ? item.login
+                : `${item.login} · ${item.host}`,
+        connectedBy: item.connectedBy,
+        has: (repository) =>
+            repository.provider === 'gitlab' && repository.account === item.id,
+    })),
+]);
 const account = ref<string | null>(null);
 
 watch(
-    accounts,
+    sources,
     (list) => {
-        if (account.value && !list.some((a) => a.login === account.value)) {
+        if (account.value && !list.some((a) => a.key === account.value)) {
             account.value = null;
         }
     },
     { immediate: true },
 );
 
-const accountLabel = computed(
+const chosen = computed(
     () =>
-        account.value ??
-        (accounts.value.length === 1 ? accounts.value[0].login : null),
+        sources.value.find((a) => a.key === account.value) ??
+        (sources.value.length === 1 ? sources.value[0] : null),
 );
 
-const connectedBy = computed(() => {
-    const chosen = accounts.value.find(
-        (a) => a.login === (account.value ?? accounts.value[0]?.login),
-    );
+const accountLabel = computed(() => chosen.value?.label ?? null);
 
-    return chosen?.connectedBy ?? null;
-});
+const pickerLogo = computed(
+    () =>
+        chosen.value?.provider ??
+        (github?.connected || !gitlab?.connected ? 'github' : 'gitlab'),
+);
+
+const connectedBy = computed(
+    () => (chosen.value ?? sources.value[0])?.connectedBy ?? null,
+);
+
+const failures = computed(() =>
+    (gitlab?.accounts ?? []).filter(
+        (item) =>
+            item.error &&
+            (account.value === null || account.value === `gitlab:${item.id}`),
+    ),
+);
 
 const pasted = computed(() => looksLikeRepository(query.value));
 
+const everything = computed<Repository[]>(() =>
+    [
+        ...(github?.connected ? github.repositories : []),
+        ...(gitlab?.repositories ?? []),
+    ].sort((a, b) => (b.pushed ?? '').localeCompare(a.pushed ?? '')),
+);
+
 const matches = computed(() => {
     const term = query.value.trim().toLowerCase();
-    if (!github || pasted.value) return [];
+    if (pasted.value) return [];
+    const only = sources.value.find((a) => a.key === account.value);
 
-    return github.repositories
-        .filter(
-            (repository) =>
-                !account.value ||
-                repository.name
-                    .toLowerCase()
-                    .startsWith(`${account.value.toLowerCase()}/`),
-        )
+    return everything.value
+        .filter((repository) => !only || only.has(repository))
         .filter((repository) => repository.name.toLowerCase().includes(term))
         .slice(0, 8);
 });
 
 function owner(name: string): string {
-    return name.includes('/') ? `${name.split('/')[0]}/` : '';
+    return name.includes('/') ? `${name.slice(0, name.lastIndexOf('/'))}/` : '';
 }
 
 function repo(name: string): string {
-    return name.includes('/') ? name.split('/').slice(1).join('/') : name;
+    return name.includes('/') ? name.slice(name.lastIndexOf('/') + 1) : name;
+}
+
+function details(repository: Repository): string {
+    const ago = shortAgo(repository.pushed) ?? '';
+    if (repository.provider !== 'gitlab') {
+        return ago;
+    }
+
+    return [
+        repository.visibility === 'internal' ? trans('Internal') : null,
+        repository.branch || null,
+        ago || null,
+    ]
+        .filter(Boolean)
+        .join(' · ');
 }
 
 function submit(): void {
@@ -125,12 +214,12 @@ function submit(): void {
 <template>
     <div class="flex flex-col gap-2">
         <div class="flex flex-wrap items-center gap-2">
-            <template v-if="github?.connected">
+            <template v-if="connected">
                 <DropdownMenu>
                     <DropdownMenuTrigger as-child>
                         <PickerButton
                             :label="accountLabel ?? $t('All accounts')"
-                            logo="github"
+                            :logo="pickerLogo"
                             strong
                         />
                     </DropdownMenuTrigger>
@@ -139,7 +228,7 @@ function submit(): void {
                         align="start"
                     >
                         <DropdownMenuItem
-                            v-if="accounts.length > 1"
+                            v-if="sources.length > 1"
                             @select="account = null"
                         >
                             {{ $t('All accounts') }}
@@ -149,24 +238,35 @@ function submit(): void {
                             />
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                            v-for="item in accounts"
-                            :key="item.login"
+                            v-for="item in sources"
+                            :key="item.key"
                             @select="
-                                account =
-                                    accounts.length > 1 ? item.login : null
+                                account = sources.length > 1 ? item.key : null
                             "
                         >
-                            <BrandLogo name="github" :size="14" />
-                            {{ item.login }}
+                            <BrandLogo :name="item.provider" :size="14" />
+                            {{ item.label }}
                             <Check
-                                v-if="accountLabel === item.login"
+                                v-if="chosen?.key === item.key"
                                 class="ml-auto size-3.5"
                             />
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem as-child>
+                        <DropdownMenuItem v-if="available" as-child>
                             <a :href="connectUrl">{{
-                                $t('Connect another account')
+                                github?.connected
+                                    ? $t('Connect another account')
+                                    : $t('Connect GitHub')
+                            }}</a>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            v-if="gitlabConnectUrl && gitlab !== undefined"
+                            as-child
+                        >
+                            <a :href="gitlabConnectUrl">{{
+                                gitlab?.connected
+                                    ? $t('Connect another GitLab account')
+                                    : $t('Connect GitLab')
                             }}</a>
                         </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -224,7 +324,7 @@ function submit(): void {
                     autocomplete="off"
                     spellcheck="false"
                     :placeholder="
-                        github?.connected
+                        connected
                             ? $t('Search repos, or paste a URL')
                             : $t('Paste a repository URL')
                     "
@@ -235,7 +335,7 @@ function submit(): void {
         </div>
 
         <div
-            v-if="available && github === null"
+            v-if="(available && github === null) || gitlab === null"
             class="h-[121px] animate-pulse rounded-[8px] bg-[#f2f2f2] dark:bg-[#1c1c1c]"
             :aria-label="$t('Loading your repositories')"
         />
@@ -243,8 +343,8 @@ function submit(): void {
         <ul
             v-else-if="
                 searchless
-                    ? !pasted && github?.connected
-                    : pasted || matches.length || github?.connected
+                    ? !pasted && connected
+                    : pasted || matches.length || connected
             "
             class="overflow-clip rounded-[8px] border-[0.5px] border-[#e2e2e2] bg-white shadow-[0_1px_2px_rgb(0_0_0/0.06)] dark:border-[#2a2a2a] dark:bg-[#1c1c1c] dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.04),0_3px_6px_-2px_rgb(0_0_0/0.3),0_1px_1.5px_rgb(0_0_0/0.5)]"
         >
@@ -278,7 +378,13 @@ function submit(): void {
                 <span
                     class="flex size-[26px] shrink-0 items-center justify-center rounded-[6px] bg-[#f2f2f2] shadow-[0_1px_1.5px_rgb(0_0_0/0.08)] dark:bg-[#262626] dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.05),0_1px_1.5px_rgb(0_0_0/0.5)]"
                 >
+                    <BrandLogo
+                        v-if="repository.provider === 'gitlab'"
+                        name="gitlab"
+                        :size="15"
+                    />
                     <TemplateLogo
+                        v-else
                         :icon="languageIcon(repository.language)"
                         :size="15"
                     />
@@ -296,7 +402,11 @@ function submit(): void {
                         name="lock-fill"
                         :size="12"
                         class="ml-1.5 shrink-0 text-fg-muted"
-                        :aria-label="$t('Private')"
+                        :aria-label="
+                            repository.visibility === 'internal'
+                                ? $t('Internal')
+                                : $t('Private')
+                        "
                     />
                 </span>
                 <span class="flex-1" />
@@ -307,7 +417,7 @@ function submit(): void {
                         {{ repository.language }}
                         <span class="text-fg-faint" aria-hidden="true">·</span>
                     </template>
-                    {{ shortAgo(repository.pushed) ?? '' }}
+                    {{ details(repository) }}
                 </span>
                 <button
                     type="button"
@@ -330,7 +440,22 @@ function submit(): void {
                         ? $t('No repository matches “:query”.', {
                               query: query.trim(),
                           })
-                        : $t('No repositories are shared with ServerOS yet.')
+                        : github?.connected
+                          ? $t('No repositories are shared with ServerOS yet.')
+                          : $t('No projects to deploy yet.')
+                }}
+            </li>
+            <li
+                v-for="item in pasted ? [] : failures"
+                :key="`error-${item.id}`"
+                class="flex min-h-10 items-center border-t-[0.5px] border-[#ececec] px-3 py-2 text-[12.5px]/4 text-status-down dark:border-[#262626]"
+                role="alert"
+            >
+                {{
+                    $t('Couldn’t load :account’s projects: :error', {
+                        account: item.label,
+                        error: item.error ?? '',
+                    })
                 }}
             </li>
         </ul>

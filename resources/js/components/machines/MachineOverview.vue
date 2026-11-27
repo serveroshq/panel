@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { trans } from 'laravel-vue-i18n';
-import { Link } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import { Check } from '@lucide/vue';
 import { computed } from 'vue';
 import BrandLogo from '@/components/dash/BrandLogo.vue';
@@ -32,8 +32,14 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { MachineCloudServer } from '@/components/integrations/integrations';
+import OperationSteps from '@/components/integrations/OperationSteps.vue';
+import { operationActive } from '@/components/integrations/useOperation';
+import type { ServerAction } from '@/components/machines/server/MachineServerActions.vue';
 import { toast } from '@/lib/toast';
 import { onWorkspace } from '@/lib/workspaceRoute';
+import workspaceRoutes from '@/routes/workspace';
+import integrationRoutes from '@/routes/workspace/integrations';
 import projectsRoutes from '@/routes/workspace/projects';
 
 export type UsagePoint = {
@@ -107,6 +113,7 @@ const props = defineProps<{
     services: number;
     canManage: boolean;
     online: boolean;
+    cloudServer?: MachineCloudServer | null;
 }>();
 
 const metric = defineModel<Metric>('metric', { default: 'cpu' });
@@ -114,6 +121,7 @@ const metric = defineModel<Metric>('metric', { default: 'cpu' });
 const emit = defineEmits<{
     tab: [tab: 'services' | 'updates' | 'backups'];
     range: [range: string];
+    server: [action: ServerAction];
 }>();
 
 const regionCode = computed(
@@ -585,11 +593,49 @@ function runLabel(iso: string): string {
     return `${day}, ${time}`;
 }
 
+const cloudBusy = computed(() =>
+    operationActive(props.cloudServer?.operation ?? null),
+);
+const cloudAccountUrl = computed(() =>
+    props.cloudServer
+        ? onWorkspace(
+              integrationRoutes.show({
+                  workspace: props.workspaceSlug,
+                  integration: props.cloudServer.integration.id,
+              }),
+          ).url
+        : null,
+);
+
+const cloudButtons = computed<{ key: ServerAction; label: string }[]>(() => [
+    { key: 'reboot', label: trans('Restart') },
+    { key: 'power_cycle', label: trans('Power cycle') },
+    ...(props.cloudServer?.can.includes('snapshots')
+        ? [{ key: 'snapshots' as const, label: trans('Snapshots') }]
+        : []),
+]);
+
 function resize(): void {
+    if (props.cloudServer?.can.includes('resize')) {
+        emit('server', 'resize');
+
+        return;
+    }
     toast.info(
         trans(
-            'Resizing from ServerOS is coming. For now, resize it with your provider.',
+            'Connect its cloud account in Integrations to resize it from here.',
         ),
+        {
+            action: {
+                label: trans('Open Integrations'),
+                onClick: () =>
+                    router.visit(
+                        onWorkspace(
+                            workspaceRoutes.integrations(props.workspaceSlug),
+                        ).url,
+                    ),
+            },
+        },
     );
 }
 </script>
@@ -975,6 +1021,75 @@ function resize(): void {
         <aside
             class="flex w-full shrink-0 flex-col gap-[22px] border-edge-tabs p-5 max-xl:border-t-[0.5px] xl:w-[316px] xl:border-l-[0.5px]"
         >
+            <section
+                v-if="cloudServer"
+                class="flex flex-col gap-2.5"
+                :aria-label="
+                    $t('Linked to :provider', {
+                        provider: cloudServer.integration.name,
+                    })
+                "
+            >
+                <div class="flex items-center gap-2">
+                    <h2
+                        class="min-w-0 flex-1 truncate text-[13px]/5 font-medium tracking-[-0.01em] text-fg-tertiary"
+                    >
+                        {{
+                            $t('Linked to :provider', {
+                                provider: cloudServer.integration.name,
+                            })
+                        }}
+                    </h2>
+                    <Link
+                        v-if="cloudAccountUrl"
+                        :href="cloudAccountUrl"
+                        class="flex h-[26px] items-center gap-1 rounded-[7px] border-[0.5px] border-edge-control bg-surface-control pr-[7px] pl-[9px] text-[12px]/4 font-medium text-fg-secondary hover:text-fg-primary focus-visible:outline-2 focus-visible:outline-(--ds-ring)"
+                    >
+                        {{ $t('Account') }}
+                        <FilledIcon
+                            name="chevron-right"
+                            class="text-fg-muted"
+                        />
+                    </Link>
+                </div>
+                <div class="flex items-center gap-2.5">
+                    <BrandLogo :name="cloudServer.integration.provider" />
+                    <span class="flex min-w-0 flex-col text-[13px]">
+                        <span
+                            class="truncate leading-[18px] font-medium tracking-[-0.01em] text-fg-primary"
+                            >{{ cloudServer.server.typeLabel }} ·
+                            {{
+                                cloudServer.server.city ??
+                                cloudServer.server.location
+                            }}</span
+                        >
+                        <span class="truncate leading-5 text-fg-tertiary"
+                            >{{ cloudServer.server.name }} ·
+                            {{ cloudServer.integration.label }}</span
+                        >
+                    </span>
+                </div>
+                <OperationSteps
+                    v-if="cloudBusy && cloudServer.operation"
+                    :operation="cloudServer.operation"
+                />
+                <div
+                    v-if="canManage && cloudServer.can.includes('power')"
+                    class="flex flex-wrap gap-1.5"
+                >
+                    <button
+                        v-for="item in cloudButtons"
+                        :key="item.key"
+                        type="button"
+                        class="flex h-[26px] cursor-pointer items-center rounded-[7px] border-[0.5px] border-edge-control bg-surface-control px-[9px] text-[12px]/4 font-medium text-fg-secondary hover:text-fg-primary focus-visible:outline-2 focus-visible:outline-(--ds-ring) disabled:cursor-default disabled:opacity-50"
+                        :disabled="cloudBusy && item.key !== 'snapshots'"
+                        @click="emit('server', item.key)"
+                    >
+                        {{ item.label }}
+                    </button>
+                </div>
+            </section>
+
             <section class="flex flex-col gap-3">
                 <div class="flex items-center gap-2">
                     <h2

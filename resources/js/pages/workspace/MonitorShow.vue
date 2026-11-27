@@ -6,6 +6,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import DashButton from '@/components/dash/DashButton.vue';
 import DashHeader from '@/components/dash/DashHeader.vue';
 import DashTray from '@/components/dash/DashTray.vue';
+import FilledIcon from '@/components/icons/FilledIcon.vue';
 import MonitorDialog from '@/components/monitors/MonitorDialog.vue';
 import ResponseChart from '@/components/monitors/ResponseChart.vue';
 import UptimeDays from '@/components/monitors/UptimeDays.vue';
@@ -530,6 +531,20 @@ function figureBorder(i: number): string {
                                 >{{ incident.cause }}</span
                             >
                         </span>
+                        <a
+                            v-for="issue in incident.issues ?? []"
+                            :key="issue.url"
+                            :href="issue.url"
+                            target="_blank"
+                            rel="noopener"
+                            class="flex shrink-0 items-center gap-1 rounded-[5px] px-1 font-ui-mono text-[12px]/4 text-fg-secondary hover:bg-surface-hover hover:text-fg-primary focus-visible:outline-2 focus-visible:outline-(--ds-ring)"
+                            :title="$t('Its issue in Linear')"
+                            >{{ issue.key
+                            }}<FilledIcon
+                                name="open-fill"
+                                :size="11"
+                                class="text-fg-muted"
+                        /></a>
                         <time
                             class="shrink-0 text-[12px]/4 tracking-[-0.005em] whitespace-nowrap text-fg-muted"
                             :datetime="incident.startedAt"

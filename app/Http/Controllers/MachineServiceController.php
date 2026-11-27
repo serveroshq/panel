@@ -30,6 +30,8 @@ use App\Support\Deploys\DeployOnPush;
 use App\Support\Deploys\ServiceLabels;
 use App\Support\Deploys\SiteSwitches;
 use App\Support\Files\FileJobs;
+use App\Support\Integrations\Cloudflare\CloudflareDns;
+use App\Support\Integrations\Sentry\SentryReleases;
 use App\Support\Logs\LogStore;
 use App\Support\Machines\MachinePolicies;
 use App\Support\Machines\ServiceClones;
@@ -146,7 +148,7 @@ class MachineServiceController extends Controller
                     || (DeploySource::fromRepoUrl($deploy->command['job']['repo'] ?? null)?->usable() ?? false),
                 'deployedAt' => $deploy->created_at?->toIso8601String(),
                 'snapshotBefore' => $machine->snapshotsBeforeDeploy($deploy->service),
-                'deployOnPush' => DeployOnPush::repoName($deploy->command['job']['repo'] ?? null) === null ? null : DeployOnPush::setting($machine, (string) $deploy->service),
+                'deployOnPush' => DeployOnPush::supports($workspace, is_string($deploy->command['job']['repo'] ?? null) ? $deploy->command['job']['repo'] : null) ? DeployOnPush::setting($machine, (string) $deploy->service) : null,
                 'database' => AppVersionController::databaseProps($machine, $deploy),
                 'site' => SiteSwitches::props($machine, (string) $deploy->service, (array) ($deploy->command['job']['domains'] ?? [])),
                 'traffic' => SiteTraffic::state($machine, (string) $deploy->service, (array) ($deploy->command['job']['domains'] ?? [])),
@@ -166,6 +168,8 @@ class MachineServiceController extends Controller
             ],
             'deploy' => ($name = self::appName($found)) === null ? null : AppPage::props($machine, $name),
             'deployHistory' => Inertia::defer(fn () => ($name = self::appName($found)) === null ? [] : AppDeploys::history($machine, $name, 20)->map(fn (DaemonJob $job) => AppDeploys::row($job))->values()->all()),
+            'cloudflare' => $deploy === null || ! app(CloudflareDns::class)->connected($workspace->id) ? null : Inertia::defer(fn () => app(CloudflareDns::class)->appProps($machine, (string) $deploy->service, (array) ($deploy->command['job']['domains'] ?? []))),
+            'sentry' => $deploy === null ? null : Inertia::defer(fn () => SentryReleases::props($machine, (string) $deploy->service, array_map(fn (array $v) => $v['commit'], AppVersions::for($machine, (string) $deploy->service)))),
             'siteTraffic' => self::siteTraffic($machine, $found),
             'commandsEnabled' => (bool) config('daemon.commands_enabled'),
             'files' => fn () => [

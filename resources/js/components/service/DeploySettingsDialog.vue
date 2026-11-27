@@ -5,6 +5,11 @@ import { computed, ref, watch } from 'vue';
 import DashButton from '@/components/dash/DashButton.vue';
 import DashSwitch from '@/components/dash/DashSwitch.vue';
 import InputError from '@/components/InputError.vue';
+import { getJson } from '@/components/integrations/incidents';
+import type {
+    SentryProject,
+    ServiceSentry,
+} from '@/components/integrations/incidents';
 import type { ServiceApp } from '@/components/service/serviceTypes';
 import {
     Dialog,
@@ -18,6 +23,7 @@ import { SelectMenu } from '@/components/ui/select';
 import { networkMessage, responseError } from '@/lib/errors';
 import { onWorkspace } from '@/lib/workspaceRoute';
 import appsRoutes from '@/routes/workspace/apps';
+import integrationRoutes from '@/routes/workspace/integrations';
 
 const open = defineModel<boolean>('open', { required: true });
 
@@ -25,6 +31,7 @@ const props = defineProps<{
     app: ServiceApp;
     workspaceSlug: string;
     machineId: number;
+    sentry?: ServiceSentry | null;
 }>();
 
 const branch = ref('main');
@@ -34,6 +41,34 @@ const snapshot = ref(true);
 const database = ref('auto');
 const error = ref<string | null>(null);
 const saving = ref(false);
+const sentryAccount = ref<number | null>(null);
+const sentryProject = ref('');
+const sentryProjects = ref<SentryProject[]>([]);
+const sentryLoading = ref(false);
+const sentryError = ref<string | null>(null);
+
+async function loadSentryProjects(account: number | null): Promise<void> {
+    sentryProjects.value = [];
+    sentryError.value = null;
+    if (account === null) return;
+    sentryLoading.value = true;
+    try {
+        sentryProjects.value = (
+            await getJson<{ projects: SentryProject[] }>(
+                onWorkspace(
+                    integrationRoutes.options({
+                        workspace: props.workspaceSlug,
+                        integration: account,
+                    }),
+                ).url,
+            )
+        ).projects;
+    } catch (e) {
+        sentryError.value = e instanceof Error ? e.message : String(e);
+    } finally {
+        sentryLoading.value = false;
+    }
+}
 
 watch(
     open,
@@ -45,9 +80,98 @@ watch(
         snapshot.value = props.app.snapshotBefore;
         database.value = props.app.database.setting;
         error.value = null;
+        sentryAccount.value =
+            props.sentry?.link?.integrationId ??
+            (props.sentry?.accounts.length === 1
+                ? props.sentry.accounts[0].id
+                : null);
+        sentryProject.value = props.sentry?.link?.project ?? '';
+        if (props.sentry?.accounts.length)
+            void loadSentryProjects(sentryAccount.value);
     },
     { immediate: true },
 );
+
+const sentryAccountOptions = computed(() =>
+    (props.sentry?.accounts ?? []).map((a) => ({
+        value: a.id,
+        label: a.label,
+    })),
+);
+const sentryProjectOptions = computed(() => {
+    const listed = sentryProjects.value.map((p) => ({
+        value: p.slug,
+        label: p.name,
+    }));
+    const link = props.sentry?.link;
+    if (
+        link &&
+        link.integrationId === sentryAccount.value &&
+        !listed.some((p) => p.value === link.project)
+    ) {
+        listed.unshift({ value: link.project, label: link.projectName });
+    }
+
+    return [{ value: '', label: trans('Don’t send releases') }, ...listed];
+});
+const sentryChanged = computed(() => {
+    const link = props.sentry?.link;
+    if (!props.sentry?.accounts.length) return false;
+    if (!sentryProject.value) return !!link;
+
+    return (
+        !link ||
+        link.integrationId !== sentryAccount.value ||
+        link.project !== sentryProject.value
+    );
+});
+
+function pickSentryAccount(value: string | number | null): void {
+    sentryAccount.value = value === null || value === '' ? null : Number(value);
+    sentryProject.value = '';
+    void loadSentryProjects(sentryAccount.value);
+}
+
+async function saveSentry(): Promise<boolean> {
+    const response = await fetch(
+        onWorkspace(
+            appsRoutes.sentry({
+                workspace: props.workspaceSlug,
+                machine: props.machineId,
+                service: props.app.service,
+            }),
+        ).url,
+        {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN':
+                    document.querySelector<HTMLMetaElement>(
+                        'meta[name="csrf-token"]',
+                    )?.content ?? '',
+            },
+            body: JSON.stringify(
+                sentryProject.value && sentryAccount.value
+                    ? {
+                          integration: sentryAccount.value,
+                          project: sentryProject.value,
+                      }
+                    : { integration: null },
+            ),
+        },
+    ).catch(() => null);
+    if (!response?.ok) {
+        error.value = response
+            ? await responseError(response)
+            : networkMessage();
+
+        return false;
+    }
+
+    return true;
+}
 
 const databaseOptions = computed(() => {
     const db = props.app.database;
@@ -89,8 +213,14 @@ async function save(): Promise<void> {
             .map(([key, [now]]) => [key, now]),
     );
     if (Object.keys(body).length === 0) {
+        if (sentryChanged.value && !(await saveSentry())) {
+            saving.value = false;
+
+            return;
+        }
         open.value = false;
         saving.value = false;
+        if (sentryChanged.value) router.reload({ only: ['app', 'sentry'] });
 
         return;
     }
@@ -116,16 +246,22 @@ async function save(): Promise<void> {
             body: JSON.stringify(body),
         },
     ).catch(() => null);
-    saving.value = false;
     if (!response?.ok) {
+        saving.value = false;
         error.value = response
             ? await responseError(response)
             : networkMessage();
 
         return;
     }
+    if (sentryChanged.value && !(await saveSentry())) {
+        saving.value = false;
+
+        return;
+    }
+    saving.value = false;
     open.value = false;
-    router.reload({ only: ['app'] });
+    router.reload({ only: ['app', 'sentry'] });
 }
 
 const row = 'flex items-start justify-between gap-4 py-3';
@@ -247,6 +383,52 @@ const row = 'flex items-start justify-between gap-4 py-3';
                         :options="databaseOptions"
                     />
                 </div>
+                <template v-if="sentry?.accounts.length">
+                    <div v-if="sentry.accounts.length > 1" :class="row">
+                        <span class="flex flex-col gap-0.5">
+                            <span class="text-[13px]/5 text-fg-primary">{{
+                                $t('Sentry account')
+                            }}</span>
+                        </span>
+                        <SelectMenu
+                            :model-value="sentryAccount"
+                            class="ds-raised-button h-8 w-40 shrink-0 text-[13px]"
+                            :options="sentryAccountOptions"
+                            :placeholder="$t('Pick one')"
+                            @update:model-value="pickSentryAccount"
+                        />
+                    </div>
+                    <div :class="row">
+                        <span class="flex flex-col gap-0.5">
+                            <span class="text-[13px]/5 text-fg-primary">{{
+                                $t('Sentry project')
+                            }}</span>
+                            <span
+                                class="text-[12px]/4"
+                                :class="
+                                    sentryError
+                                        ? 'text-status-down'
+                                        : 'text-fg-muted'
+                                "
+                                >{{
+                                    sentryError ??
+                                    $t(
+                                        'Each deploy makes a release there with its commit, and sets SENTRY_RELEASE on the app.',
+                                    )
+                                }}</span
+                            >
+                        </span>
+                        <SelectMenu
+                            v-model="sentryProject"
+                            class="ds-raised-button h-8 w-40 shrink-0 text-[13px]"
+                            :options="sentryProjectOptions"
+                            :placeholder="
+                                sentryLoading ? $t('Loading') : undefined
+                            "
+                            :disabled="!sentryAccount || sentryLoading"
+                        />
+                    </div>
+                </template>
                 <div class="flex flex-col gap-3 pt-4">
                     <InputError :message="error ?? undefined" />
                     <div class="flex justify-end gap-2">

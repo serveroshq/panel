@@ -159,6 +159,19 @@ function dismiss(ids: string[]): void {
                         class="focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
                         @click="dismiss([issue.id])"
                     />
+                    <a
+                        v-if="issue.linked"
+                        :href="issue.linked.url"
+                        target="_blank"
+                        rel="noopener"
+                        class="flex h-6 items-center gap-1 rounded-[6px] px-1.5 font-ui-mono text-[12px]/4 text-fg-secondary hover:bg-surface-hover hover:text-fg-primary focus-visible:outline-2 focus-visible:outline-(--ds-ring)"
+                        :title="$t('Its issue in Linear')"
+                        >{{ issue.linked.key
+                        }}<FilledIcon
+                            name="open-fill"
+                            :size="11"
+                            class="text-fg-muted"
+                    /></a>
                     <DashButton
                         size="sm"
                         :href="issueHref(issue.href, page.props.workspace.url)"

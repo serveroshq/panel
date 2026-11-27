@@ -89,7 +89,7 @@ test('the page lists the whole catalogue by category, with nothing connected in 
         ->and($items['docker-hub']['action'])->toBe(['label' => 'Connect', 'href' => '/settings/general#registries'])
         ->and($items['backblaze']['action'])->toBe(['label' => 'Connect', 'href' => '/backups/destinations'])
         ->and($items['anthropic']['action'])->toBe(['label' => 'Connect', 'href' => '/settings/mcp'])
-        ->and($items['pagerduty']['action'])->toBe(['label' => 'Connect', 'href' => '/workflows?new']);
+        ->and($items['pagerduty']['action'])->toBe(['label' => 'Connect', 'connect' => 'pagerduty']);
 });
 
 test('what the panel can’t connect yet is never connected and opens the not available dialog', function () {
@@ -99,9 +99,13 @@ test('what the panel can’t connect yet is never connected and opens the not av
 
     $items = integrationsByKey($workspace);
 
-    foreach (['gitlab', 'sentry', 'linear', 'teams', 'hetzner', 'digitalocean', 'aws', 'synteq', 'ovhcloud', 'vultr', 'proxmox', 'tailscale', 'n8n', 'grafana', 'cloudflare'] as $key) {
+    foreach (['teams', 'aws', 'synteq', 'ovhcloud', 'proxmox', 'tailscale', 'n8n', 'grafana'] as $key) {
         expect($items[$key]['connected'])->toBeFalse($key)
             ->and($items[$key]['action'])->toBe(['label' => 'Connect', 'unavailable' => true], $key);
+    }
+    foreach (['hetzner', 'digitalocean', 'vultr', 'gitlab', 'sentry', 'pagerduty', 'linear'] as $key) {
+        expect($items[$key]['connected'])->toBeFalse($key)
+            ->and($items[$key]['action'])->toBe(['label' => 'Connect', 'connect' => $key], $key);
     }
 });
 
@@ -201,7 +205,7 @@ test('container registries, backup destinations and machine tunnels come from wh
         ->and($connections["backups-{$s3->id}"])->toMatchArray(['name' => 'Amazon S3', 'logo' => 'aws', 'detail' => 'No machine backs up here yet'])
         ->and($connections["backups-{$sftp->id}"])->toMatchArray(['name' => 'spare-1 over SFTP', 'logo' => 'Vultr', 'detail' => 'Weekly backups of db-1'])
         ->and($items['cloudflare']['connected'])->toBeTrue()
-        ->and($items['cloudflare']['action'])->toBe(['label' => 'Manage', 'href' => "/machines/{$web->id}/settings"])
+        ->and($items['cloudflare']['action'])->toBe(['label' => 'Connect', 'connect' => 'cloudflare'])
         ->and($connections['cloudflare']['detail'])->toBe('Tunnel on web-1')
         ->and($items['aws']['connected'])->toBeFalse()
         ->and($items['hetzner']['connected'])->toBeFalse();
@@ -264,7 +268,7 @@ test('people without the permission a setting needs see the page read-only', fun
     $items = integrationsByKey($workspace, $member);
     expect($items['telegram']['action'])->toBe(['label' => 'Manage', 'alerts' => true])
         ->and($items['anthropic']['action'])->toBeNull()
-        ->and($items['gitlab']['action'])->toBe(['label' => 'Connect', 'unavailable' => true]);
+        ->and($items['gitlab']['action'])->toBe(['label' => 'Connect', 'connect' => 'gitlab']);
 
     $settingsOnly = $workspace->customRoles()->create(['name' => 'Settings', 'permissions' => ['manage-settings']]);
     $keeper = integrationsMember($workspace, 'viewer', $settingsOnly->id);
@@ -295,10 +299,10 @@ test('the Integrations card shows on Home once for people who can connect, until
     $home($member)->assertInertia(fn (Assert $page) => $page->where('integrationsPromo', false));
 });
 
-test('Integrations sits in the main sidebar under Activity', function () {
+test('Integrations sits in the main sidebar under Activity, and stays lit on an account page', function () {
     $nav = (string) file_get_contents(resource_path('js/components/workspace/workspaceNav.ts'));
 
-    expect($nav)->toMatch("/key: 'activity',.*?key: 'integrations',\s+label: trans\('Integrations'\),\s+icon: 'package-fill',\s+href: url\(onWorkspace\(integrations\(slug\)\)\),\s+section: 'menu',\s+current: is\(component, 'workspace\/Integrations'\)/s")
+    expect($nav)->toMatch("/key: 'activity',.*?key: 'integrations',\s+label: trans\('Integrations'\),\s+icon: 'package-fill',\s+href: url\(onWorkspace\(integrations\(slug\)\)\),\s+section: 'menu',\s+current: is\(\s*component,\s*'workspace\/Integrations',\s*'workspace\/IntegrationShow',\s*\)/s")
         ->and(route('workspace.integrations', ['workspace' => 'acme'], false))->toEndWith('/acme/integrations');
 });
 
@@ -309,7 +313,6 @@ test('a self-hosted panel says what works today in the not available dialog', fu
 
     $items = integrationsByKey($workspace, $member);
 
-    expect($items['cloudflare']['action'])->toMatchArray(['label' => 'Connect', 'unavailable' => true])
-        ->and($items['cloudflare']['action']['hint'])->toMatchArray(['href' => '/machines', 'label' => 'Open machines'])
+    expect($items['cloudflare']['action'])->toBe(['label' => 'Connect', 'connect' => 'cloudflare'])
         ->and($items['github']['action']['hint'])->toMatchArray(['href' => null, 'label' => null]);
 });

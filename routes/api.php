@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\DeployHookController;
 use App\Http\Controllers\Api\GitSourceController;
 use App\Http\Controllers\Api\V1\ApiController;
 use App\Http\Controllers\GitHubWebhookController;
+use App\Http\Controllers\GitLabWebhookController;
 use App\Http\Controllers\WorkflowController;
 use App\Http\Controllers\WorkspaceDomainController;
 use App\Http\Middleware\AuthenticateApiKey;
@@ -25,6 +26,7 @@ Route::post('gateway/machines/{uid}/ingest', [DaemonGatewayController::class, 'i
 Route::post('gateway/machines/{uid}/closed', [DaemonGatewayController::class, 'closed'])->middleware('throttle:gateway-closed');
 Route::get('internal/tls-check', [WorkspaceDomainController::class, 'tlsCheck'])->name('domains.tls-check');
 Route::post('github/webhook', GitHubWebhookController::class)->middleware('throttle:300,1')->name('github.webhook');
+Route::post('gitlab/webhook/{hook}', GitLabWebhookController::class)->whereUuid('hook')->middleware('throttle:300,1')->name('gitlab.webhook');
 Route::post('hooks/workflows/{token}', [WorkflowController::class, 'hook'])->middleware('throttle:60,1')->where('token', 'wh_[A-Za-z0-9]{40}')->name('workflows.hook');
 Route::post('hooks/deploy/{token}', DeployHookController::class)->middleware('throttle:60,1')->where('token', DeployHooks::TOKEN_PATTERN)->name('deploy-hooks.receive');
 

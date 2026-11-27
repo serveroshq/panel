@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\AgentFix;
 use App\Models\Backup;
 use App\Models\BackupDestination;
+use App\Models\IntegrationIncident;
 use App\Models\Machine;
 use App\Models\MachinePackageUpdate;
 use App\Models\MachineVulnerability;
@@ -32,7 +33,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * @phpstan-type HomeIssue array{id: string, severity: string, title: string, detail: string, brief: string, href: string, action: string, since: string|null, machineId: int|null, ask: string|null, dismissible: bool}
+ * @phpstan-type HomeIssue array{id: string, severity: string, title: string, detail: string, brief: string, href: string, action: string, since: string|null, machineId: int|null, ask: string|null, dismissible: bool, linked?: array{key: string, url: string}|null}
  * @phpstan-type Security array{package: string|null, severity: string|null, cves: int, exploited: int, machines: list<array{id: int, name: string}>, affected: int, critical: int, high: int, updates: int, checkedAt: string|null}
  */
 class WorkspaceHomeController extends Controller
@@ -301,12 +302,17 @@ class WorkspaceHomeController extends Controller
         }
 
         $monitors = $workspace->monitors()->get()->keyBy('id');
+        $linked = IntegrationIncident::query()->whereNotNull('open_key')->whereNotNull('external_url')
+            ->whereHas('integration', fn ($q) => $q->where('workspace_id', $workspace->id))
+            ->get()->mapWithKeys(fn (IntegrationIncident $i) => [(string) $i->open_key => $i->link()]);
         foreach ($health->issues($workspace, $machines) as $issue) {
+            $source = preg_match('/^(monitor|machine)-(\d+)-(down|offline)$/', $issue['id'], $m) === 1 ? "{$m[1]}:{$m[2]}" : null;
             $issues[] = [
                 ...$issue,
                 'brief' => $this->brief($issue, $machines, $monitors),
                 'href' => $workspace->url($issue['href']),
                 'dismissible' => true,
+                'linked' => $source === null ? null : $linked->get($source),
             ];
         }
 

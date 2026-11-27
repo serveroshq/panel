@@ -8,6 +8,7 @@ use App\Models\MonitorIncident;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Notifications\MonitorAlert;
+use App\Support\Integrations\Incidents\IncidentRouter;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -24,6 +25,7 @@ class MonitorAlerts
             $monitor->target(),
             $incident->cause,
         ], bad: true);
+        app(IncidentRouter::class)->monitorDown($monitor, $incident);
     }
 
     public function recovered(Monitor $monitor, ?MonitorIncident $incident): void
@@ -36,6 +38,7 @@ class MonitorAlerts
             $monitor->target(),
             $after,
         ], bad: false);
+        app(IncidentRouter::class)->monitorUp($monitor, $incident);
     }
 
     public function certificateExpiring(Monitor $monitor): void

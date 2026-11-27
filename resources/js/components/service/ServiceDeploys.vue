@@ -5,6 +5,8 @@ import { ref, watch } from 'vue';
 import DashButton from '@/components/dash/DashButton.vue';
 import DashSwitch from '@/components/dash/DashSwitch.vue';
 import DashTray from '@/components/dash/DashTray.vue';
+import FilledIcon from '@/components/icons/FilledIcon.vue';
+import type { ServiceSentry } from '@/components/integrations/incidents';
 import type { AppVersion, ServiceApp } from '@/components/service/serviceTypes';
 import { networkMessage, responseError } from '@/lib/errors';
 import { timeAgo } from '@/lib/timeAgo';
@@ -19,6 +21,7 @@ const props = defineProps<{
     canManage: boolean;
     canRollBack: boolean;
     messages?: Record<string, string>;
+    sentry?: ServiceSentry | null;
 }>();
 
 const emit = defineEmits<{
@@ -93,6 +96,15 @@ function meta(version: AppVersion): string {
         .join(' · ');
 }
 
+function issues(count: number | null): string {
+    if (count === null) return trans('Sentry');
+    if (count === 0) return trans('No new issues');
+
+    return count === 1
+        ? trans('1 new issue')
+        : trans(':count new issues', { count: String(count) });
+}
+
 function drop(event: DragEvent): void {
     dragging.value = false;
     if (props.app && props.canManage)
@@ -160,6 +172,21 @@ function drop(event: DragEvent): void {
                         class="shrink-0 text-[12px]/4 tracking-[-0.005em] whitespace-nowrap text-fg-muted max-sm:hidden"
                         >{{ meta(version) }}</span
                     >
+                    <a
+                        v-if="sentry?.releases[version.commit]"
+                        :href="sentry.releases[version.commit].url"
+                        target="_blank"
+                        rel="noopener"
+                        class="flex shrink-0 items-center gap-1 rounded-[5px] px-1 text-[12px]/4 tracking-[-0.005em] whitespace-nowrap hover:bg-surface-hover hover:text-fg-primary focus-visible:outline-2 focus-visible:outline-(--ds-ring)"
+                        :class="
+                            (sentry.releases[version.commit].newIssues ?? 0) > 0
+                                ? 'text-status-pending'
+                                : 'text-fg-muted'
+                        "
+                        :title="$t('Its release in Sentry')"
+                        >{{ issues(sentry.releases[version.commit].newIssues)
+                        }}<FilledIcon name="open-fill" :size="11"
+                    /></a>
                     <span
                         v-if="version.live"
                         class="flex h-[22px] shrink-0 items-center gap-[5px] rounded-[11px] bg-status-live/14 pr-2 pl-[7px] text-[12px]/4 font-medium tracking-[-0.005em] text-status-live"

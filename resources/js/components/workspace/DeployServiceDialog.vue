@@ -44,7 +44,10 @@ import { envPayload, envRow } from '@/components/deploy/envFile';
 import type { EnvRow } from '@/components/deploy/envFile';
 import PickerButton from '@/components/deploy/PickerButton.vue';
 import RepoList from '@/components/deploy/RepoList.vue';
-import type { GitHubRepositories } from '@/components/deploy/RepoList.vue';
+import type {
+    GitHubRepositories,
+    GitLabRepositories,
+} from '@/components/deploy/RepoList.vue';
 import ScanSummary from '@/components/deploy/ScanSummary.vue';
 import type { ScanDetection } from '@/components/deploy/ScanSummary.vue';
 import {
@@ -88,6 +91,7 @@ import {
 import { toast } from '@/lib/toast';
 import { onWorkspace, workspacePath } from '@/lib/workspaceRoute';
 import githubRoutes from '@/routes/workspace/github';
+import gitlabRoutes from '@/routes/workspace/gitlab';
 import machinesRoutes from '@/routes/workspace/machines';
 import servicesRoutes from '@/routes/workspace/services';
 import settingsRoutes from '@/routes/workspace/settings';
@@ -467,6 +471,7 @@ const preferredSetup = ref<string | null>(null);
 let scanToken = 0;
 
 const github = ref<GitHubRepositories | null>(null);
+const gitlab = ref<GitLabRepositories | null>(null);
 const branches = ref<{ repo: string; names: string[] } | null>(null);
 
 const branchOptions = computed<SelectMenuOption<string>[]>(() => {
@@ -485,6 +490,29 @@ const branchOptions = computed<SelectMenuOption<string>[]>(() => {
 });
 
 async function loadRepositories(): Promise<void> {
+    await Promise.all([loadGitHub(), loadGitLab()]);
+}
+
+async function loadGitLab(): Promise<void> {
+    if (gitlab.value) {
+        return;
+    }
+
+    try {
+        const response = await request(
+            onWorkspace(gitlabRoutes.repositories(page.props.workspace.slug))
+                .url,
+        );
+
+        gitlab.value = response.ok
+            ? await response.json()
+            : { connected: false, accounts: [], repositories: [] };
+    } catch {
+        gitlab.value = { connected: false, accounts: [], repositories: [] };
+    }
+}
+
+async function loadGitHub(): Promise<void> {
     if (github.value || !page.props.githubApp) {
         return;
     }
@@ -507,19 +535,25 @@ async function loadBranches(found: Detection): Promise<void> {
     const match = found.upload
         ? null
         : found.repo.match(/^https:\/\/github\.com\/([^/]+)\/(.+?)(?:\.git)?$/);
+    const fromGitLab =
+        !found.upload && !match && found.repo.startsWith('https://');
 
-    if (!match) {
+    if (!match && !fromGitLab) {
         return;
     }
 
     try {
         const response = await request(
             onWorkspace(
-                githubRoutes.branches({
-                    workspace: page.props.workspace.slug,
-                    owner: match[1],
-                    repo: match[2],
-                }),
+                match
+                    ? githubRoutes.branches({
+                          workspace: page.props.workspace.slug,
+                          owner: match[1],
+                          repo: match[2],
+                      })
+                    : gitlabRoutes.branches(page.props.workspace.slug, {
+                          query: { repo: found.repo },
+                      }),
             ).url,
         );
         const names = response.ok ? (await response.json()).branches : null;
@@ -2343,11 +2377,15 @@ watch(
                                             autocomplete="off"
                                             spellcheck="false"
                                             :placeholder="
-                                                github?.connected
+                                                gitlab?.connected
                                                     ? $t(
-                                                          'Paste a link, or search your GitHub repositories',
+                                                          'Search repos, or paste a URL',
                                                       )
-                                                    : 'https://github.com/you/app'
+                                                    : github?.connected
+                                                      ? $t(
+                                                            'Paste a link, or search your GitHub repositories',
+                                                        )
+                                                      : 'https://github.com/you/app'
                                             "
                                             class="font-ui-mono text-[12.5px]"
                                             @input="detectError = null"
@@ -2362,23 +2400,34 @@ watch(
                                     </p>
                                     <p v-else :class="hint">
                                         {{
-                                            $t(
-                                                'GitHub, GitLab, Gitea, Bitbucket or your own git server. For a private one elsewhere, paste its SSH address, like git@gitlab.com:you/app.git.',
-                                            )
+                                            gitlab?.connected
+                                                ? $t(
+                                                      'GitHub, GitLab, Gitea, Bitbucket or your own git server. For a private one elsewhere, paste its SSH address, like git@git.example.com:you/app.git.',
+                                                  )
+                                                : $t(
+                                                      'GitHub, GitLab, Gitea, Bitbucket or your own git server. For a private one elsewhere, paste its SSH address, like git@gitlab.com:you/app.git.',
+                                                  )
                                         }}
                                     </p>
                                 </form>
 
                                 <RepoList
-                                    v-if="page.props.githubApp"
+                                    v-if="
+                                        page.props.githubApp ||
+                                        gitlab?.connected
+                                    "
                                     v-model:query="repoInput"
                                     searchless
                                     :github="github"
+                                    :gitlab="gitlab"
                                     :available="page.props.githubApp"
                                     :connect-url="
                                         workspacePath(
                                             '/settings/github/connect',
                                         )
+                                    "
+                                    :gitlab-connect-url="
+                                        workspacePath('/integrations')
                                     "
                                     :busy="null"
                                     :disabled="busy"

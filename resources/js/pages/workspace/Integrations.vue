@@ -10,12 +10,14 @@ import DashTray from '@/components/dash/DashTray.vue';
 import SearchWell from '@/components/dash/SearchWell.vue';
 import FilledIcon from '@/components/icons/FilledIcon.vue';
 import type { FilledIconName } from '@/components/icons/filledIcons';
+import ConnectDialog from '@/components/integrations/ConnectDialog.vue';
 import IntegrationLogo from '@/components/integrations/IntegrationLogo.vue';
 import IntegrationRow from '@/components/integrations/IntegrationRow.vue';
 import type {
     Integration,
     IntegrationCategory,
     IntegrationConnection,
+    ProviderInfo,
 } from '@/components/integrations/integrations';
 import UnavailableDialog from '@/components/integrations/UnavailableDialog.vue';
 import AlertsDialog from '@/components/monitors/AlertsDialog.vue';
@@ -29,6 +31,7 @@ type Props = {
     integrations: Integration[];
     connections: IntegrationConnection[];
     canConnect: boolean;
+    providers: Record<string, ProviderInfo>;
     alerts: {
         email: boolean;
         webhook: string | null;
@@ -112,8 +115,25 @@ const groups = computed(() => {
 const alertsOpen = ref(false);
 const unavailable = ref<Integration | null>(null);
 const unavailableOpen = ref(false);
+const connecting = ref<Integration | null>(null);
+const connectOpen = ref(false);
+const connectProvider = computed<ProviderInfo | null>(() =>
+    connecting.value?.action?.connect
+        ? (props.providers[connecting.value.action.connect] ?? null)
+        : null,
+);
 
 function act(integration: Integration): void {
+    if (
+        integration.action?.connect &&
+        props.providers[integration.action.connect]
+    ) {
+        connecting.value = integration;
+        connectOpen.value = true;
+
+        return;
+    }
+
     if (integration.action?.unavailable) {
         unavailable.value = integration;
         unavailableOpen.value = true;
@@ -305,8 +325,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                     >
                                 </span>
                                 <span
-                                    class="size-1.5 shrink-0 rounded-full bg-status-live"
-                                    :aria-label="$t('Connected')"
+                                    class="size-1.5 shrink-0 rounded-full"
+                                    :class="
+                                        connection.failing
+                                            ? 'bg-status-down'
+                                            : 'bg-status-live'
+                                    "
+                                    :aria-label="
+                                        connection.failing
+                                            ? $t('Needs attention')
+                                            : $t('Connected')
+                                    "
                                 />
                             </component>
                         </li>
@@ -354,6 +383,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
     </div>
 
     <AlertsDialog v-if="alerts" v-model:open="alertsOpen" :alerts="alerts" />
+    <ConnectDialog
+        v-model:open="connectOpen"
+        :provider="connectProvider"
+        :logo="connecting?.logo"
+    />
     <UnavailableDialog
         v-model:open="unavailableOpen"
         :integration="unavailable"

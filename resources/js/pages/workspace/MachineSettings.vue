@@ -2,10 +2,21 @@
 import { Head, router } from '@inertiajs/vue3';
 import { Plus } from '@lucide/vue';
 import { trans } from 'laravel-vue-i18n';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+    computed,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    useTemplateRef,
+    watch,
+} from 'vue';
 import DashButton from '@/components/dash/DashButton.vue';
 import DashHeader from '@/components/dash/DashHeader.vue';
+import type { MachineCloudServer } from '@/components/integrations/integrations';
 import type { Machine } from '@/components/machines/machines';
+import CloudServerTray from '@/components/machines/server/CloudServerTray.vue';
+import MachineServerActions from '@/components/machines/server/MachineServerActions.vue';
+import type { ServerAction } from '@/components/machines/server/MachineServerActions.vue';
 import LogRulesCard from '@/components/machines/settings/LogRulesCard.vue';
 import type {
     LogSkipProps,
@@ -50,7 +61,15 @@ const props = defineProps<{
     environments: string[];
     collectedData?: CollectedData;
     skippedLogs?: SkippedLogs;
+    cloudServer?: MachineCloudServer | null;
 }>();
+
+const serverActions =
+    useTemplateRef<InstanceType<typeof MachineServerActions>>('serverActions');
+
+function serverAction(action: ServerAction): void {
+    serverActions.value?.open(action);
+}
 
 const args = computed(() => ({
     workspace: props.workspace.slug,
@@ -226,6 +245,11 @@ onBeforeUnmount(() => {
                         :can-manage="canManage"
                         @saved="markSaved"
                     />
+                    <CloudServerTray
+                        v-if="cloudServer && canManage"
+                        :cloud="cloudServer"
+                        @action="serverAction"
+                    />
                     <LogRulesCard
                         v-if="machine.id"
                         :machine-id="machine.id"
@@ -277,4 +301,10 @@ onBeforeUnmount(() => {
             />
         </div>
     </div>
+    <MachineServerActions
+        v-if="machine.id && canManage && cloudServer"
+        ref="serverActions"
+        :machine="{ id: machine.id, name: machine.name }"
+        :cloud="cloudServer"
+    />
 </template>

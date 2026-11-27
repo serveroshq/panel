@@ -4,6 +4,7 @@ import { router, usePage } from '@inertiajs/vue3';
 import { ArrowLeft, Check, Plus } from '@lucide/vue';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { Component } from 'vue';
+import BrandLogo from '@/components/dash/BrandLogo.vue';
 import DashButton from '@/components/dash/DashButton.vue';
 import ExtensionSlot from '@/components/ExtensionSlot.vue';
 import FilledIcon from '@/components/icons/FilledIcon.vue';
@@ -36,6 +37,8 @@ import {
     options as connectOptions,
     status as connectStatus,
 } from '@/routes/workspace/machines/connect';
+import workspaceRoutes from '@/routes/workspace';
+import integrationRoutes from '@/routes/workspace/integrations';
 import machinesRoutes from '@/routes/workspace/machines';
 import settingsRoutes from '@/routes/workspace/settings';
 import policyRoutes from '@/routes/workspace/settings/machine-policies';
@@ -89,6 +92,13 @@ type Options = {
     defaultPolicyId: number;
     policies: MachinePolicy[];
     groups: { id: number; name: string; policyId: number | null }[];
+    clouds?: {
+        id: number;
+        provider: string;
+        name: string;
+        label: string;
+        canCreate: boolean;
+    }[];
 };
 
 const open = ref(false);
@@ -567,14 +577,77 @@ const fieldClass =
                 </div>
 
                 <div
-                    v-if="method !== 'command'"
+                    v-if="method === 'provider' && options?.clouds?.length"
+                    class="flex flex-col gap-3 p-5"
+                >
+                    <p class="text-[13px]/[19px] text-fg-tertiary">
+                        {{
+                            $t(
+                                'Make a server that joins on its own, or import one you have.',
+                            )
+                        }}
+                    </p>
+                    <div
+                        class="flex flex-col rounded-[10px] border-[0.5px] border-edge-card bg-surface-card"
+                    >
+                        <div
+                            v-for="cloud in options.clouds"
+                            :key="cloud.id"
+                            class="flex items-center gap-2.5 border-t-[0.5px] border-edge px-3 py-2.5 first:border-t-0"
+                        >
+                            <BrandLogo :name="cloud.provider" />
+                            <span class="flex min-w-0 flex-1 flex-col">
+                                <span
+                                    class="truncate text-[13px]/5 font-medium text-fg-primary"
+                                    >{{ cloud.label }}</span
+                                >
+                                <span class="text-[12px]/4 text-fg-muted">{{
+                                    cloud.name
+                                }}</span>
+                            </span>
+                            <DashButton
+                                size="sm"
+                                :label="$t('Import')"
+                                :href="
+                                    onWorkspace(
+                                        integrationRoutes.show({
+                                            workspace: slug,
+                                            integration: cloud.id,
+                                        }),
+                                    ).url
+                                "
+                            />
+                            <DashButton
+                                v-if="cloud.canCreate"
+                                size="sm"
+                                variant="primary"
+                                :icon="Plus"
+                                :label="$t('New server')"
+                                :href="
+                                    onWorkspace(
+                                        integrationRoutes.show(
+                                            {
+                                                workspace: slug,
+                                                integration: cloud.id,
+                                            },
+                                            { query: { new: 1 } },
+                                        ),
+                                    ).url
+                                "
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    v-else-if="method !== 'command'"
                     class="flex flex-col items-start gap-3 p-5"
                 >
                     <p class="text-[13.5px]/[22px] font-medium text-fg-primary">
                         {{
                             method === 'ssh'
                                 ? $t('Over SSH is coming')
-                                : $t('From a provider is coming')
+                                : $t('Connect a cloud account first')
                         }}
                     </p>
                     <p class="text-[13px]/[19px] text-fg-tertiary">
@@ -584,16 +657,29 @@ const fieldClass =
                                       'Soon you can give ServerOS an address, a user and a key, and it installs the daemon for you. For now, run the one command on the server.',
                                   )
                                 : $t(
-                                      'Soon you can sign in to your provider and pick a server, and ServerOS sets it up. For now, run the one command on the server.',
+                                      'Connect Hetzner Cloud in Integrations, then make servers that join on their own, or import the ones you have.',
                                   )
                         }}
                     </p>
-                    <DashButton
-                        size="sm"
-                        icon="terminal-fill"
-                        :label="$t('Use one command')"
-                        @click="method = 'command'"
-                    />
+                    <div class="flex flex-wrap gap-2">
+                        <DashButton
+                            v-if="method === 'provider'"
+                            size="sm"
+                            variant="primary"
+                            icon="plug"
+                            :label="$t('Open Integrations')"
+                            :href="
+                                onWorkspace(workspaceRoutes.integrations(slug))
+                                    .url
+                            "
+                        />
+                        <DashButton
+                            size="sm"
+                            icon="terminal-fill"
+                            :label="$t('Use one command')"
+                            @click="method = 'command'"
+                        />
+                    </div>
                 </div>
 
                 <form

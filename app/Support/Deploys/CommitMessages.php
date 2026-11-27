@@ -4,12 +4,13 @@ namespace App\Support\Deploys;
 
 use App\Models\Workspace;
 use App\Support\GitHub\GitHubApp;
+use App\Support\Integrations\GitLab\GitLabRepositories;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 
 /**
  * The first line of each deployed commit's message, read from GitHub through
- * the workspace's GitHub App. A commit never changes, so an answer is kept
+ * the workspace's GitHub App, or from a connected GitLab account. A commit never changes, so an answer is kept
  * for good; a miss is tried again after an hour.
  */
 final class CommitMessages
@@ -24,7 +25,7 @@ final class CommitMessages
     {
         $name = DeployOnPush::repoName($repo);
         if ($name === null) {
-            return [];
+            return is_string($repo) ? app(GitLabRepositories::class)->commitMessages($workspace, $repo, $commits) : [];
         }
         [$owner, $project] = explode('/', $name, 2);
         $token = false;

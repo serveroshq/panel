@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\DaemonJobQueue;
 use App\Support\GitHub\GitHubApp;
+use App\Support\Integrations\GitLab\GitLabRepositories;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -17,7 +18,7 @@ use RuntimeException;
 /**
  * Apps set to deploy each push to a branch: the switch on the app's page,
  * so the common case needs no workflow. A push to that branch of the app's
- * GitHub repository deploys the pushed commit, with everything else as the
+ * GitHub repository (or GitLab project) deploys the pushed commit, with everything else as the
  * app's last deploy had it.
  *
  * With "only the newest push" on (the default), a push that arrives while
@@ -58,7 +59,7 @@ final class DeployOnPush
     {
         $name = self::repoName(is_string($repo) ? $repo : null);
         if ($name === null) {
-            return 'Deploying each push works for apps deployed from a GitHub repository. For other hosts, use the app’s deploy hook.';
+            return 'Deploying each push works for apps deployed from GitHub, or from GitLab with its account connected in Integrations. For other hosts, use the app’s deploy hook.';
         }
         if (! GitHubApp::enabled()) {
             return 'Deploying each push needs GitHub connected to this panel. Use the app’s deploy hook instead, or ask whoever runs the panel to set up the GitHub app.';
@@ -71,6 +72,12 @@ final class DeployOnPush
         }
 
         return null;
+    }
+
+    /** Whether pushes can deploy an app from this address: a GitHub repository, or a project of a GitLab account the workspace connected. */
+    public static function supports(Workspace $workspace, ?string $url): bool
+    {
+        return self::repoName($url) !== null || app(GitLabRepositories::class)->find($workspace, $url) !== null;
     }
 
     /** @return array{on: bool, branch: string, onlyNewest: bool} */
@@ -86,14 +93,16 @@ final class DeployOnPush
     }
 
     /**
-     * @param  list<int>  $workspaces  the workspaces the push's GitHub installation covers
+     * @param  list<int>  $workspaces  the workspaces the push's GitHub installation (or GitLab account) covers
+     * @param  (\Closure(string|null): bool)|null  $sameRepo  whether an app's repository address is the pushed one; a GitHub "owner/name" when null
      * @return array{started: int, skipped: int}
      */
-    public function handle(array $workspaces, string $repo, string $branch, string $commit): array
+    public function handle(array $workspaces, string $repo, string $branch, string $commit, ?\Closure $sameRepo = null): array
     {
         $started = 0;
         $skipped = 0;
         $repo = strtolower($repo);
+        $sameRepo ??= fn (?string $url): bool => self::repoName($url) === $repo;
 
         $machines = Machine::query()->whereIn('workspace_id', $workspaces)->whereNotNull('app_settings')->with('workspace')->get();
         foreach ($machines as $machine) {
@@ -104,7 +113,8 @@ final class DeployOnPush
                     continue;
                 }
                 $spec = AppDeploys::spec($machine, $app);
-                if ($spec === null || self::repoName($spec['repo'] ?? null) !== $repo) {
+                $address = $spec['repo'] ?? null;
+                if ($spec === null || ! $sameRepo(is_string($address) ? $address : null)) {
                     continue;
                 }
 

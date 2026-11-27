@@ -105,6 +105,16 @@ final class ActivityLine
             'machine.ssh_access.end' => $set('lost SSH access'),
             'machine.remove' => $set('removed the machine', null, 'bad'),
             'machine.readme_write' => $set('asked ServerOS to write the readme again for'),
+            'machine.server_create' => $set('made the server', trim(implode(' ', array_filter([
+                isset($meta['provider']) ? $t('at :provider', ['provider' => (string) $meta['provider']]) : null,
+                isset($meta['type'], $meta['location']) ? $t('(:type in :location)', ['type' => (string) $meta['type'], 'location' => (string) $meta['location']]) : null,
+            ]))) ?: null),
+            'machine.server_resize' => $set('started resizing', isset($meta['to']) ? $t(isset($meta['from']) ? 'from :from to :to' : 'to :to', ['from' => (string) ($meta['from'] ?? ''), 'to' => (string) $meta['to']]) : null, 'warn'),
+            'machine.server_reboot' => $set('restarted', isset($meta['provider']) ? $t('through :provider', ['provider' => (string) $meta['provider']]) : null, 'warn'),
+            'machine.server_power_cycle' => $set('power cycled', isset($meta['provider']) ? $t('through :provider', ['provider' => (string) $meta['provider']]) : null, 'warn'),
+            'machine.server_delete' => $set('deleted the server of', isset($meta['provider']) ? $t(($meta['kept'] ?? false) ? 'at :provider, and kept the machine' : 'at :provider, and removed the machine', ['provider' => (string) $meta['provider']]) : null, 'bad'),
+            'machine.snapshot_create' => $set('took a snapshot of', isset($meta['name']) ? $t('(:name)', ['name' => (string) $meta['name']]) : null),
+            'machine.snapshot_delete' => $set('deleted a snapshot of', isset($meta['name']) ? $t('(:name)', ['name' => (string) $meta['name']]) : null, 'warn'),
             'machine.data_clear' => $set(match (array_keys(array_intersect_key($meta, array_flip(['logs', 'metrics', 'services'])))) {
                 ['logs'] => isset($meta['skipped_services'])
                     ? $t((int) $meta['skipped_services'] === 1 ? 'deleted logs from 1 skipped service on' : 'deleted logs from :count skipped services on', ['count' => (string) $meta['skipped_services']])
@@ -335,6 +345,13 @@ final class ActivityLine
             },
             'app.schedules' => $set('changed the scheduled commands of'),
             'app.schedule_skipped' => $set('didn’t run a scheduled command in', $t(':schedule: :reason', ['schedule' => (string) ($meta['schedule'] ?? ''), 'reason' => rtrim((string) ($meta['reason'] ?? ''), '.')]), 'warn'),
+            'app.dns_point' => $set($t('pointed :domain at', ['domain' => (string) ($meta['domain'] ?? '')]), ($meta['change'] ?? null) === 'took_over' ? 'through Cloudflare, in place of the record that was there' : 'through Cloudflare'),
+            'app.dns_remove' => ($meta['deleted'] ?? false)
+                ? $set($t('removed the Cloudflare record for :domain from', ['domain' => (string) ($meta['domain'] ?? '')]), null, 'warn')
+                : $set($t('stopped managing the Cloudflare record for :domain of', ['domain' => (string) ($meta['domain'] ?? '')])),
+            'app.dns_proxied' => $set($t(($meta['proxied'] ?? false) ? 'turned on Cloudflare’s proxy for :domain of' : 'turned off Cloudflare’s proxy for :domain of', ['domain' => (string) ($meta['domain'] ?? '')])),
+            'app.cache_purge' => $set('purged Cloudflare’s cache for'),
+            'app.cache_purge_setting' => $set(($meta['on'] ?? false) ? 'turned on purging Cloudflare’s cache after each deploy of' : 'turned off purging Cloudflare’s cache after each deploy of'),
             'app.limits' => ($meta['cpus'] ?? null) === null && ($meta['memory_mb'] ?? null) === null
                 ? $set('took the CPU and memory limits off')
                 : $set('limited', $t('to :limits', ['limits' => implode(', ', array_filter([
@@ -344,6 +361,17 @@ final class ActivityLine
             'registry.add' => $set('added a login for the registry', isset($meta['username']) ? $t('as :username', ['username' => (string) $meta['username']]) : null),
             'registry.update' => $set('changed the login for the registry', isset($meta['username']) ? $t('to :username', ['username' => (string) $meta['username']]) : null),
             'registry.remove' => $set('removed the login for the registry', null, 'warn'),
+            'integration.connect' => $set('connected', isset($meta['provider']) ? $t('(:provider)', ['provider' => (string) $meta['provider']]) : null, 'good'),
+            'integration.rename' => $set('renamed an account to', isset($meta['from']) ? $t('(was :name)', ['name' => (string) $meta['from']]) : null),
+            'integration.check' => ($meta['ok'] ?? false) ? $set('checked', 'and it works again', 'good') : $set('checked', 'and it was turned down', 'bad'),
+            'integration.disconnect' => $set('disconnected', isset($meta['provider']) ? $t('(:provider)', ['provider' => (string) $meta['provider']]) : null, 'warn'),
+            'integration.routing' => $set('changed what goes to', isset($meta['provider']) ? $t('(:provider)', ['provider' => (string) $meta['provider']]) : null),
+            'integration.test' => ($meta['ok'] ?? false) ? $set('sent a test event to', null, 'good') : $set('sent a test event to', 'and it didn’t go through', 'bad'),
+            'integration.retry' => $set('sent again what failed to go to'),
+            'integration.incident_open' => $set('opened', $t('in :provider', ['provider' => (string) ($meta['provider'] ?? '')]), 'warn'),
+            'integration.incident_resolve' => $set('closed', $t('in :provider', ['provider' => (string) ($meta['provider'] ?? '')]), 'good'),
+            'app.sentry' => $set('linked', $t('to the Sentry project :project', ['project' => (string) ($meta['project'] ?? '')])),
+            'app.sentry_off' => $set('unlinked', 'from Sentry', 'warn'),
             'app.push_replaced' => $set('skipped an older push to', $t(':commit, since :newer came after it', ['commit' => (string) ($meta['commit'] ?? ''), 'newer' => (string) ($meta['newer'] ?? '')])),
             'app.push_skipped' => $set('didn’t deploy a push to', $t(':commit to :branch: :reason', ['commit' => (string) ($meta['commit'] ?? ''), 'branch' => (string) ($meta['branch'] ?? ''), 'reason' => rtrim((string) ($meta['reason'] ?? ''), '.')]), 'warn'),
             'backup_destination.update' => $set('changed the backup destination', isset($meta['from']) ? $t('(was :name)', ['name' => $meta['from']]) : null),

@@ -22,6 +22,7 @@ use App\Support\Deploys\DeployFailure;
 use App\Support\Files\FileJobs;
 use App\Support\Firewall;
 use App\Support\Health\WorkspaceHealth;
+use App\Support\Integrations\Servers\CloudServers;
 use App\Support\Machines\MachinePolicies;
 use App\Support\Machines\Readme\MachineReadmes;
 use App\Support\Machines\SshAccess;
@@ -103,6 +104,7 @@ class MachineController extends Controller
             'defaultTab' => $defaultTab,
             'readme' => $onReadme ? $readme : Inertia::optional($readme),
             'access' => fn () => SshAccess::view($workspace, $machine, $request->user()),
+            'cloudServer' => fn () => $seesConsole ? CloudServers::machineProps($machine) : null,
             'serviceGroups' => fn () => $machine->serviceGroups()->orderBy('name')->get()
                 ->map(fn (ServiceGroup $group) => $group->toPageProps())
                 ->all(),

@@ -8,6 +8,7 @@ import {
     onBeforeUnmount,
     onMounted,
     ref,
+    useTemplateRef,
     watch,
 } from 'vue';
 import BrandLogo from '@/components/dash/BrandLogo.vue';
@@ -19,6 +20,7 @@ import StatusBadge from '@/components/dash/StatusBadge.vue';
 import type { DashStatus } from '@/components/dash/StatusBadge.vue';
 import FilledIcon from '@/components/icons/FilledIcon.vue';
 import type { FilledIconName } from '@/components/icons/filledIcons';
+import type { MachineCloudServer } from '@/components/integrations/integrations';
 import FileBrowser from '@/components/machines/FileBrowser.vue';
 import type { FilePlace } from '@/components/machines/FileBrowser.vue';
 import FirewallPanel from '@/components/machines/FirewallPanel.vue';
@@ -53,6 +55,8 @@ import { systemName } from '@/components/machines/machineFormat';
 import { environmentLabels } from '@/components/machines/machines';
 import type { Machine } from '@/components/machines/machines';
 import MaintenanceBanner from '@/components/maintenance/MaintenanceBanner.vue';
+import MachineServerActions from '@/components/machines/server/MachineServerActions.vue';
+import type { ServerAction } from '@/components/machines/server/MachineServerActions.vue';
 import MaintenanceDialog from '@/components/maintenance/MaintenanceDialog.vue';
 import PlannedMaintenance from '@/components/maintenance/PlannedMaintenance.vue';
 import {
@@ -116,9 +120,16 @@ const props = defineProps<{
     access?: MachineAccess;
     defaultTab?: 'overview' | 'readme';
     readme?: MachineReadmeData;
+    cloudServer?: MachineCloudServer | null;
 }>();
 
 const page = usePage<{ workspaceAccess: WorkspaceAccess | null }>();
+const serverActions =
+    useTemplateRef<InstanceType<typeof MachineServerActions>>('serverActions');
+
+function serverAction(action: ServerAction): void {
+    serverActions.value?.open(action);
+}
 const upgrade = useUpgradeLink();
 
 const canManage = computed(
@@ -634,6 +645,51 @@ onBeforeUnmount(() => {
                             {{ $t('Maintenance') }}
                         </DropdownMenuItem>
                     </template>
+                    <template v-if="canManage && cloudServer">
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            v-if="cloudServer.can.includes('resize')"
+                            @select="serverAction('resize')"
+                        >
+                            <FilledIcon name="layers" />
+                            {{ $t('Resize') }}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            v-if="cloudServer.can.includes('snapshots')"
+                            @select="serverAction('snapshots')"
+                        >
+                            <FilledIcon name="archive" />
+                            {{ $t('Snapshots') }}
+                        </DropdownMenuItem>
+                        <template v-if="cloudServer.can.includes('power')">
+                            <DropdownMenuItem @select="serverAction('reboot')">
+                                <FilledIcon name="history" />
+                                {{
+                                    $t('Restart through :provider', {
+                                        provider: cloudServer.integration.name,
+                                    })
+                                }}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                @select="serverAction('power_cycle')"
+                            >
+                                <FilledIcon name="activity-fill" />
+                                {{ $t('Power cycle') }}
+                            </DropdownMenuItem>
+                        </template>
+                        <DropdownMenuItem
+                            v-if="cloudServer.can.includes('delete_servers')"
+                            class="text-status-down"
+                            @select="serverAction('delete')"
+                        >
+                            <FilledIcon name="box" />
+                            {{
+                                $t('Delete :provider server', {
+                                    provider: cloudServer.integration.name,
+                                })
+                            }}
+                        </DropdownMenuItem>
+                    </template>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem as-child>
                         <Link :href="settingsUrl">
@@ -760,7 +816,9 @@ onBeforeUnmount(() => {
             :can-manage="canManage"
             :online="online"
             @tab="go"
+            :cloud-server="canManage ? cloudServer : null"
             @range="loadHistory"
+            @server="serverAction"
         >
             <template #notices>
                 <MaintenanceBanner
@@ -955,5 +1013,11 @@ onBeforeUnmount(() => {
         v-model:open="maintenanceOpen"
         :machine-id="machine.id"
         :machine-name="machine.name"
+    />
+    <MachineServerActions
+        v-if="machine.id && canManage && cloudServer"
+        ref="serverActions"
+        :machine="{ id: machine.id, name: machine.name }"
+        :cloud="cloudServer"
     />
 </template>

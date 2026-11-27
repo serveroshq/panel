@@ -5,11 +5,14 @@ namespace App\Http\Controllers;
 use App\Actions\Machines\CreateJoinCommand;
 use App\Exceptions\MachineLimitReached;
 use App\Models\DaemonEnrolment;
+use App\Models\Integration;
 use App\Models\Machine;
 use App\Models\MachineGroup;
 use App\Models\MachinePolicy;
 use App\Models\Workspace;
 use App\Support\Audit\NotAudited;
+use App\Support\Integrations\Capability;
+use App\Support\Integrations\IntegrationProviders;
 use App\Support\Machines\MachinePolicies;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,6 +34,15 @@ class DaemonConnectController extends Controller
             'policies' => $policies->map(fn (MachinePolicy $policy) => $policy->toPageProps())->values(),
             'groups' => $workspace->machineGroups()->orderBy('name')->get()
                 ->map(fn (MachineGroup $group) => ['id' => $group->id, 'name' => $group->name, 'policyId' => $group->machine_policy_id])->values(),
+            'clouds' => $workspace->integrations()->orderBy('label')->get()
+                ->filter(fn (Integration $integration) => app(IntegrationProviders::class)->find($integration->provider)?->can(Capability::Servers) === true)
+                ->map(fn (Integration $integration) => [
+                    'id' => $integration->id,
+                    'provider' => $integration->provider,
+                    'name' => $integration->provider()->name(),
+                    'label' => $integration->label,
+                    'canCreate' => $integration->provider()->can(Capability::CreateServers),
+                ])->values(),
         ])->header('Cache-Control', 'no-store');
     }
 

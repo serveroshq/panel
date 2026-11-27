@@ -69,7 +69,8 @@ test('a repository that isn’t on GitHub is read by the machine, and the dialog
     [$workspace, $machine] = inspectMachine();
     $base = $workspace->url()."/machines/{$machine->id}/deploy";
 
-    $this->actingAs($workspace->owner)->postJson($workspace->url().'/services/detect', ['repository' => 'https://gitlab.com/acme/shop'])
+    // GitLab projects are read through GitLab's API (GitLabTest); other hosts by the machine.
+    $this->actingAs($workspace->owner)->postJson($workspace->url().'/services/detect', ['repository' => 'https://codeberg.org/acme/shop'])
         ->assertUnprocessable()->assertJsonPath('inspect', true)->assertJsonValidationErrors('repository');
 
     $answer = $this->actingAs($workspace->owner)->postJson($base.'/inspect', ['repository' => 'https://gitlab.com/acme/shop/-/tree/develop/apps/web'])

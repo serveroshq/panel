@@ -6,6 +6,8 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import DashButton from '@/components/dash/DashButton.vue';
 import DashCheckbox from '@/components/dash/DashCheckbox.vue';
 import FilterPills from '@/components/dash/FilterPills.vue';
+import type { CloudflareCheck } from '@/components/integrations/cloudflare';
+import CloudflareDnsNote from '@/components/integrations/CloudflareDnsNote.vue';
 import { SelectMenu } from '@/components/ui/select';
 import type { SelectMenuOption } from '@/components/ui/select';
 import {
@@ -122,6 +124,8 @@ type DomainCheck = {
     expected: string | null;
     found: string[];
     record: { type: string; name: string; value: string } | null;
+    /** The domain is in a connected Cloudflare account, which can point it here. */
+    cloudflare?: CloudflareCheck | null;
     wildcard?: Omit<DomainCheck, 'wildcard'>;
 };
 
@@ -321,6 +325,17 @@ function chooseMode(next: AddressMode): void {
                 />
                 {{ $t('Checking DNS…') }}
             </p>
+            <CloudflareDnsNote
+                v-else-if="dns?.cloudflare"
+                :cloudflare="dns.cloudflare"
+                :wildcard-cloudflare="dns.wildcard?.cloudflare"
+                :workspace-slug="page.props.workspace.slug"
+                :machine-id="machineId"
+                :service="service"
+                :domain="dns.domain"
+                :wildcard="wildcard"
+                @pointed="(check) => (dns = check as DomainCheck)"
+            />
             <div
                 v-else-if="dns"
                 class="flex flex-col gap-2.5 rounded-[10px] border-[0.5px] px-3.5 py-3 text-[12px]/4"
@@ -514,6 +529,7 @@ function chooseMode(next: AddressMode): void {
                 v-if="
                     wildcard &&
                     dns?.wildcard &&
+                    !dns.wildcard.cloudflare &&
                     dns.wildcard.status !== 'ready' &&
                     dns.wildcard.record
                 "

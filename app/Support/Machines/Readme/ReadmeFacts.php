@@ -573,8 +573,8 @@ final class ReadmeFacts
             ->take(self::MAX_RISKS_PER_SOURCE);
         foreach ($packages as $p) {
             $bugs = $p['count'] === 1
-                ? self::t(':package has 1 :severity bug', ['package' => $p['package'], 'severity' => $p['severity']])
-                : self::t(':package has :count :severity bugs', ['package' => $p['package'], 'count' => $p['count'], 'severity' => $p['severity']]);
+                ? self::t(':package has 1 :severity bug', ['package' => $p['package'], 'severity' => self::t($p['severity'])])
+                : self::t(':package has :count :severity bugs', ['package' => $p['package'], 'count' => $p['count'], 'severity' => self::t($p['severity'])]);
             $risks[] = [
                 'id' => 'security-'.$p['package'],
                 'severity' => $p['exploited'] > 0 ? 'urgent' : 'fix',

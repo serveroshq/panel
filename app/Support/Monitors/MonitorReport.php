@@ -2,6 +2,7 @@
 
 namespace App\Support\Monitors;
 
+use App\Models\IntegrationIncident;
 use App\Models\Monitor;
 use App\Models\MonitorCheck;
 use App\Models\MonitorIncident;
@@ -149,13 +150,17 @@ class MonitorReport
         $query = fn () => $this->monitor->incidents()
             ->where(fn (Builder $q) => $q->whereNull('resolved_at')->orWhere('started_at', '>=', now()->subDays(Monitor::DAYS)));
 
+        $list = $query()->latest('started_at')->limit(self::INCIDENTS)->get();
+        $issues = IntegrationIncident::query()->whereIn('monitor_incident_id', $list->pluck('id'))->whereNotNull('external_url')
+            ->get()->groupBy('monitor_incident_id');
+
         return [
             'count' => $query()->count(),
-            'list' => array_values($query()->latest('started_at')->limit(self::INCIDENTS)->get()
-                ->map(function (MonitorIncident $incident): array {
+            'list' => array_values($list
+                ->map(function (MonitorIncident $incident) use ($issues): array {
                     $props = $incident->toPageProps();
 
-                    return [...$props, 'cause' => self::cause($props['cause']), 'tone' => match (true) {
+                    return [...$props, 'cause' => self::cause($props['cause']), 'issues' => array_values(array_filter($issues->get($incident->id, collect())->map(fn (IntegrationIncident $i) => $i->link())->all())), 'tone' => match (true) {
                         $incident->resolved_at === null => 'ongoing',
                         $props['seconds'] >= self::LONG_OUTAGE_SECONDS => 'long',
                         default => 'short',

@@ -303,6 +303,12 @@ class Workspace extends Model
         return $this->hasMany(ContainerRegistry::class);
     }
 
+    /** @return HasMany<Integration, $this> */
+    public function integrations(): HasMany
+    {
+        return $this->hasMany(Integration::class);
+    }
+
     /**
      * @return HasMany<BackupDestination, $this>
      */

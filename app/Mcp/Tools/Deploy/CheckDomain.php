@@ -8,10 +8,11 @@ use App\Mcp\Schema;
 use App\Mcp\Tool;
 use App\Support\Deploys\DeployRequest;
 use App\Support\Domains\DomainCheck;
+use App\Support\Integrations\Cloudflare\CloudflareDns;
 
 final class CheckDomain extends Tool
 {
-    public function __construct(private readonly DomainCheck $check) {}
+    public function __construct(private readonly DomainCheck $check, private readonly CloudflareDns $dns) {}
 
     public function name(): string
     {
@@ -26,7 +27,7 @@ final class CheckDomain extends Tool
     public function description(): string
     {
         return 'Looks up a domain’s DNS (A and AAAA records) and says whether it points at the machine, as the deploy dialog does while a domain is typed. status is "ready" (it points here: HTTPS is set up as it deploys), "missing" (no record yet), "elsewhere" (it points at other addresses, listed in found) or "proxied" (behind Cloudflare’s proxy, which blocks the certificate: set the record to DNS only, the grey cloud). '
-            .'record is the DNS record to add or change where the person manages the domain. A deploy can go ahead before DNS is ready: HTTPS starts once the record points at the machine, which can take a few minutes. Only reads DNS; changes nothing.';
+            .'record is the DNS record to add or change where the person manages the domain. cloudflare is set when the domain’s zone is in a connected Cloudflare account: ServerOS then adds or updates the record itself as the app deploys, so nobody edits DNS by hand. A deploy can go ahead before DNS is ready: HTTPS starts once the record points at the machine, which can take a few minutes. Only reads DNS; changes nothing.';
     }
 
     public function inputSchema(): array
@@ -62,10 +63,14 @@ final class CheckDomain extends Tool
         ], ['domain.regex' => 'Enter a domain like app.example.com.']);
 
         $result = $this->check->check($machine, $data['domain']);
+        $cloudflare = $this->dns->checkInfo($machine, $data['domain']);
         $answer = [
             'machine' => ['id' => $machine->id, 'name' => $machine->name],
             ...$result,
-            'advice' => self::advice($result, $machine->name),
+            'cloudflare' => $cloudflare,
+            'advice' => $cloudflare !== null && $result['status'] !== 'ready'
+                ? "{$data['domain']} is in the Cloudflare account {$cloudflare['account']} connected to this workspace: ServerOS points it at {$machine->name} itself as the app deploys."
+                : self::advice($result, $machine->name),
         ];
 
         if ($args['wildcard'] ?? false) {

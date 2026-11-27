@@ -245,7 +245,11 @@ export function useWorkspaceNav(): ComputedRef<WorkspaceNavItem[]> {
                 icon: 'package-fill',
                 href: url(onWorkspace(integrations(slug))),
                 section: 'menu',
-                current: is(component, 'workspace/Integrations'),
+                current: is(
+                    component,
+                    'workspace/Integrations',
+                    'workspace/IntegrationShow',
+                ),
             },
             {
                 key: 'setup',

@@ -7,6 +7,7 @@ use App\Models\Workspace;
 use App\Support\Audit\NotAudited;
 use App\Support\Deploys\DeployRequest;
 use App\Support\Domains\DomainCheck;
+use App\Support\Integrations\Cloudflare\CloudflareDns;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\Gate;
 class DomainCheckController extends Controller
 {
     #[NotAudited('A check; nothing changes')]
-    public function __invoke(Request $request, Workspace $workspace, Machine $machine, DomainCheck $check): JsonResponse
+    public function __invoke(Request $request, Workspace $workspace, Machine $machine, DomainCheck $check, CloudflareDns $dns): JsonResponse
     {
         abort_unless($machine->workspace_id === $workspace->id, 404);
         Gate::authorize('manageMachines', $workspace);
@@ -24,9 +25,9 @@ class DomainCheckController extends Controller
             'wildcard' => ['sometimes', 'boolean'],
         ]);
 
-        $result = $check->check($machine, $data['domain']);
+        $result = [...$check->check($machine, $data['domain']), 'cloudflare' => $dns->checkInfo($machine, $data['domain'])];
         if ($request->boolean('wildcard')) {
-            $result['wildcard'] = $check->checkWildcard($machine, $data['domain']);
+            $result['wildcard'] = [...$check->checkWildcard($machine, $data['domain']), 'cloudflare' => $dns->checkInfo($machine, '*.'.strtolower($data['domain']))];
         }
 
         return response()->json($result);

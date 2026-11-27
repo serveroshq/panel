@@ -17,6 +17,7 @@ use App\Support\DaemonFacts;
 use App\Support\DaemonGatewayClient;
 use App\Support\DaemonJobQueue;
 use App\Support\DaemonUpdates;
+use App\Support\Integrations\Servers\CloudServers;
 use App\Support\Logs\LogSkipRules;
 use App\Support\Machines\CloudflareTunnel;
 use App\Support\Machines\MachineDataEraser;
@@ -67,6 +68,7 @@ class MachineSettingsController extends Controller
                 'changing' => CloudflareTunnel::changing($machine)?->id,
             ] : null,
             'traffic' => TrafficSwitch::props($machine),
+            'cloudServer' => Gate::allows('manageMachines', $workspace) ? CloudServers::machineProps($machine) : null,
             'logSkip' => [
                 'available' => DaemonJobQueue::canSkipLogs($machine),
                 'since' => 'v'.config('daemon.log_skip_since'),

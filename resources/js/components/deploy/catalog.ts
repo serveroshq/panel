@@ -150,6 +150,8 @@ export function looksLikeRepository(text: string): boolean {
 export function repositoryLabel(repo: string): string {
     return repo
         .replace(/^https:\/\/github\.com\//, '')
+        .replace(/^https:\/\/gitlab\.com\//, '')
+        .replace(/\/-\/tree\//, '/tree/')
         .replace(/\.git$/, '')
         .replace(/^[^@]+@[^:]+:/, '');
 }

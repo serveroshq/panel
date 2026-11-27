@@ -16,6 +16,8 @@ use App\Support\Deploys\AppDatabase;
 use App\Support\Deploys\AppLimits;
 use App\Support\Deploys\DeployOnPush;
 use App\Support\GitHub\GitHubApp;
+use App\Support\Integrations\GitLab\GitLabRepositories;
+use App\Support\Integrations\Sentry\SentryReleases;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -68,7 +70,7 @@ class DaemonJobQueue
      */
     public function deploy(Machine $machine, User $user, array $job, bool $hold = false, ?string $trigger = null, bool $noCache = false, array $meta = []): DaemonJob
     {
-        $job = AppLimits::forJob($machine, $job);
+        $job = SentryReleases::withRelease($machine, AppLimits::forJob($machine, $job));
         // Building from scratch is for the one deploy that asks for it: the
         // next deploy copies this spec, so it's never left in.
         if (is_array($job['build'] ?? null)) {
@@ -382,8 +384,16 @@ class DaemonJobQueue
     private function withRepoToken(Machine $machine, array $command): array
     {
         $repo = $command['job']['repo'] ?? null;
-        if (! in_array($command['job']['type'] ?? null, ['deploy', 'repo_inspect'], true) || ! is_string($repo)
-            || ! preg_match('#^https://github\.com/([A-Za-z0-9-]+)/([A-Za-z0-9._-]+?)(?:\.git)?/?$#', $repo, $m)) {
+        if (! in_array($command['job']['type'] ?? null, ['deploy', 'repo_inspect'], true) || ! is_string($repo)) {
+            return $command;
+        }
+        if (! preg_match('#^https://github\.com/([A-Za-z0-9-]+)/([A-Za-z0-9._-]+?)(?:\.git)?/?$#', $repo, $m)) {
+            // Only ever for an address on the account's own GitLab, so the token can't be sent anywhere else.
+            $gitlab = app(GitLabRepositories::class)->find($machine->workspace, $repo);
+            if ($gitlab !== null && self::canFetchPrivate($machine)) {
+                $command['job']['repo_token'] = $gitlab[0]->credential('token');
+            }
+
             return $command;
         }
 

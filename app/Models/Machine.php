@@ -276,6 +276,12 @@ class Machine extends Model
         return $this->belongsTo(BackupDestination::class);
     }
 
+    /** @return HasOne<IntegrationServer, $this> */
+    public function cloudServer(): HasOne
+    {
+        return $this->hasOne(IntegrationServer::class);
+    }
+
     /**
      * @return HasMany<Backup, $this>
      */
