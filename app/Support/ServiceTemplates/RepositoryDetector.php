@@ -3,6 +3,7 @@
 namespace App\Support\ServiceTemplates;
 
 use App\Models\Workspace;
+use App\Support\Deploys\EnvFile;
 use App\Support\GitHub\GitHubApp;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -23,6 +24,12 @@ class RepositoryDetector
 
     public const MANIFESTS = ['package.json', 'composer.json', 'requirements.txt', 'pyproject.toml', 'Gemfile', 'Cargo.toml', 'go.mod', 'mix.exs', ...self::COMPOSE_FILES];
 
+    // Read too when they're there: they say which port, versions and start command.
+    public const HINTS = ['Dockerfile', 'Procfile', 'Pipfile', 'deno.json', 'deno.jsonc', '.nvmrc', '.node-version', '.python-version', 'runtime.txt', '.tool-versions', 'railpack.json', 'pom.xml', 'build.gradle', 'build.gradle.kts'];
+
+    // Example settings a repository keeps, offered to fill in before the first deploy.
+    public const ENV_EXAMPLES = ['.env.example', '.env.sample', '.env.template', '.env.dist'];
+
     private ?string $token = null;
 
     // A folder inside the repository: plain names only, so never outside it.
@@ -31,7 +38,7 @@ class RepositoryDetector
     /**
      * @return array{detected: bool, template: string|null, framework: string|null, type: string|null, repo: string, branch: string, commit: string, baseDir: string|null, reasons: list<string>, php: string|null, healthPath: string|null, composeFile: string|null, composePort: int|null}
      */
-    public function detect(string $url, ?Workspace $workspace = null): array
+    public function detect(string $url, ?Workspace $workspace = null, bool $autoBuild = true): array
     {
         [$owner, $name, $tree] = $this->parse($url);
         $this->token = $workspace === null ? null : app(GitHubApp::class)->tokenFor($workspace, $owner, $name);
@@ -56,13 +63,61 @@ class RepositoryDetector
         }
 
         $contents = [];
-        foreach (self::MANIFESTS as $manifest) {
+        foreach ([...self::MANIFESTS, ...self::HINTS, ...self::ENV_EXAMPLES] as $manifest) {
             if (in_array($manifest, $files, true)) {
                 $contents[$manifest] = $this->raw($owner, $name, $sha, $baseDir === null ? $manifest : "{$baseDir}/{$manifest}");
             }
         }
 
+        return [
+            'repo' => "https://github.com/{$owner}/{$name}.git",
+            'branch' => $branch,
+            'commit' => $sha,
+            'baseDir' => $baseDir,
+            ...$this->describe($files, $contents, $baseDir, $autoBuild),
+        ];
+    }
+
+    /**
+     * What a repository is, from its files at the root (or the app's folder)
+     * and the contents of the ones that say how it's built: the template
+     * that builds it, the port it serves on, example settings to fill in,
+     * and what Railpack would find. Nothing recognised falls back to
+     * Railpack (auto-build) when the machine's daemon can build with it.
+     *
+     * @param  list<string>  $files
+     * @param  array<string, string|null>  $contents
+     * @return array{detected: bool, template: string|null, framework: string|null, type: string|null, reasons: list<string>, php: string|null, healthPath: string|null, composeFile: string|null, composePort: int|null, port: int|null, railpack: array{language: string|null, framework: string|null, packageManager: string|null, version: string|null, startCommand: string|null}|null, envExample: array{file: string, variables: list<array{name: string, value: string}>}|null, needsUpdate: string|null}
+     */
+    public function describe(array $files, array $contents, ?string $baseDir = null, bool $autoBuild = true): array
+    {
         $match = $this->match($files, $contents);
+        $railpack = self::railpackHints($files, $contents);
+        $needsUpdate = null;
+
+        if ($match === null && $autoBuild) {
+            $label = $railpack['framework'] ?? $railpack['language'] ?? null;
+            $match = $this->found('auto-build', $label ?? 'Your own code', self::TYPE_APP, $label === null
+                ? 'ServerOS doesn’t recognise it by name, so Railpack works out how to build and start it from its files.'
+                : "It’s {$label}, and Railpack builds it without a Dockerfile.");
+        }
+        if (($match['template'] ?? null) === 'auto-build' && ! $autoBuild) {
+            $match = null;
+            $needsUpdate = 'Update the ServerOS daemon on this machine to build apps without a Dockerfile.';
+        } elseif ($match === null) {
+            $needsUpdate = 'Update the ServerOS daemon on this machine to build apps without a Dockerfile.';
+        }
+        if (($match['template'] ?? null) === 'auto-build' && is_string($railpack['startCommand'] ?? null)) {
+            $match['reasons'][] = "Its Procfile starts it with {$railpack['startCommand']}.";
+        }
+
+        $port = null;
+        if (($match['template'] ?? null) === 'custom-dockerfile' && ($port = self::exposedPort((string) ($contents['Dockerfile'] ?? ''))) !== null) {
+            $match['reasons'][] = "Its Dockerfile exposes port {$port}, so that’s the one served.";
+        }
+        if (($match['template'] ?? null) === 'compose-file') {
+            $port = $match['composePort'] ?? null;
+        }
         // The daemon runs a Compose file from the repository's root, so one in the folder is named by its full path.
         if ($baseDir !== null && isset($match['composeFile'])) {
             $match['composeFile'] = "{$baseDir}/{$match['composeFile']}";
@@ -73,16 +128,190 @@ class RepositoryDetector
             'template' => $match['template'] ?? null,
             'framework' => $match['framework'] ?? null,
             'type' => $match['type'] ?? null,
-            'repo' => "https://github.com/{$owner}/{$name}.git",
-            'branch' => $branch,
-            'commit' => $sha,
-            'baseDir' => $baseDir,
             'reasons' => $match['reasons'] ?? [],
             'php' => $match['php'] ?? null,
             'healthPath' => $match['healthPath'] ?? null,
             'composeFile' => $match['composeFile'] ?? null,
             'composePort' => $match['composePort'] ?? null,
+            'port' => $port,
+            'railpack' => $railpack,
+            'envExample' => self::envExample($contents),
+            'needsUpdate' => $match === null ? $needsUpdate : null,
         ];
+    }
+
+    /**
+     * What a repository on any git host is, from the machine's repo_inspect
+     * job: the same answer detect() gives for GitHub.
+     *
+     * @param  array<string, mixed>  $result  the job's result: commit, ref, default_branch, files, contents, truncated
+     * @return array<string, mixed>
+     */
+    public function fromInspect(array $result, string $repo, ?string $baseDir, bool $autoBuild = true): array
+    {
+        $files = array_values(array_filter(is_array($result['files'] ?? null) ? $result['files'] : [], 'is_string'));
+        $contents = [];
+        foreach (is_array($result['contents'] ?? null) ? $result['contents'] : [] as $path => $body) {
+            if (is_string($body)) {
+                $contents[(string) $path] = $body;
+            }
+        }
+        $commit = is_string($result['commit'] ?? null) && preg_match('/^[0-9a-f]{40}$/i', $result['commit']) === 1 ? strtolower($result['commit']) : null;
+        $branch = is_string($result['ref'] ?? null) && $result['ref'] !== '' ? $result['ref'] : (is_string($result['default_branch'] ?? null) ? $result['default_branch'] : null);
+
+        return [
+            'repo' => $repo,
+            'branch' => $branch,
+            'commit' => $commit,
+            'baseDir' => $baseDir,
+            ...$this->describe($files, $contents, $baseDir, $autoBuild),
+            'truncated' => (bool) ($result['truncated'] ?? false),
+        ];
+    }
+
+    /** The first port a Dockerfile EXPOSEs, like EXPOSE 8080 or EXPOSE 8080/tcp. */
+    public static function exposedPort(string $dockerfile): ?int
+    {
+        if (preg_match('/^\s*EXPOSE\s+(\d{1,5})(?:\/tcp)?\b/mi', $dockerfile, $m) !== 1) {
+            return null;
+        }
+        $port = (int) $m[1];
+
+        return $port >= 1 && $port <= 65535 ? $port : null;
+    }
+
+    /**
+     * The settings an example file in the repository lists, with their
+     * example values, for the dialog to offer.
+     *
+     * @param  array<string, string|null>  $contents
+     * @return array{file: string, variables: list<array{name: string, value: string}>}|null
+     */
+    public static function envExample(array $contents): ?array
+    {
+        foreach (self::ENV_EXAMPLES as $file) {
+            if (! is_string($contents[$file] ?? null)) {
+                continue;
+            }
+            $parsed = EnvFile::parse($contents[$file]);
+            if ($parsed['variables'] === []) {
+                continue;
+            }
+
+            return ['file' => $file, 'variables' => array_map(
+                fn (string $name, string $value) => ['name' => $name, 'value' => $value],
+                array_keys($parsed['variables']),
+                $parsed['variables'],
+            )];
+        }
+
+        return null;
+    }
+
+    /**
+     * What Railpack would find: the language, framework, package manager and
+     * version it builds with, and the start command a Procfile gives.
+     *
+     * @param  list<string>  $files
+     * @param  array<string, string|null>  $contents
+     * @return array{language: string|null, framework: string|null, packageManager: string|null, version: string|null, startCommand: string|null}|null
+     */
+    public static function railpackHints(array $files, array $contents): ?array
+    {
+        $has = fn (string $file) => in_array($file, $files, true);
+        $json = fn (?string $body): array => is_array($data = json_decode((string) $body, true)) ? $data : [];
+        $first = function (array $candidates) use ($contents): ?string {
+            foreach ($candidates as $file) {
+                $line = trim(strtok((string) ($contents[$file] ?? ''), "\n") ?: '');
+                if ($line !== '') {
+                    return $line;
+                }
+            }
+
+            return null;
+        };
+        $start = null;
+        if (preg_match('/^web:\s*(.+)$/m', (string) ($contents['Procfile'] ?? ''), $m) === 1) {
+            $start = trim($m[1]);
+        }
+        $hint = fn (string $language, ?string $framework, ?string $manager, ?string $version = null) => [
+            'language' => $language, 'framework' => $framework, 'packageManager' => $manager,
+            'version' => $version === null ? null : mb_substr($version, 0, 40), 'startCommand' => $start === null ? null : mb_substr($start, 0, 300),
+        ];
+
+        if ($has('package.json')) {
+            $package = $json($contents['package.json'] ?? null);
+            $deps = array_merge((array) ($package['dependencies'] ?? []), (array) ($package['devDependencies'] ?? []));
+            $framework = null;
+            foreach (['next' => 'Next.js', 'nuxt' => 'Nuxt', '@sveltejs/kit' => 'SvelteKit', 'astro' => 'Astro', '@remix-run/node' => 'Remix', '@nestjs/core' => 'NestJS', 'express' => 'Express', 'fastify' => 'Fastify', 'hono' => 'Hono', 'vite' => 'Vite'] as $dep => $label) {
+                if (isset($deps[$dep])) {
+                    $framework = $label;
+                    break;
+                }
+            }
+            $manager = match (true) {
+                $has('bun.lock') || $has('bun.lockb') => 'bun',
+                $has('pnpm-lock.yaml') => 'pnpm',
+                $has('yarn.lock') => 'yarn',
+                default => 'npm',
+            };
+            $version = $first(['.nvmrc', '.node-version']) ?? (is_string($package['engines']['node'] ?? null) ? $package['engines']['node'] : null);
+
+            return $hint($manager === 'bun' ? 'Bun' : 'Node.js', $framework, $manager, $version);
+        }
+        if ($has('deno.json') || $has('deno.jsonc')) {
+            return $hint('Deno', null, 'deno');
+        }
+        $python = strtolower((string) ($contents['requirements.txt'] ?? '').(string) ($contents['pyproject.toml'] ?? '').(string) ($contents['Pipfile'] ?? ''));
+        if ($has('requirements.txt') || $has('pyproject.toml') || $has('Pipfile')) {
+            $framework = match (true) {
+                str_contains($python, 'django') => 'Django',
+                str_contains($python, 'fastapi') => 'FastAPI',
+                str_contains($python, 'flask') => 'Flask',
+                default => null,
+            };
+            $manager = match (true) {
+                $has('uv.lock') => 'uv',
+                $has('poetry.lock') => 'poetry',
+                $has('Pipfile') => 'pipenv',
+                default => 'pip',
+            };
+            $version = $first(['.python-version']) ?? (preg_match('/python-([\d.]+)/', (string) ($contents['runtime.txt'] ?? ''), $m) === 1 ? $m[1] : null);
+
+            return $hint('Python', $framework, $manager, $version);
+        }
+        if ($has('composer.json')) {
+            $require = (array) ($json($contents['composer.json'] ?? null)['require'] ?? []);
+
+            return $hint('PHP', isset($require['laravel/framework']) ? 'Laravel' : (isset($require['symfony/framework-bundle']) ? 'Symfony' : null), 'composer', is_string($require['php'] ?? null) ? $require['php'] : null);
+        }
+        if ($has('Gemfile')) {
+            $gems = strtolower((string) ($contents['Gemfile'] ?? ''));
+
+            return $hint('Ruby', str_contains($gems, 'rails') ? 'Rails' : (str_contains($gems, 'sinatra') ? 'Sinatra' : null), 'bundler');
+        }
+        if ($has('go.mod')) {
+            return $hint('Go', null, 'go', preg_match('/^go\s+([\d.]+)/m', (string) ($contents['go.mod'] ?? ''), $m) === 1 ? $m[1] : null);
+        }
+        if ($has('Cargo.toml')) {
+            return $hint('Rust', null, 'cargo');
+        }
+        if ($has('pom.xml') || $has('build.gradle') || $has('build.gradle.kts')) {
+            $build = (string) ($contents['pom.xml'] ?? '').(string) ($contents['build.gradle'] ?? '').(string) ($contents['build.gradle.kts'] ?? '');
+
+            return $hint('Java', str_contains($build, 'spring-boot') ? 'Spring Boot' : null, $has('pom.xml') ? 'maven' : 'gradle');
+        }
+        if ($has('mix.exs')) {
+            return $hint('Elixir', str_contains((string) ($contents['mix.exs'] ?? ''), ':phoenix') ? 'Phoenix' : null, 'mix');
+        }
+        if ($has('index.html')) {
+            return $hint('Static site', null, null);
+        }
+        if ($start !== null) {
+            return $hint('Shell', null, null);
+        }
+
+        return null;
     }
 
     /**
@@ -256,12 +485,18 @@ class RepositoryDetector
                 str_contains($python, 'django') => $this->found('django', 'Django', self::TYPE_WEB, 'Python dependencies include Django.'),
                 str_contains($python, 'fastapi') => $this->found('fastapi', 'FastAPI', self::TYPE_API, 'Python dependencies include FastAPI.'),
                 str_contains($python, 'flask') => $this->found('flask', 'Flask', self::TYPE_WEB, 'Python dependencies include Flask.'),
-                default => null,
+                default => $this->found('auto-build', 'Python', self::TYPE_APP, 'Has Python dependencies but no web framework ServerOS knows by name, so Railpack builds it.'),
             };
+        }
+        if ($has('Pipfile')) {
+            return $this->found('auto-build', 'Python', self::TYPE_APP, 'Has a Pipfile, so Railpack builds it with pipenv.');
         }
 
         if (str_contains(strtolower($contents['Gemfile'] ?? ''), 'rails')) {
             return $this->found('rails', 'Ruby on Rails', self::TYPE_WEB, 'The Gemfile includes rails.');
+        }
+        if ($has('Gemfile')) {
+            return $this->found('auto-build', 'Ruby', self::TYPE_APP, 'Has a Gemfile, so Railpack builds it with Bundler.');
         }
 
         if ($has('go.mod')) {
@@ -285,8 +520,16 @@ class RepositoryDetector
             return $this->found('dotnet', '.NET', self::TYPE_WEB, 'Has a .NET project file.');
         }
 
+        if ($has('mix.exs')) {
+            return $this->found('auto-build', 'Elixir', self::TYPE_APP, 'Has a mix.exs, so Railpack builds it.');
+        }
+
         if ($has('index.html')) {
             return $this->found('static-site', 'Static site', self::TYPE_STATIC, 'Has an index.html and nothing to build.');
+        }
+
+        if ($has('Procfile')) {
+            return $this->found('auto-build', 'Procfile', self::TYPE_APP, 'Has a Procfile, so Railpack starts it the way that says.');
         }
 
         return null;
@@ -426,11 +669,21 @@ class RepositoryDetector
         throw ValidationException::withMessages(['repository' => 'Couldn’t find the '.$parts[0].' branch.']);
     }
 
+    private const GITHUB_PATTERN = '#^(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9-]+)/([A-Za-z0-9._-]+?)(?:\.git)?(?:/tree/([^?\#]+))?/?$#';
+
+    /** Whether the panel reads it through GitHub: a github.com link, or owner/name. */
+    public static function onGitHub(string $url): bool
+    {
+        $url = trim($url);
+
+        return preg_match('#^([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)$#', $url) === 1 || preg_match(self::GITHUB_PATTERN, $url) === 1;
+    }
+
     /** @return array{0: string, 1: string, 2: string|null} */
     private function parse(string $url): array
     {
         $url = trim($url);
-        $pattern = '#^(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9-]+)/([A-Za-z0-9._-]+?)(?:\.git)?(?:/tree/([^?\#]+))?/?$#';
+        $pattern = self::GITHUB_PATTERN;
 
         if (preg_match('#^([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)$#', $url, $m)) {
             return [$m[1], $m[2], null];
