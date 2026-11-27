@@ -397,7 +397,7 @@ Route::domain(Dashboard::host())
             ->name('workspace.machines.services.show');
         Route::get('machines/{machine}/services/{service}/{tab}', [MachineServiceController::class, 'show'])
             ->where('service', '[A-Za-z0-9:._@-]+')
-            ->whereIn('tab', ['overview', 'traffic', 'logs', 'console', 'files', 'database', 'details']);
+            ->whereIn('tab', ['overview', 'deploys', 'settings', 'traffic', 'logs', 'console', 'files', 'database', 'details']);
         Route::post('machines/{machine}/services/{service}/database', [MachineServiceController::class, 'database'])
             ->where('service', '[A-Za-z0-9:._@-]+')
             ->middleware('throttle:60,1')

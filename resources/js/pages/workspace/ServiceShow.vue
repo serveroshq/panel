@@ -10,6 +10,21 @@ import {
     useTemplateRef,
     watch,
 } from 'vue';
+import AppAutoDeploy from '@/components/apps/AppAutoDeploy.vue';
+import AppBuildSettings from '@/components/apps/AppBuildSettings.vue';
+import AppDeployHistory from '@/components/apps/AppDeployHistory.vue';
+import AppDeployMenu from '@/components/apps/AppDeployMenu.vue';
+import AppDeployStatus from '@/components/apps/AppDeployStatus.vue';
+import AppEnvironment from '@/components/apps/AppEnvironment.vue';
+import AppJobLog from '@/components/apps/AppJobLog.vue';
+import AppSchedules from '@/components/apps/AppSchedules.vue';
+import type {
+    AppDeploy,
+    DeployJob,
+    DeployRow,
+    SettingsKey,
+} from '@/components/apps/appTypes';
+import { isFailed, shortSha } from '@/components/apps/appTypes';
 import BrandLogo from '@/components/dash/BrandLogo.vue';
 import DashButton from '@/components/dash/DashButton.vue';
 import DashHeader from '@/components/dash/DashHeader.vue';
@@ -99,7 +114,11 @@ type ServiceJob = {
 const props = defineProps<{
     workspace: Workspace;
     machine: Machine;
-    service: Service & { managed: boolean; container: boolean };
+    service: Service & {
+        managed: boolean;
+        container: boolean;
+        missing?: boolean;
+    };
     brand: { slug: string; name: string } | null;
     stack: ServiceStack;
     linked: LinkedDatabase;
@@ -123,8 +142,18 @@ const props = defineProps<{
         minutes: number;
     };
     app: ServiceApp | null;
+    deploy?: AppDeploy | null;
+    deployHistory?: DeployRow[];
     siteTraffic: ExistingSitesTrafficProps | null;
 }>();
+
+// The app's deploy setup, replaced straight away by what a save answers.
+const deployState = ref<AppDeploy | null>(props.deploy ?? null);
+watch(
+    () => props.deploy,
+    (next) => (deployState.value = next ?? null),
+);
+const missing = computed(() => props.service.missing === true);
 
 const page = usePage<{ workspaceAccess: WorkspaceAccess | null }>();
 const canManage = computed(
@@ -283,6 +312,8 @@ function saveLabel(label: string | null): void {
 
 const TAB_KEYS = [
     'overview',
+    'deploys',
+    'settings',
     'traffic',
     'logs',
     'console',
@@ -292,39 +323,77 @@ const TAB_KEYS = [
 ] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
-const tab = usePathTab(serviceUrl.value, TAB_KEYS);
+const tab = usePathTab(
+    serviceUrl.value,
+    TAB_KEYS,
+    props.service.missing ? 'deploys' : 'overview',
+);
 
-const tabs = computed(() =>
-    (
-        [
-            {
-                key: 'overview',
-                label: trans('Overview'),
-                icon: 'monitors-fill',
-            },
-            ...(props.app || props.siteTraffic
-                ? [
-                      {
-                          key: 'traffic',
-                          label: trans('Traffic'),
-                          icon: 'globe-fill',
-                      },
-                  ]
-                : []),
-            { key: 'logs', label: trans('Logs'), icon: 'file-fill' },
-            { key: 'files', label: trans('Files'), icon: 'folder-fill' },
-            ...(props.database
-                ? [
-                      {
-                          key: 'database',
-                          label: trans('Database'),
-                          icon: 'database-fill',
-                      },
-                  ]
-                : []),
-            { key: 'details', label: trans('Details'), icon: 'info-fill' },
-        ] as { key: TabKey; label: string; icon: FilledIconName }[]
-    ).map((item) => ({ ...item, current: tab.value === item.key })),
+type TabItem = { key: TabKey; label: string; icon: FilledIconName };
+
+const appTabs = computed<TabItem[]>(() =>
+    deployState.value
+        ? [
+              { key: 'deploys', label: trans('Deploys'), icon: 'history' },
+              {
+                  key: 'settings',
+                  label: trans('Settings'),
+                  icon: 'settings-fill',
+              },
+          ]
+        : [],
+);
+
+const tabs = computed(() => {
+    const list: TabItem[] = missing.value
+        ? appTabs.value
+        : [
+              {
+                  key: 'overview',
+                  label: trans('Overview'),
+                  icon: 'monitors-fill',
+              },
+              ...appTabs.value,
+              ...(props.app || props.siteTraffic
+                  ? [
+                        {
+                            key: 'traffic' as const,
+                            label: trans('Traffic'),
+                            icon: 'globe-fill' as const,
+                        },
+                    ]
+                  : []),
+              { key: 'logs', label: trans('Logs'), icon: 'file-fill' },
+              { key: 'files', label: trans('Files'), icon: 'folder-fill' },
+              ...(props.database
+                  ? [
+                        {
+                            key: 'database' as const,
+                            label: trans('Database'),
+                            icon: 'database-fill' as const,
+                        },
+                    ]
+                  : []),
+              { key: 'details', label: trans('Details'), icon: 'info-fill' },
+          ];
+
+    return list.map((item) => ({ ...item, current: tab.value === item.key }));
+});
+
+// A tab this service doesn't have (an app with no container yet, say)
+// falls back to the first one it does.
+watch(
+    tabs,
+    (list) => {
+        if (
+            list.length &&
+            tab.value !== 'console' &&
+            !list.some((item) => item.key === tab.value)
+        ) {
+            tab.value = list[0].key;
+        }
+    },
+    { immediate: true },
 );
 
 const activeJob = computed(() =>
@@ -368,6 +437,7 @@ function poll(): void {
                     'machine',
                     'app',
                     'usage',
+                    ...(deployState.value ? ['deploy'] : []),
                 ],
                 onFinish: poll,
             }),
@@ -458,6 +528,15 @@ const status = computed(() => {
             status: 'deploying' as const,
             label: `${lifecycleLabels[pending.value.action] ?? trans('Working')}…`,
         };
+    }
+    if (missing.value) {
+        if (deployState.value?.deploying) {
+            return { status: 'deploying' as const, label: trans('Deploying') };
+        }
+
+        return deployState.value?.lastFailure
+            ? { status: 'down' as const, label: trans('Deploy failed') }
+            : { status: 'stopped' as const, label: trans('Not deployed yet') };
     }
 
     return statusOf(
@@ -1077,6 +1156,80 @@ watch(removeData, (on) => {
     }
 });
 
+/* Deploying the app again, following it, and fixing what failed. */
+const deployMenu =
+    useTemplateRef<InstanceType<typeof AppDeployMenu>>('deployMenu');
+const startedJob = ref<string | null>(null);
+const logJob = ref<{ id: string; title?: string } | null>(null);
+const logOpen = ref(false);
+const settingsFocus = ref<{ key: SettingsKey | null; at: number } | null>(null);
+
+function openLog(id: string, title?: string): void {
+    logJob.value = { id, title };
+    logOpen.value = true;
+}
+
+function openSettings(key: SettingsKey | null): void {
+    tab.value = 'settings';
+    settingsFocus.value = { key, at: Date.now() };
+}
+
+function deployed(jobId: string, next: AppDeploy | null): void {
+    startedJob.value = jobId;
+    if (next) deployState.value = next;
+    router.reload({
+        only: next
+            ? ['deployHistory', 'jobs']
+            : ['deploy', 'deployHistory', 'jobs'],
+    });
+    toast(trans('Deploying :app…', { app: String(displayName.value) }));
+}
+
+function deployFinished(job: DeployJob): void {
+    const sha = shortSha(job.commit);
+    if (job.state === 'succeeded') {
+        toast.success(
+            job.kind === 'rollback'
+                ? trans(':app is rolled back.', {
+                      app: String(displayName.value),
+                  })
+                : sha
+                  ? trans(':app is live with :sha.', {
+                        app: String(displayName.value),
+                        sha,
+                    })
+                  : trans(':app is live.', { app: String(displayName.value) }),
+        );
+    } else if (isFailed(job.state) || job.state === 'stale') {
+        toast.error(
+            trans(
+                'The deploy of :app didn’t work. Why is at the top of the page.',
+                {
+                    app: String(displayName.value),
+                },
+            ),
+        );
+    }
+    router.reload();
+}
+
+watch(
+    () => deployState.value?.deploying?.id,
+    (id, before) => {
+        if (id && id !== before) router.reload({ only: ['deployHistory'] });
+    },
+);
+
+function dropVersion(file: File | undefined): void {
+    if (deployMenu.value) void deployMenu.value.upload(file);
+    else void shipVersion(file);
+}
+
+function editVariables(): void {
+    if (deployState.value) tab.value = 'settings';
+    else variablesOpen.value = true;
+}
+
 onMounted(() => {
     poll();
 });
@@ -1148,7 +1301,7 @@ onBeforeUnmount(() => {
                                 : $t('Hide from lists')
                         }}
                     </DropdownMenuItem>
-                    <template v-if="managed && canManage">
+                    <template v-if="managed && canManage && !missing">
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                             v-if="running"
@@ -1231,33 +1384,49 @@ onBeforeUnmount(() => {
             </DropdownMenu>
 
             <template v-if="canManage">
-                <DashButton
-                    v-if="!managed"
-                    variant="primary"
-                    :label="
-                        working === 'adopt'
-                            ? $t('Adopting…')
-                            : $t('Adopt service')
-                    "
-                    :disabled="!commandsEnabled || !online || working !== null"
-                    @click="adopt"
+                <template v-if="!missing">
+                    <DashButton
+                        v-if="!managed"
+                        variant="primary"
+                        :label="
+                            working === 'adopt'
+                                ? $t('Adopting…')
+                                : $t('Adopt service')
+                        "
+                        :disabled="
+                            !commandsEnabled || !online || working !== null
+                        "
+                        @click="adopt"
+                    />
+                    <DashButton
+                        v-else-if="running"
+                        :label="$t('Restart')"
+                        :loading="working === 'restart'"
+                        :disabled="!canControl || working !== null"
+                        @click="lifecycle('restart')"
+                    />
+                    <DashButton
+                        v-else
+                        :variant="app || deployState ? 'secondary' : 'primary'"
+                        :label="$t('Start')"
+                        :loading="working === 'start'"
+                        :disabled="!canControl || working !== null"
+                        @click="lifecycle('start')"
+                    />
+                </template>
+                <AppDeployMenu
+                    v-if="deployState && managed"
+                    ref="deployMenu"
+                    :deploy="deployState"
+                    :workspace-slug="workspace.slug"
+                    :machine-id="machine.id!"
+                    :online="online"
+                    :has-plan="hasPlan"
+                    :has-settings="!!app"
+                    @deployed="deployed"
+                    @settings="deploySettingsOpen = true"
                 />
-                <DashButton
-                    v-else-if="running"
-                    :label="$t('Restart')"
-                    :loading="working === 'restart'"
-                    :disabled="!canControl || working !== null"
-                    @click="lifecycle('restart')"
-                />
-                <DashButton
-                    v-else
-                    :variant="app ? 'secondary' : 'primary'"
-                    :label="$t('Start')"
-                    :loading="working === 'start'"
-                    :disabled="!canControl || working !== null"
-                    @click="lifecycle('start')"
-                />
-                <template v-if="app && managed">
+                <template v-else-if="app && managed">
                     <input
                         ref="zipInput"
                         type="file"
@@ -1357,6 +1526,29 @@ onBeforeUnmount(() => {
         </DashTabs>
 
         <div
+            v-if="
+                deployState &&
+                (deployState.deploying || deployState.lastFailure || startedJob)
+            "
+            class="flex flex-col gap-3 px-6 pt-4 empty:hidden"
+        >
+            <AppDeployStatus
+                :deploy="deployState"
+                :started="startedJob"
+                :workspace-slug="workspace.slug"
+                :machine-id="machine.id!"
+                :machine-name="machine.name"
+                :missing="missing"
+                :can-manage="canManage"
+                :online="online"
+                @settings="openSettings"
+                @log="openLog"
+                @deployed="deployed"
+                @finished="deployFinished"
+            />
+        </div>
+
+        <div
             v-if="!managed || needsRepair"
             class="flex flex-col gap-3 px-6 pt-4"
         >
@@ -1454,7 +1646,7 @@ onBeforeUnmount(() => {
                     :messages="messages"
                     @rollback="askRollback"
                     @settings="deploySettingsOpen = true"
-                    @drop="shipVersion"
+                    @drop="dropVersion"
                 />
                 <ServiceVariables
                     :variables="app?.variables ?? null"
@@ -1462,7 +1654,7 @@ onBeforeUnmount(() => {
                     :can-manage="canManage"
                     :online="online"
                     :container="!!inspect"
-                    @edit="variablesOpen = true"
+                    @edit="editVariables"
                     @config="tab = 'details'"
                 />
             </div>
@@ -1477,6 +1669,68 @@ onBeforeUnmount(() => {
                 :links="links"
                 :can-manage="canManage"
                 @limits="limitsOpen = true"
+            />
+        </div>
+
+        <div
+            v-else-if="tab === 'deploys' && deployState"
+            class="flex flex-col gap-3 px-6 py-4"
+        >
+            <AppDeployHistory
+                :rows="deployHistory"
+                :messages="messages"
+                :workspace-slug="workspace.slug"
+                :machine-id="machine.id!"
+                :service="deployState.service"
+                :live-commit="deployState.liveCommit"
+                :source="deployState.source"
+                @log="openLog"
+            />
+            <div class="grid items-start gap-3 lg:grid-cols-2">
+                <AppAutoDeploy
+                    :deploy="deployState"
+                    :workspace-slug="workspace.slug"
+                    :machine-id="machine.id!"
+                    :can-manage="canManage"
+                    @changed="router.reload({ only: ['deploy', 'app'] })"
+                />
+            </div>
+        </div>
+
+        <div
+            v-else-if="tab === 'settings' && deployState"
+            class="flex flex-col gap-3 px-6 py-4"
+        >
+            <AppBuildSettings
+                :deploy="deployState"
+                :workspace-slug="workspace.slug"
+                :machine-id="machine.id!"
+                :machine-name="machine.name"
+                :can-manage="canManage"
+                :online="online"
+                :focus="settingsFocus"
+                @deployed="deployed"
+            />
+            <AppEnvironment
+                :deploy="deployState"
+                :linked="linked"
+                :workspace-slug="workspace.slug"
+                :machine-id="machine.id!"
+                :can-manage="canManage"
+                :online="online"
+                @deployed="deployed"
+            />
+            <AppSchedules
+                :deploy="deployState"
+                :workspace-slug="workspace.slug"
+                :machine-id="machine.id!"
+                :can-manage="canManage"
+                :online="online"
+                :running="!missing && running"
+                :console-lock="consoleLock"
+                @log="openLog"
+                @saved="router.reload({ only: ['deploy'] })"
+                @unlocked="router.reload({ only: ['consoleLock'] })"
             />
         </div>
 
@@ -1569,6 +1823,17 @@ onBeforeUnmount(() => {
         </div>
     </div>
 
+    <AppJobLog
+        v-if="deployState"
+        v-model:open="logOpen"
+        :workspace-slug="workspace.slug"
+        :machine-id="machine.id!"
+        :service="deployState.service"
+        :job-id="logJob?.id ?? null"
+        :title="logJob?.title"
+        :can-manage="canManage"
+        @finished="router.reload({ only: ['deploy', 'deployHistory'] })"
+    />
     <AppVariablesDialog
         v-if="canManage && app"
         v-model:open="variablesOpen"
