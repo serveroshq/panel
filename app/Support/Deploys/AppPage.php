@@ -2,6 +2,7 @@
 
 namespace App\Support\Deploys;
 
+use App\Models\DaemonJob;
 use App\Models\DeploySource;
 use App\Models\Machine;
 use App\Support\DaemonJobQueue;
@@ -44,6 +45,8 @@ final class AppPage
             'commit' => $source === 'image' ? null : ($spec['commit'] ?? null),
             'liveCommit' => AppReleases::live($machine)[$app] ?? null,
             'domains' => array_values(array_filter((array) ($spec['domains'] ?? []), 'is_string')),
+            // The port the daemon used when none was set (an image's or Dockerfile's EXPOSE).
+            'detectedPort' => self::detectedPort($machine, $app),
             'canDeployBuild' => $new,
             'update' => $new ? null : 'Update the ServerOS daemon on '.$machine->name.' to v'.config('daemon.deploy_build_since').' or later for Railpack, images, volumes, release commands and the rest of the build settings.',
             'build' => $settings->toArray(AppSettings::managedNames($machine, $app)),
@@ -61,5 +64,14 @@ final class AppPage
                 'hook' => $source !== 'upload',
             ],
         ];
+    }
+
+    private static function detectedPort(Machine $machine, string $app): ?int
+    {
+        $result = DaemonJob::query()->where('machine_id', $machine->id)->where('kind', 'deploy')->where('service', $app)
+            ->where('state', 'succeeded')->latest()->value('result');
+        $port = is_array($result) ? ($result['container_port'] ?? null) : (is_string($result) ? (json_decode($result, true)['container_port'] ?? null) : null);
+
+        return is_int($port) && $port > 0 && $port <= 65535 ? $port : null;
     }
 }

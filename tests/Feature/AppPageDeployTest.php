@@ -76,6 +76,11 @@ test('an app whose first deploy failed still has a page, with its settings and w
 
     $page = $this->actingAs($workspace->owner)->get($workspace->url()."/machines/{$machine->id}/services/app:shop");
     expect($page->getContent())->not->toContain('s3cret');
+
+    // Once a deploy works, the port the daemon read from the image shows too.
+    DaemonJob::query()->update(['state' => 'succeeded', 'result' => json_encode(['container_port' => 8080])]);
+    $this->actingAs($workspace->owner)->get($workspace->url()."/machines/{$machine->id}/services/app:shop")
+        ->assertInertia(fn (Assert $page) => $page->where('deploy.detectedPort', 8080)->where('deploy.lastFailure', null));
 });
 
 test('fixing the build settings of a failed app deploys it again with them, on the same commit', function () {
