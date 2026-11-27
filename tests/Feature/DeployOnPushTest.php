@@ -20,9 +20,25 @@ beforeEach(function () {
     config()->set('daemon.gateway_internal_url', 'http://127.0.0.1:8090');
     config()->set('daemon.gateway_secret', 'test-gateway-secret');
     config()->set('services.github_app.webhook_secret', 'hook-secret');
-    Http::fake(['127.0.0.1:8090/*' => Http::response(['queued' => true], 202), '*' => Http::response('ok')]);
+    pushGitHubApp();
+    Http::fake([
+        '127.0.0.1:8090/*' => Http::response(['queued' => true], 202),
+        'api.github.com/app/installations/42/access_tokens' => Http::response(['token' => 'ghs_push', 'repositories' => [['id' => 7, 'full_name' => 'acme/shop']]], 201),
+        '*' => Http::response('ok'),
+    ]);
     $this->withoutDefer();
 });
+
+// The GitHub App sends the pushes, so pushes only deploy where it can see the repository.
+function pushGitHubApp(): void
+{
+    $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+    openssl_pkey_export($key, $pem);
+    config()->set('services.github_app', [
+        ...(array) config('services.github_app'),
+        'id' => '12345', 'slug' => 'serveros', 'client_id' => 'Iv1.abc', 'client_secret' => 'shh', 'private_key' => base64_encode($pem),
+    ]);
+}
 
 /** @return array{0: Workspace, 1: Machine, 2: string} */
 function pushDeployApp(string $repo = 'https://github.com/acme/shop'): array
@@ -30,7 +46,8 @@ function pushDeployApp(string $repo = 'https://github.com/acme/shop'): array
     $workspace = Workspace::factory()->onPlan(Plan::Pro)->create();
     $workspace->githubInstallations()->create(['installation_id' => 42, 'account_login' => 'acme', 'account_type' => 'Organization']);
     $machine = Machine::factory()->for($workspace)->create(['name' => 'web-1']);
-    $machine->forceFill(['uid' => (string) Str::uuid(), 'last_seen_at' => now()])->save();
+    // Recent enough to fetch a private repository with the GitHub App's token.
+    $machine->forceFill(['uid' => (string) Str::uuid(), 'last_seen_at' => now(), 'daemon_version' => '0.1.1-pre.46'])->save();
 
     $job = DaemonJob::query()->create([
         'id' => (string) Str::uuid(),
@@ -214,7 +231,7 @@ test('with only the newest push off, every push deploys straight away', function
         ->and(pushDeploys($machine)->every(fn (DaemonJob $job) => ! $job->held && sentToMachine($job)))->toBeTrue();
 });
 
-test('a waiting push is sent once the deploy before it goes quiet, or when someone stops waiting on it', function () {
+test('a waiting push is sent once the deploy before it has been quiet past its timeout, or when someone stops waiting on it', function () {
     [$workspace, $machine, $base] = pushDeployApp();
     $this->actingAs($workspace->owner)->putJson($base."/machines/{$machine->id}/apps/shop/settings", ['deploy_on_push' => true])->assertOk();
 
@@ -225,7 +242,12 @@ test('a waiting push is sent once the deploy before it goes quiet, or when someo
     $this->artisan('deploys:release-waiting')->assertSuccessful();
     expect(pushJob($machine, str_repeat('b', 40))->held)->toBeTrue();
 
+    // A long build step with no news is still building.
     $first->forceFill(['updated_at' => now()->subMinutes(DaemonJob::STALE_AFTER_MINUTES + 1)])->saveQuietly();
+    $this->artisan('deploys:release-waiting')->assertSuccessful();
+    expect(pushJob($machine, str_repeat('b', 40))->held)->toBeTrue();
+
+    $first->forceFill(['updated_at' => now()->subSeconds(DaemonJobQueue::DEPLOY_TIMEOUT_SECS + 180)])->saveQuietly();
     $this->artisan('deploys:release-waiting')->expectsOutput('Sent 1 waiting deploy(s).')->assertSuccessful();
     expect(pushJob($machine, str_repeat('b', 40))->held)->toBeFalse();
 

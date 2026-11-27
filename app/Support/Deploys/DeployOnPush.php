@@ -2,12 +2,13 @@
 
 namespace App\Support\Deploys;
 
-use App\Http\Controllers\AppVersionController;
 use App\Models\Activity;
 use App\Models\DaemonJob;
 use App\Models\Machine;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Support\DaemonJobQueue;
+use App\Support\GitHub\GitHubApp;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -31,10 +32,10 @@ final class DeployOnPush
 
     public const string TRIGGER = 'push';
 
-    public const string REPLACED = 'A newer push replaced this deploy.';
+    // Deploys of a pushed commit: from GitHub's push event, or a deploy hook.
+    public const array PUSH_TRIGGERS = [self::TRIGGER, ...DeployHooks::TRIGGERS];
 
-    // What a held push deploy waits for: anything else changing the app.
-    private const array BLOCKING_KINDS = ['deploy', 'rollback'];
+    public const string REPLACED = 'A newer push replaced this deploy.';
 
     public function __construct(private readonly DaemonJobQueue $queue) {}
 
@@ -48,6 +49,30 @@ final class DeployOnPush
         return strtolower($m[1].'/'.$m[2]);
     }
 
+    /**
+     * Why pushes to this repository can't deploy an app: only a GitHub
+     * repository the workspace's GitHub connection can see sends them.
+     * Null when they can.
+     */
+    public static function cannotWatch(Workspace $workspace, mixed $repo): ?string
+    {
+        $name = self::repoName(is_string($repo) ? $repo : null);
+        if ($name === null) {
+            return 'Deploying each push works for apps deployed from a GitHub repository. For other hosts, use the app’s deploy hook.';
+        }
+        if (! GitHubApp::enabled()) {
+            return 'Deploying each push needs GitHub connected to this panel. Use the app’s deploy hook instead, or ask whoever runs the panel to set up the GitHub app.';
+        }
+        [$owner, $repository] = explode('/', $name, 2);
+        if (app(GitHubApp::class)->tokenFor($workspace, $owner, $repository) === null) {
+            return GitHubApp::connected($workspace, $owner)
+                ? "The ServerOS app on GitHub can’t see {$name}. Add it to the app’s repositories on GitHub, then turn this on."
+                : "Connect GitHub in Settings › General and give the ServerOS app {$name}, then turn this on. Pushes reach ServerOS through it.";
+        }
+
+        return null;
+    }
+
     /** @return array{on: bool, branch: string, onlyNewest: bool} */
     public static function setting(Machine $machine, string $app): array
     {
@@ -55,7 +80,7 @@ final class DeployOnPush
 
         return [
             'on' => (bool) ($settings['deploy_on_push'] ?? false),
-            'branch' => is_string($settings['push_branch'] ?? null) && $settings['push_branch'] !== '' ? $settings['push_branch'] : 'main',
+            'branch' => AppDeploys::branch($machine, $app) ?? 'main',
             'onlyNewest' => (bool) ($settings['push_only_newest'] ?? true),
         ];
     }
@@ -78,53 +103,71 @@ final class DeployOnPush
                 if (! $setting['on'] || $setting['branch'] !== $branch) {
                     continue;
                 }
-                $last = AppVersionController::lastDeployOf($machine, $app);
-                if ($last === null || self::repoName($last->command['job']['repo'] ?? null) !== $repo) {
-                    continue;
-                }
-                if ($this->alreadyDeploying($machine, $app, $commit)) {
-                    $skipped++;
-
+                $spec = AppDeploys::spec($machine, $app);
+                if ($spec === null || self::repoName($spec['repo'] ?? null) !== $repo) {
                     continue;
                 }
 
-                $user = $this->actor($machine, $app);
-                $reason = $user === null ? 'no one in the workspace can deploy it' : $this->queue->unavailable($machine, 'deploy');
-                if ($reason === null && $user !== null) {
-                    $job = [...$last->command['job'], 'commit' => $commit];
-                    try {
-                        $reason = $this->locked($machine, $app, function () use ($machine, $app, $user, $job, $commit, $branch, $setting): ?string {
-                            $hold = false;
-                            if ($setting['onlyNewest']) {
-                                $this->replaceWaiting($machine, $app, $commit, $branch);
-                                $hold = $this->busy($machine, $app);
-                            }
-                            try {
-                                $this->queue->deploy($machine, $user, $job, hold: $hold, trigger: self::TRIGGER);
-                            } catch (RuntimeException $e) {
-                                return $e->getMessage();
-                            }
-
-                            return null;
-                        });
-                    } catch (LockTimeoutException) {
-                        $reason = 'another push to it was being handled at the same moment';
-                    }
-                    if ($reason === null) {
-                        $started++;
-
-                        continue;
-                    }
-                }
-
-                Activity::system($machine->workspace, 'app.push_skipped', $app, $machine, [
-                    'reason' => $reason, 'branch' => $branch, 'commit' => substr($commit, 0, 7),
-                ]);
-                $skipped++;
+                $outcome = $this->deployCommit($machine, $app, $commit, $branch, self::TRIGGER);
+                $outcome['started'] ? $started++ : $skipped++;
             }
         }
 
         return ['started' => $started, 'skipped' => $skipped];
+    }
+
+    /**
+     * Deploys a pushed commit of an app, with everything else as its latest
+     * deploy had it: from GitHub's push to its branch, or its deploy hook.
+     * With "only the newest push" on, it waits while the app deploys, and
+     * replaces an older push that's waiting. Why it didn't is recorded.
+     *
+     * @param  array<string, mixed>  $meta  more for the activity log
+     * @param  bool  $again  deploy it even when that commit is live (an image, pulled again)
+     * @return array{started: bool, reason: string|null, job: DaemonJob|null} reason is null for a commit already deploying
+     */
+    public function deployCommit(Machine $machine, string $app, string $commit, string $branch, string $trigger, ?User $user = null, array $meta = [], bool $again = false): array
+    {
+        $spec = AppDeploys::spec($machine, $app);
+        if ($spec === null) {
+            return ['started' => false, 'reason' => 'it has no deploy to copy settings from', 'job' => null];
+        }
+        if ($this->alreadyDeploying($machine, $app, $commit, $again)) {
+            return ['started' => false, 'reason' => null, 'job' => null];
+        }
+
+        $setting = self::setting($machine, $app);
+        $user ??= $this->actor($machine, $app);
+        $reason = $user === null ? 'no one in the workspace can deploy it' : $this->queue->unavailable($machine, 'deploy');
+        $job = null;
+        if ($reason === null && $user !== null) {
+            $spec = [...$spec, 'commit' => strtolower($commit)];
+            try {
+                [$reason, $job] = $this->locked($machine, $app, function () use ($machine, $app, $user, $spec, $commit, $branch, $setting, $trigger, $meta): array {
+                    $hold = false;
+                    if ($setting['onlyNewest']) {
+                        $this->replaceWaiting($machine, $app, $commit, $branch);
+                        $hold = $this->busy($machine, $app);
+                    }
+                    try {
+                        return [null, $this->queue->deploy($machine, $user, $spec, hold: $hold, trigger: $trigger, meta: $meta)];
+                    } catch (RuntimeException $e) {
+                        return [$e->getMessage(), null];
+                    }
+                });
+            } catch (LockTimeoutException) {
+                $reason = 'another push to it was being handled at the same moment';
+            }
+            if ($reason === null) {
+                return ['started' => true, 'reason' => null, 'job' => $job];
+            }
+        }
+
+        Activity::system($machine->workspace, 'app.push_skipped', $app, $machine, [
+            'reason' => $reason, 'branch' => $branch, 'commit' => substr($commit, 0, 7), 'trigger' => $trigger,
+        ]);
+
+        return ['started' => false, 'reason' => $reason, 'job' => null];
     }
 
     /**
@@ -169,18 +212,10 @@ final class DeployOnPush
     }
 
     // Whether the app is deploying or rolling back now, in a job its machine
-    // has (a stale one, the daemon never answered, doesn't count).
+    // has (one the daemon never answered on, past its timeout, doesn't count).
     private function busy(Machine $machine, string $app): bool
     {
-        return DaemonJob::query()
-            ->where('machine_id', $machine->id)
-            ->where('service', $app)
-            ->whereIn('kind', self::BLOCKING_KINDS)
-            ->whereIn('state', ['queued', 'running'])
-            ->where('held', false)
-            ->where('created_at', '>=', now()->subSeconds(DaemonJobQueue::DEPLOY_TIMEOUT_SECS + 600))
-            ->get()
-            ->contains(fn (DaemonJob $job) => ! $job->isStale());
+        return AppDeploys::busy($machine, $app) !== null;
     }
 
     /** @return Collection<int, DaemonJob> newest first */
@@ -192,7 +227,7 @@ final class DeployOnPush
             ->where('kind', 'deploy')
             ->where('state', 'queued')
             ->where('held', true)
-            ->where('trigger', self::TRIGGER)
+            ->whereIn('trigger', self::PUSH_TRIGGERS)
             ->orderByDesc('created_at')
             ->get();
     }
@@ -223,13 +258,13 @@ final class DeployOnPush
 
     // GitHub sends a push again when a delivery is retried; the commit
     // queued, running or live already is never deployed twice.
-    private function alreadyDeploying(Machine $machine, string $app, string $commit): bool
+    private function alreadyDeploying(Machine $machine, string $app, string $commit, bool $again = false): bool
     {
         return DaemonJob::query()
             ->where('machine_id', $machine->id)
             ->where('kind', 'deploy')
             ->where('service', $app)
-            ->whereIn('state', ['queued', 'running', 'succeeded'])
+            ->whereIn('state', $again ? ['queued', 'running'] : ['queued', 'running', 'succeeded'])
             ->where('created_at', '>=', now()->subDay())
             ->get()
             ->contains(fn (DaemonJob $job) => strcasecmp((string) ($job->command['job']['commit'] ?? ''), $commit) === 0);
