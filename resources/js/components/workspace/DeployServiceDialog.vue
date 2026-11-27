@@ -990,6 +990,10 @@ const envRows = ref<EnvRow[]>([]);
 const importExample = ref(false);
 const addressMode = ref<AddressMode>('free');
 const advancedOpen = ref(false);
+// A template's settings that have defaults, shown when someone asks.
+const fieldsOpen = ref(false);
+// What the deploy said when it was turned down for Docker missing.
+const dockerMessage = ref<string | null>(null);
 const errors = ref<Record<string, string>>({});
 const submitting = ref(false);
 
@@ -1227,6 +1231,7 @@ function templateEnv(
  */
 function applyTemplate(template: ServiceTemplate): void {
     const found = fromScan.value ? detection.value : null;
+    const same = selected.value?.slug === template.slug;
     selected.value = template;
     form.value.port = defaultPort(template, found);
     form.value.compose_file = template.compose
@@ -1236,7 +1241,8 @@ function applyTemplate(template: ServiceTemplate): void {
     form.value.base_dir = template.compose ? '' : (found?.baseDir ?? '');
     form.value.php =
         found?.php && found.template === template.slug ? found.php : '';
-    form.value.env = templateEnv(template);
+    // Looking at another branch or folder keeps what was typed in.
+    if (!same) form.value.env = templateEnv(template);
     const path =
         found?.healthPath && found.template === template.slug
             ? found.healthPath
@@ -1310,6 +1316,7 @@ function choose(
     advancedOpen.value = false;
     fieldsOpen.value = false;
     dockerMessage.value = null;
+    selected.value = null;
     applyTemplate(template);
     suggested.value = { service: form.value.service, port: form.value.port };
     step.value = 'configure';
@@ -1460,8 +1467,6 @@ function errorFor(key: string): string | undefined {
 
 // An app's template settings that have a default are filled in quietly;
 // only the ones that need an answer show until someone opens them.
-const fieldsOpen = ref(false);
-
 function needsInput(entry: TemplateField): boolean {
     return entry.accept || (entry.required && entry.default === '');
 }
@@ -1497,7 +1502,6 @@ const missingAcceptance = computed(
 );
 
 // Docker missing on the machine: install it from here (newer daemons).
-const dockerMessage = ref<string | null>(null);
 const showDocker = computed(
     () =>
         dockerMessage.value !== null ||
@@ -1701,6 +1705,24 @@ async function copy(key: string, value: string): Promise<void> {
         }, 1600);
     } catch {}
 }
+
+// Another machine, or the first answer from this one: what its daemon can
+// do changes the defaults a new app gets, unless they've been changed.
+watch(canDeployBuild, (now) => {
+    const template = selected.value;
+    if (step.value !== 'configure' || !template) return;
+    const before = healthDefaults.value;
+    healthDefaults.value = defaultHealth(template, before.path, now);
+    const health = build.value.health;
+    if (
+        health.enabled === before.enabled &&
+        health.any === before.any &&
+        health.startPeriod === before.startPeriod
+    ) {
+        build.value.health = { ...healthDefaults.value, path: health.path };
+    }
+    if (form.value.port === '' && !now) form.value.port = template.port;
+});
 
 function onDragEnter(): void {
     if (isOwnCode.value && !busy.value && !ssh.value) dragging.value++;
@@ -2085,7 +2107,7 @@ watch(
                                             id="ssh-service"
                                             v-model.trim="ssh.service"
                                             maxlength="63"
-                                            pattern="[a-z][a-z0-9-]*"
+                                            pattern="[a-z][a-z0-9\-]*"
                                             class="font-ui-mono"
                                             :disabled="
                                                 !!ssh.publicKey ||
@@ -2700,7 +2722,7 @@ watch(
                                         "
                                         required
                                         maxlength="63"
-                                        pattern="[a-z][a-z0-9-]*"
+                                        pattern="[a-z][a-z0-9\-]*"
                                         class="font-ui-mono"
                                     />
                                 </div>
