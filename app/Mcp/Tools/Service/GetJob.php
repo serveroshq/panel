@@ -21,7 +21,7 @@ final class GetJob extends Tool
     public function description(): string
     {
         return 'Returns a job on a machine by its id (the tools that start work return it): kind, state (queued, running, succeeded, failed, cancelled, timed_out or refused), finished, phase and progress (0–100) while it runs, the last log lines (log_lines, default 40, up to 500; logLines is how many there are), result (what the job produced, like a service_logs job’s lines or a command’s exit_code), error, who started it and when. '
-            .'Pass wait (up to 25 seconds) to answer as soon as it finishes. A job that has been queued or running with no news for 10 minutes is stale: the machine may never report back (cancel_job stops waiting on it). Works for any job on the workspace’s machines.';
+            .'Pass wait (up to 25 seconds) to answer as soon as it finishes. A job that has been queued or running with no news for 10 minutes (a deploy or rollback: for longer than its whole timeout, since a build step can be quiet a long while) is stale: the machine may never report back (cancel_job stops it). Works for any job on the workspace’s machines.';
     }
 
     public function inputSchema(): array

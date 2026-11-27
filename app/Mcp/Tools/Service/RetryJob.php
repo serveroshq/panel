@@ -7,6 +7,8 @@ use App\Mcp\Schema;
 use App\Mcp\Scopes;
 use App\Mcp\Tool;
 use App\Mcp\ToolError;
+use App\Support\DaemonJobQueue;
+use App\Support\Deploys\AppDeploys;
 
 final class RetryJob extends Tool
 {
@@ -24,7 +26,7 @@ final class RetryJob extends Tool
 
     public function description(): string
     {
-        return 'Sends a deploy job again exactly as it was first sent (same code, settings and secrets), as a new job, like Retry on the machine page; the new version replaces what is running once it is healthy. Only deploys can be retried (for other jobs, do the action again, like restart_service). A deploy still queued or running can only be retried once it is stale (no news for 10 minutes); it is then marked cancelled first. '
+        return 'Sends a deploy job again exactly as it was first sent (same code, settings and secrets), as a new job, like Retry on the machine page; the new version replaces what is running once it is healthy. Only deploys can be retried (for other jobs, do the action again, like restart_service). A deploy still queued or running can only be retried once it is stale (no news for longer than its timeout); it is then stopped first. A retry waits while another deploy of the same app is still going. '
             .'Tell the person what will be deployed again and where before retrying. The machine must be online. Returns the new job: follow it with get_job (wait, up to 25 seconds, answers sooner if it finishes).';
     }
 
@@ -58,13 +60,16 @@ final class RetryJob extends Tool
         if ($job->isActive() && ! $job->isStale()) {
             throw new ToolError('This deploy is still running.');
         }
+        if (is_string($job->service) && ($busy = AppDeploys::busy($job->machine, $job->service, $job->id)) !== null) {
+            throw new ToolError("{$job->service} is deploying now (job {$busy->id}). Wait for it to finish first.");
+        }
         if (($reason = $this->work->unavailable($job->machine, $job->kind)) !== null) {
             throw new ToolError($reason);
         }
 
         $replaced = $job->isActive();
         if ($replaced) {
-            CancelJob::stopWaiting($job);
+            app(DaemonJobQueue::class)->stopWaiting($job);
         }
         $retry = $this->work->retry($context, $job);
 

@@ -47,7 +47,7 @@ class DaemonGatewayController extends Controller
 {
     private const FINISHED_JOB_STATES = ['succeeded', 'failed', 'cancelled', 'timed_out', 'refused'];
 
-    private const RESCAN_AFTER = ['deploy', 'rollback', 'service_remove', 'service_repair', 'service_action', 'service_clone', 'adopt', 'image_update', 'docker_prune'];
+    private const RESCAN_AFTER = ['deploy', 'rollback', 'service_remove', 'service_repair', 'service_action', 'service_clone', 'adopt', 'image_update', 'docker_prune', 'docker_install'];
 
     private function authorised(Request $request): bool
     {
@@ -247,10 +247,21 @@ class DaemonGatewayController extends Controller
                     if ($job === null) {
                         return response()->json(['error' => 'Job not found for this machine.', 'code' => 'job_unknown'], 404);
                     }
+                    // Someone stopped waiting on it, but the machine kept going:
+                    // its final word is how it really went, so that's kept.
+                    $late = false;
                     if (in_array($job->state, self::FINISHED_JOB_STATES, true)) {
-                        break;
+                        if (! $job->stoppedWaiting() || ! in_array($state, self::FINISHED_JOB_STATES, true)) {
+                            break;
+                        }
+                        $late = true;
                     }
                     $lines = is_array($payload['log'] ?? null) ? array_values(array_filter($payload['log'], 'is_string')) : [];
+                    if ($late) {
+                        $lines[] = $state === 'cancelled'
+                            ? 'The machine cancelled it after ServerOS stopped waiting.'
+                            : 'The machine finished it after ServerOS stopped waiting: this is how it went.';
+                    }
                     if ($job->kind === 'database_query' && $lines !== []) {
                         // The database's rows, and the query itself: kept encrypted until read.
                         $lines = [DatabaseConsole::seal($lines)];
@@ -262,7 +273,7 @@ class DaemonGatewayController extends Controller
                         'progress' => is_numeric($payload['progress'] ?? null) ? max(0, min(100, (int) $payload['progress'])) : $job->progress,
                         'log' => $log,
                         'result' => is_array($payload['result'] ?? null) ? FileJobs::seal($job, $payload['result']) : $job->result,
-                        'error' => is_array($payload['error'] ?? null) ? $payload['error'] : $job->error,
+                        'error' => is_array($payload['error'] ?? null) ? $payload['error'] : ($late && $state === 'succeeded' ? null : $job->error),
                         'finished_at' => in_array($state, self::FINISHED_JOB_STATES, true) ? now() : null,
                     ])->save();
 
@@ -290,6 +301,10 @@ class DaemonGatewayController extends Controller
                         BackupRunner::recordPreDeploy($job);
                     } elseif ($job->kind === 'rollback') {
                         BackupRunner::recordRollback($job);
+                    }
+
+                    if ($state === 'succeeded' && $job->kind === 'docker_install' && is_string($payload['result']['version'] ?? null)) {
+                        $machine->forceFill(['facts' => [...($machine->facts ?? []), 'docker_version' => substr($payload['result']['version'], 0, 40)]])->save();
                     }
 
                     if ($state === 'succeeded' && in_array($job->kind, self::RESCAN_AFTER, true)) {

@@ -59,24 +59,30 @@ test('a deploy keeps its command encrypted and a retry sends it again unchanged'
         ->and($sent[1]['command']['job']['env']['POSTGRES_PASSWORD'])->toBe($password);
 });
 
-test('running deploys can only be retried or abandoned once they have gone quiet', function () {
+test('running deploys can only be retried once they have been quiet for longer than their timeout', function () {
     [$workspace, $machine, $url] = retryMachine();
 
     $job = DaemonJob::query()->create([
         'id' => (string) Str::uuid(), 'machine_id' => $machine->id, 'kind' => 'deploy', 'service' => 'web',
-        'state' => 'running', 'log' => [], 'command' => ['job' => ['type' => 'deploy', 'service' => 'web']],
+        'state' => 'running', 'log' => [], 'command' => ['timeout_secs' => 1800, 'job' => ['type' => 'deploy', 'service' => 'web']],
     ]);
 
     $this->actingAs($workspace->owner)->postJson($url.'/jobs/'.$job->id.'/retry')->assertStatus(409);
 
+    // A long build step can say nothing for a while: that's not stuck yet.
     $this->travel(DaemonJob::STALE_AFTER_MINUTES + 1)->minutes();
+    $machine->forceFill(['last_seen_at' => now()])->save();
+    expect($job->fresh()->isStale())->toBeFalse();
+    $this->actingAs($workspace->owner)->postJson($url.'/jobs/'.$job->id.'/retry')->assertStatus(409);
+
+    $this->travel(25)->minutes();
     $machine->forceFill(['last_seen_at' => now()])->save();
 
     $this->actingAs($workspace->owner)->postJson($url.'/jobs/'.$job->id.'/retry')->assertAccepted();
     expect($job->fresh()->state)->toBe('cancelled');
 });
 
-test('stopping waiting marks a stuck job cancelled without touching the machine', function () {
+test('stopping waiting marks a stuck job cancelled and asks the machine to cancel it', function () {
     [$workspace, $machine, $url] = retryMachine();
 
     $job = DaemonJob::query()->create([
@@ -89,9 +95,12 @@ test('stopping waiting marks a stuck job cancelled without touching the machine'
     $this->actingAs($workspace->owner)->postJson($url.'/jobs/'.$job->id.'/abandon')->assertOk();
 
     expect($job->fresh()->state)->toBe('cancelled')
-        ->and($job->fresh()->error['message'])->toContain('Stopped waiting');
+        ->and($job->fresh()->error['message'])->toBe(DaemonJob::STOPPED)
+        ->and($job->fresh()->stoppedWaiting())->toBeTrue();
     expect(Activity::query()->sole()->only(['action', 'subject', 'meta']))->toBe(['action' => 'job.abandon', 'subject' => 'redis', 'meta' => ['kind' => 'deploy']]);
-    Http::assertNothingSent();
+    Http::assertSentCount(1);
+    Http::assertSent(fn (GatewayRequest $request) => str_ends_with($request->url(), '/control')
+        && $request['control'] === ['type' => 'cancel_job', 'job_id' => $job->id]);
 
     $this->actingAs($workspace->owner)->postJson($url.'/jobs/'.$job->id.'/abandon')->assertStatus(409);
 });

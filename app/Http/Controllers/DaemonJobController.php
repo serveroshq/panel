@@ -8,7 +8,7 @@ use App\Models\Machine;
 use App\Models\Workspace;
 use App\Support\Audit\Audited;
 use App\Support\DaemonJobQueue;
-use App\Support\Deploys\DeployOnPush;
+use App\Support\Deploys\AppDeploys;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -27,12 +27,16 @@ class DaemonJobController extends Controller
         if ($job->isActive() && ! $job->isStale()) {
             return response()->json(['error' => 'This deploy is still running.'], 409);
         }
+        // Another deploy of the app that's still going (even quietly) keeps it busy.
+        if (is_string($job->service) && ($busy = AppDeploys::busy($machine, $job->service, $job->id)) !== null) {
+            return response()->json(['error' => "{$job->service} is deploying now. Wait for it to finish first.", 'jobId' => $busy->id], 409);
+        }
         if (($reason = $queue->unavailable($machine, $job->kind)) !== null) {
             return response()->json(['error' => $reason], 409);
         }
 
         if ($job->isActive()) {
-            $this->stopWaiting($job);
+            $queue->stopWaiting($job);
         }
 
         try {
@@ -45,7 +49,7 @@ class DaemonJobController extends Controller
     }
 
     #[Audited]
-    public function abandon(Workspace $workspace, Machine $machine, DaemonJob $job): JsonResponse
+    public function abandon(Workspace $workspace, Machine $machine, DaemonJob $job, DaemonJobQueue $queue): JsonResponse
     {
         $this->authorizeJob($workspace, $machine, $job);
 
@@ -53,7 +57,7 @@ class DaemonJobController extends Controller
             return response()->json(['error' => 'This job has already finished.'], 409);
         }
 
-        $this->stopWaiting($job);
+        $queue->stopWaiting($job);
         Activity::record($workspace, 'job.abandon', $job->service ?? $machine->name, $machine, meta: ['kind' => $job->kind]);
 
         return response()->json(['jobId' => $job->id, 'state' => $job->state]);
@@ -63,19 +67,5 @@ class DaemonJobController extends Controller
     {
         abort_unless($machine->workspace_id === $workspace->id && $job->machine_id === $machine->id, 404);
         Gate::authorize('manageMachines', $workspace);
-    }
-
-    private function stopWaiting(DaemonJob $job): void
-    {
-        $held = $job->held;
-        $job->forceFill([
-            'state' => 'cancelled',
-            'held' => false,
-            'error' => ['phase' => 'panel', 'message' => $held ? 'Cancelled before it was sent to the machine.' : 'Stopped waiting: the daemon never reported back on this job.'],
-            'finished_at' => now(),
-        ])->save();
-        if (! $held && in_array($job->kind, ['deploy', 'rollback'], true) && is_string($job->service)) {
-            app(DeployOnPush::class)->release($job->machine, $job->service);
-        }
     }
 }
