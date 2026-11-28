@@ -1641,8 +1641,8 @@ async function deploy(): Promise<void> {
                 domain,
                 wildcard: Boolean(
                     domain &&
-                        form.value.wildcard &&
-                        (form.value.proxy || machineProxy.value) !== 'none',
+                    form.value.wildcard &&
+                    (form.value.proxy || machineProxy.value) !== 'none',
                 ),
                 proxy:
                     routed &&
