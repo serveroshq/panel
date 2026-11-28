@@ -563,6 +563,12 @@ class DaemonJobQueue
         return self::atLeast($machine, (string) config('daemon.proxy_choice_since'));
     }
 
+    /** Whether a deploy can leave routing to a proxy or tunnel already on the machine. */
+    public static function canUseExternalProxy(Machine $machine): bool
+    {
+        return self::atLeast($machine, (string) config('daemon.external_proxy_since'));
+    }
+
     public static function canChooseHttps(Machine $machine): bool
     {
         return self::atLeast($machine, (string) config('daemon.https_choice_since'));

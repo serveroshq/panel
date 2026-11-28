@@ -180,6 +180,13 @@ final class DeployFailure
             ];
         }
 
+        if ($phase === 'proxy' && $has('/will not stop it|address already in use/i')) {
+            return [
+                'cause' => 'Ports 80 and 443 are already in use. ServerOS did not stop that program, and did not start its own reverse proxy.',
+                'fix' => 'Choose None as the reverse proxy and point your tunnel or proxy at the app’s port, or free ports 80 and 443 and deploy again.',
+                'command' => 'ss -ltnp',
+            ];
+        }
         if ($has('/port is already allocated|address already in use|EADDRINUSE/i')) {
             return [
                 'cause' => 'The port the app needs is already taken by something else on this machine.',

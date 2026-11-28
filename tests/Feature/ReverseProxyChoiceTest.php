@@ -54,6 +54,12 @@ test('the daemon says which reverse proxy the machine uses when it connects', fu
     $hello([]);
     expect($machine->fresh()->proxy)->toBe('nginx');
 
+    $hello(['proxy' => 'none']);
+    expect($machine->fresh()->proxy)->toBe('none');
+
+    $hello([]);
+    expect($machine->fresh()->proxy)->toBe('none');
+
     $this->postJson('/api/gateway/hello', [
         'serial' => $machine->certificate_serial,
         'hello' => ['machine_id' => $machine->uid, 'daemon_version' => '0.1.1-pre.40', 'supported_majors' => [1], 'facts' => [], 'proxy' => 'lighttpd'],
@@ -138,6 +144,120 @@ test('a finished deploy records the proxy the machine ended up on', function () 
     ], ['X-Gateway-Secret' => 'test-gateway-secret'])->assertOk();
 
     expect($machine->fresh()->proxy)->toBe('traefik');
+
+    $job = DaemonJob::query()->create([
+        'id' => (string) Str::uuid(), 'machine_id' => $machine->id, 'kind' => 'deploy', 'service' => 'mail',
+        'state' => 'running', 'log' => [], 'command' => ['job' => ['type' => 'deploy', 'service' => 'mail', 'proxy' => 'none']],
+    ]);
+    $this->postJson('/api/gateway/machines/'.$machine->uid.'/ingest', [
+        'envelopes' => [['v' => 1, 'kind' => 'job_update', 'payload' => [
+            'job_id' => $job->id, 'state' => 'succeeded', 'result' => ['service' => 'mail', 'proxy' => 'none'],
+        ]]],
+    ], ['X-Gateway-Secret' => 'test-gateway-secret'])->assertOk();
+
+    expect($machine->fresh()->proxy)->toBe('none');
+});
+
+test('an older daemon cannot deploy without a reverse proxy', function () {
+    [$workspace, , $url] = proxyMachine('0.1.1-pre.51');
+
+    $this->actingAs($workspace->owner)
+        ->postJson($url.'/deploy', ['template' => 'uptime-kuma', 'service' => 'status', 'domain' => 'status.acme.io', 'proxy' => 'none'])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['proxy' => 'too old to deploy without a reverse proxy']);
+
+    expect(queuedDeploy())->toBeNull();
+});
+
+test('none deploys the app and leaves the proxy that already has ports 80 and 443', function () {
+    [$workspace, $machine, $url] = proxyMachine('0.1.1-pre.52');
+    $machine->forceFill(['inventory' => ['listeners' => [
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 80, 'pid' => 2482, 'exe' => '/usr/bin/docker-proxy'],
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 443, 'pid' => 2495, 'exe' => '/usr/bin/docker-proxy'],
+    ]]])->save();
+
+    $this->actingAs($workspace->owner)
+        ->postJson($url.'/deploy', ['template' => 'stalwart', 'service' => 'mail', 'domain' => 'mail.acme.io', 'port' => 8050, 'proxy' => 'none'])
+        ->assertAccepted();
+
+    expect(queuedDeploy())->toMatchArray(['domains' => ['mail.acme.io'], 'proxy' => 'none']);
+});
+
+test('a free address with no reverse proxy is queued, and the default proxy is still refused', function () {
+    [$workspace, $machine, $url] = proxyMachine('0.1.1-pre.52');
+    $machine->forceFill(['inventory' => ['listeners' => [
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 80, 'pid' => 2482, 'exe' => '/usr/bin/docker-proxy'],
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 443, 'pid' => 2495, 'exe' => '/usr/bin/docker-proxy'],
+    ]]])->save();
+
+    $this->actingAs($workspace->owner)
+        ->postJson($url.'/deploy', [
+            'template' => 'docker-image',
+            'service' => 'api',
+            'build' => ['image' => 'ghcr.io/acme/api:1.4'],
+            'proxy' => 'none',
+        ])
+        ->assertAccepted()
+        ->assertJsonPath('domain', 'api.203-0-113-7.sslip.io');
+
+    expect(queuedDeploy())->toMatchArray([
+        'domains' => ['api.203-0-113-7.sslip.io'],
+        'proxy' => 'none',
+    ])->and(queuedDeploy())->not->toHaveKey('https');
+
+    $this->actingAs($workspace->owner)
+        ->postJson($url.'/deploy', [
+            'template' => 'docker-image',
+            'service' => 'api2',
+            'build' => ['image' => 'ghcr.io/acme/api:1.4'],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['proxy' => 'docker-proxy is using port 80']);
+
+    expect(queuedDeploy())->toMatchArray(['proxy' => 'none']);
+});
+
+test('a taken web port blocks provisioning a proxy and says what holds it', function () {
+    [$workspace, $machine, $url] = proxyMachine('0.1.1-pre.52');
+    $machine->forceFill(['inventory' => ['listeners' => [
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 80, 'pid' => 2482, 'exe' => '/usr/bin/docker-proxy'],
+    ]]])->save();
+
+    $this->actingAs($workspace->owner)
+        ->postJson($url.'/deploy', ['template' => 'stalwart', 'service' => 'mail', 'domain' => 'mail.acme.io', 'port' => 8050, 'proxy' => 'caddy'])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['proxy' => 'docker-proxy is using port 80']);
+
+    expect(queuedDeploy())->toBeNull();
+
+    $machine->forceFill(['inventory' => ['listeners' => [
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 80, 'pid' => 12, 'exe' => '/usr/bin/caddy'],
+    ]]])->save();
+
+    $this->actingAs($workspace->owner)
+        ->postJson($url.'/deploy', ['template' => 'stalwart', 'service' => 'mail', 'domain' => 'mail.acme.io', 'port' => 8050, 'proxy' => 'caddy'])
+        ->assertAccepted();
+});
+
+test('a deploy dialog on a new daemon can choose no reverse proxy', function () {
+    [$workspace, , $url] = proxyMachine('0.1.1-pre.52');
+
+    $this->actingAs($workspace->owner)->getJson($url.'/deploy/taken')
+        ->assertOk()
+        ->assertJson(['canUseExternalProxy' => true]);
+
+    [$workspace, , $url] = proxyMachine('0.1.1-pre.51');
+    $this->actingAs($workspace->owner)->getJson($url.'/deploy/taken')
+        ->assertOk()
+        ->assertJson(['canUseExternalProxy' => false]);
+});
+
+test('ports already in use are explained without telling anyone to start caddy over them', function () {
+    $explained = DeployFailure::fromError('proxy', 'listen tcp :80: bind: address already in use', []);
+
+    expect($explained['cause'])->toContain('did not stop that program')
+        ->and($explained['fix'])->toContain('Choose None')
+        ->and($explained['command'])->toBe('ss -ltnp');
 });
 
 test('a proxy that won’t start is explained by name', function () {

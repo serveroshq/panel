@@ -161,6 +161,8 @@ export type AppDeploy = {
     build: BuildSettings;
     deploying: DeployRow | null;
     lastFailure: LastFailure | null;
+    /** Set when the app is up and the reverse proxy was not changed. */
+    proxyNote?: string | null;
     hook: Hook | null;
     schedules: Schedule[];
     schedulesUnavailable: string | null;

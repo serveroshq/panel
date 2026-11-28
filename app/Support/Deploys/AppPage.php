@@ -52,6 +52,7 @@ final class AppPage
             'build' => $settings->toArray(AppSettings::managedNames($machine, $app)),
             'deploying' => $busy === null ? null : AppDeploys::row($busy),
             'lastFailure' => AppDeploys::lastFailure($machine, $app),
+            'proxyNote' => self::proxyNote($machine, $app),
             'hook' => $source === 'upload' ? null : DeployHooks::props($machine, $app),
             'schedules' => AppSchedules::props($machine, $app),
             'schedulesUnavailable' => AppSchedules::unavailable($spec),
@@ -73,5 +74,15 @@ final class AppPage
         $port = is_array($result) ? ($result['container_port'] ?? null) : (is_string($result) ? (json_decode($result, true)['container_port'] ?? null) : null);
 
         return is_int($port) && $port > 0 && $port <= 65535 ? $port : null;
+    }
+
+    /** The latest deploy left the app up and did not change the reverse proxy. */
+    private static function proxyNote(Machine $machine, string $app): ?string
+    {
+        $result = DaemonJob::query()->where('machine_id', $machine->id)->where('kind', 'deploy')->where('service', $app)
+            ->where('state', 'succeeded')->latest()->value('result');
+        $note = is_array($result) ? ($result['proxy_note'] ?? null) : (is_string($result) ? (json_decode($result, true)['proxy_note'] ?? null) : null);
+
+        return is_string($note) && $note !== '' ? $note : null;
     }
 }

@@ -43,6 +43,7 @@ const {
     machineProxy = null,
     canChooseProxy = false,
     canChooseHttps = false,
+    canUseExternalProxy = false,
     takenDomains = [],
     errors = {},
 } = defineProps<{
@@ -55,6 +56,8 @@ const {
     machineProxy?: string | null;
     canChooseProxy?: boolean;
     canChooseHttps?: boolean;
+    /** None: don't install or start a proxy. Needs a new enough daemon. */
+    canUseExternalProxy?: boolean;
     /** Domains other apps on the machine serve. */
     takenDomains?: { domain: string; app: string }[];
     errors?: Record<string, string>;
@@ -102,6 +105,17 @@ const proxyOptions = computed<SelectMenuOption<Proxy>[]>(() => [
         hint: trans('HTTPS from Let’s Encrypt, through certbot'),
     },
     { value: 'traefik', label: 'Traefik', hint: trans('HTTPS on its own') },
+    ...(canUseExternalProxy
+        ? [
+              {
+                  value: 'none' as Proxy,
+                  label: trans('None'),
+                  hint: trans(
+                      'A proxy you run yourself, or a Cloudflare Tunnel. ServerOS won’t install or start one.',
+                  ),
+              },
+          ]
+        : []),
 ]);
 
 // Only the domain field when the app has no free address to offer.
@@ -249,9 +263,13 @@ function chooseMode(next: AddressMode): void {
             </div>
             <p :class="hint">
                 {{
-                    $t(
-                        'Works as soon as it’s deployed, with HTTPS. Swap in your own domain any time.',
-                    )
+                    chosenProxy === 'none'
+                        ? $t(
+                              'The name points at this machine. ServerOS won’t serve it. Point your tunnel or proxy at the app’s port.',
+                          )
+                        : $t(
+                              'Works as soon as it’s deployed, with HTTPS. Swap in your own domain any time.',
+                          )
                 }}
             </p>
         </template>
@@ -445,7 +463,9 @@ function chooseMode(next: AddressMode): void {
             </div>
 
             <div
-                v-if="domain && canChooseProxy"
+                v-if="
+                    canChooseProxy && (showsDomain ? !!domain : mode === 'free')
+                "
                 class="mt-1 flex flex-col gap-1.5"
             >
                 <label for="deploy-proxy" :class="label">{{
@@ -458,7 +478,14 @@ function chooseMode(next: AddressMode): void {
                     :class="select"
                     @update:model-value="(value) => (proxy = value)"
                 />
-                <p v-if="chosenProxy !== currentProxy" :class="hint">
+                <p v-if="chosenProxy === 'none'" :class="hint">
+                    {{
+                        $t(
+                            'ServerOS won’t install or start a reverse proxy, or stop the one already on this machine. Point your tunnel or proxy at the app’s port.',
+                        )
+                    }}
+                </p>
+                <p v-else-if="chosenProxy !== currentProxy" :class="hint">
                     {{
                         $t(
                             'This machine uses :from now. Deploying moves every site on it to :to and stops :from, since only one of them can use ports 80 and 443.',
@@ -473,8 +500,11 @@ function chooseMode(next: AddressMode): void {
                     {{ errors.proxy }}
                 </p>
             </div>
+            <p v-else-if="errors.proxy" :class="errorClass">
+                {{ errors.proxy }}
+            </p>
             <label
-                v-if="domain && canChooseHttps"
+                v-if="domain && canChooseHttps && chosenProxy !== 'none'"
                 class="mt-1 flex cursor-pointer items-start gap-2.5 text-[13px]/5 select-none"
             >
                 <DashCheckbox
@@ -500,7 +530,7 @@ function chooseMode(next: AddressMode): void {
             </label>
             <p v-if="errors.https" :class="errorClass">{{ errors.https }}</p>
             <label
-                v-if="domain"
+                v-if="domain && chosenProxy !== 'none'"
                 class="mt-1 flex cursor-pointer items-start gap-2.5 text-[13px]/5 select-none"
             >
                 <DashCheckbox

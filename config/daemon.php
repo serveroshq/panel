@@ -29,6 +29,8 @@ return [
     'package_add_since' => env('DAEMON_PACKAGE_ADD_SINCE', '0.1.1-pre.35'),
     'tunnel_since' => env('DAEMON_TUNNEL_SINCE', '0.1.1-pre.37'),
     'proxy_choice_since' => env('DAEMON_PROXY_CHOICE_SINCE', '0.1.1-pre.40'),
+    // None: deploy an app without installing or starting a reverse proxy.
+    'external_proxy_since' => env('DAEMON_EXTERNAL_PROXY_SINCE', '0.1.1-pre.52'),
     'https_choice_since' => env('DAEMON_HTTPS_CHOICE_SINCE', '0.1.1-pre.41'),
     'compose_repo_since' => env('DAEMON_COMPOSE_REPO_SINCE', '0.1.1-pre.38'),
     'host_database_since' => env('DAEMON_HOST_DATABASE_SINCE', '0.1.1-pre.39'),

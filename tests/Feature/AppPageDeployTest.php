@@ -78,9 +78,12 @@ test('an app whose first deploy failed still has a page, with its settings and w
     expect($page->getContent())->not->toContain('s3cret');
 
     // Once a deploy works, the port the daemon read from the image shows too.
-    DaemonJob::query()->update(['state' => 'succeeded', 'result' => json_encode(['container_port' => 8080])]);
+    DaemonJob::query()->update(['state' => 'succeeded', 'result' => json_encode(['container_port' => 8080, 'proxy_note' => 'shop is on 127.0.0.1:8080. No reverse proxy was installed or started.'])]);
     $this->actingAs($workspace->owner)->get($workspace->url()."/machines/{$machine->id}/services/app:shop")
-        ->assertInertia(fn (Assert $page) => $page->where('deploy.detectedPort', 8080)->where('deploy.lastFailure', null));
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('deploy.detectedPort', 8080)
+            ->where('deploy.lastFailure', null)
+            ->where('deploy.proxyNote', 'shop is on 127.0.0.1:8080. No reverse proxy was installed or started.'));
 });
 
 test('fixing the build settings of a failed app deploys it again with them, on the same commit', function () {

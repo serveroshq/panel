@@ -505,4 +505,14 @@ const machineUrl = computed(
             />
         </div>
     </section>
+
+    <section
+        v-else-if="deploy.proxyNote"
+        class="dash-card flex flex-col gap-1 px-[18px] py-3.5"
+    >
+        <p class="text-[13px]/5 font-medium text-fg-primary">
+            {{ $t('The app is running') }}
+        </p>
+        <p class="text-[13px]/5 text-fg-secondary">{{ deploy.proxyNote }}</p>
+    </section>
 </template>

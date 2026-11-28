@@ -90,7 +90,7 @@ use Illuminate\Support\Facades\Storage;
 class Machine extends Model
 {
     /** The reverse proxies a deploy can pick, by name, with how people write them. */
-    public const PROXIES = ['caddy' => 'Caddy', 'nginx' => 'nginx', 'apache' => 'Apache', 'traefik' => 'Traefik'];
+    public const PROXIES = ['caddy' => 'Caddy', 'nginx' => 'nginx', 'apache' => 'Apache', 'traefik' => 'Traefik', 'none' => 'None'];
 
     /** @use HasFactory<MachineFactory> */
     use HasFactory;

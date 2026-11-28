@@ -11,13 +11,14 @@ export function bareDomain(value: string): string {
         .replace(/:\d+$/, '');
 }
 
-export type Proxy = 'caddy' | 'nginx' | 'apache' | 'traefik';
+export type Proxy = 'caddy' | 'nginx' | 'apache' | 'traefik' | 'none';
 
 export const PROXY_NAMES: Record<Proxy, string> = {
     caddy: 'Caddy',
     nginx: 'nginx',
     apache: 'Apache',
     traefik: 'Traefik',
+    none: 'None',
 };
 
 export function isProxy(value: string | null | undefined): value is Proxy {

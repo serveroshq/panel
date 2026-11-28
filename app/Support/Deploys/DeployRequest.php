@@ -245,7 +245,21 @@ final class DeployRequest
      */
     public static function proxy(Machine $machine, ?string $domain, ?string $proxy): ?string
     {
-        if (blank($domain) || blank($proxy) || $proxy === ($machine->proxy ?? 'caddy')) {
+        if (blank($domain)) {
+            return null;
+        }
+
+        $current = $machine->proxy ?? 'caddy';
+        $effective = blank($proxy) ? $current : $proxy;
+        if ($effective === 'none') {
+            if (! DaemonJobQueue::canUseExternalProxy($machine)) {
+                throw ValidationException::withMessages(['proxy' => $machine->name.'’s daemon is too old to deploy without a reverse proxy. It updates itself, or run “sudo serverosd update” on the server.']);
+            }
+        } else {
+            self::assertPortsFree($machine, $effective, $current);
+        }
+
+        if (blank($proxy) || $proxy === $current) {
             return null;
         }
         if (! DaemonJobQueue::canChooseProxy($machine)) {
@@ -253,6 +267,64 @@ final class DeployRequest
         }
 
         return $proxy;
+    }
+
+    /**
+     * Refuse to provision a proxy while something else is listening on 80
+     * or 443. The program is not stopped. A listener we cannot name is
+     * left for the daemon, which sees the live ports.
+     */
+    private static function assertPortsFree(Machine $machine, string $proxy, string $current): void
+    {
+        $listeners = $machine->inventory['listeners'] ?? null;
+        if (! is_array($listeners)) {
+            return;
+        }
+
+        $held = [];
+        foreach ($listeners as $listener) {
+            if (! is_array($listener) || ! in_array((int) ($listener['port'] ?? 0), [80, 443], true)) {
+                continue;
+            }
+            $name = self::listenerName($listener);
+            if ($name === null || self::proxyOwns($name, $proxy) || self::proxyOwns($name, $current)) {
+                continue;
+            }
+            $held[(int) $listener['port']] = $name;
+        }
+        if ($held === []) {
+            return;
+        }
+
+        $who = collect($held)->map(fn (string $name, int $port) => "{$name} is using port {$port}")->implode(' and ');
+        $next = DaemonJobQueue::canUseExternalProxy($machine)
+            ? 'Choose None as the reverse proxy and point your tunnel or proxy at the app’s port, or free ports 80 and 443.'
+            : 'Free ports 80 and 443, or update this machine’s daemon and choose None. It updates itself, or run “sudo serverosd update” on the server.';
+
+        throw ValidationException::withMessages(['proxy' => $who.'. ServerOS will not stop it. '.$next]);
+    }
+
+    /** @param  array<string, mixed>  $listener */
+    private static function listenerName(array $listener): ?string
+    {
+        $source = $listener['exe'] ?? $listener['cmdline'] ?? null;
+        if (! is_string($source) || $source === '') {
+            return null;
+        }
+        $token = explode(' ', str_replace("\t", ' ', $source), 2)[0];
+
+        return $token === '' ? null : basename($token);
+    }
+
+    private static function proxyOwns(string $name, string $proxy): bool
+    {
+        return match ($proxy) {
+            'caddy' => $name === 'caddy',
+            'nginx' => $name === 'nginx',
+            'apache' => $name === 'apache2' || $name === 'httpd',
+            'traefik' => $name === 'traefik',
+            default => false,
+        };
     }
 
     /**

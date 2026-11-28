@@ -227,6 +227,7 @@ const taken = ref<{ services: string[]; ports: number[] }>({
 });
 const machineProxy = ref<string | null>(null);
 const canChooseProxy = ref(false);
+const canUseExternalProxy = ref(false);
 const canChooseHttps = ref(false);
 // Like 203-0-113-5.sslip.io: names under it resolve to the machine's public address.
 const freeAddress = ref<string | null>(null);
@@ -1129,6 +1130,7 @@ async function loadTaken(): Promise<void> {
             proxy?: string | null;
             canChooseProxy?: boolean;
             canChooseHttps?: boolean;
+            canUseExternalProxy?: boolean;
             canDeployBuild?: boolean;
             canInspect?: boolean;
             docker?: { installed: boolean | null; canInstall: boolean };
@@ -1141,6 +1143,7 @@ async function loadTaken(): Promise<void> {
         machineProxy.value = body.proxy ?? null;
         canChooseProxy.value = Boolean(body.canChooseProxy);
         canChooseHttps.value = Boolean(body.canChooseHttps);
+        canUseExternalProxy.value = Boolean(body.canUseExternalProxy);
         capabilities.value = {
             canDeployBuild: body.canDeployBuild ?? false,
             canInspect: body.canInspect ?? false,
@@ -1599,10 +1602,12 @@ async function deploy(): Promise<void> {
     const wantsDomain = offersFree.value
         ? addressMode.value === 'domain'
         : true;
+    const usingFree = offersFree.value && addressMode.value === 'free';
     const domain =
         template.web && wantsDomain && form.value.domain
             ? bareDomain(form.value.domain)
             : null;
+    const routed = Boolean(domain || usingFree);
     const port =
         form.value.port === '' || form.value.port === null
             ? null
@@ -1634,15 +1639,24 @@ async function deploy(): Promise<void> {
                         : null,
                 php: code && form.value.php ? form.value.php : null,
                 domain,
-                wildcard: Boolean(domain && form.value.wildcard),
-                proxy:
+                wildcard: Boolean(
                     domain &&
+                        form.value.wildcard &&
+                        (form.value.proxy || machineProxy.value) !== 'none',
+                ),
+                proxy:
+                    routed &&
                     canChooseProxy.value &&
                     form.value.proxy &&
                     form.value.proxy !== (machineProxy.value ?? 'caddy')
                         ? form.value.proxy
                         : null,
-                https: domain && canChooseHttps.value ? form.value.https : null,
+                https:
+                    domain &&
+                    canChooseHttps.value &&
+                    (form.value.proxy || machineProxy.value) !== 'none'
+                        ? form.value.https
+                        : null,
                 env,
                 extra_env: isAppLike.value ? settings.text || null : null,
                 ...(isAppLike.value &&
@@ -2835,6 +2849,7 @@ watch(
                             :machine-proxy="machineProxy"
                             :can-choose-proxy="canChooseProxy"
                             :can-choose-https="canChooseHttps"
+                            :can-use-external-proxy="canUseExternalProxy"
                             :taken-domains="capabilities?.domains ?? []"
                             :errors="errors"
                         />
@@ -3177,14 +3192,39 @@ watch(
                             </ul>
                         </div>
 
-                        <p v-if="result.url" class="text-fg-muted">
+                        <p
+                            v-if="
+                                (form.proxy || machineProxy) === 'none' &&
+                                result.domain
+                            "
+                            class="text-fg-muted"
+                        >
+                            {{
+                                result.localUrl || result.port
+                                    ? $t(
+                                          'ServerOS will not put it on a reverse proxy. It listens on this machine at :address. Point your tunnel or proxy there.',
+                                          {
+                                              address:
+                                                  result.localUrl ??
+                                                  `http://127.0.0.1:${result.port}`,
+                                          },
+                                      )
+                                    : $t(
+                                          'ServerOS won’t install or start a reverse proxy, or stop the one already on this machine. Point your tunnel or proxy at the app’s port.',
+                                      )
+                            }}
+                        </p>
+                        <p v-else-if="result.url" class="text-fg-muted">
                             {{ $t('It will answer at') + ' ' }}
                             <span class="font-ui-mono text-fg-primary">{{
                                 result.url
                             }}</span>
                         </p>
                         <p
-                            v-if="result.url?.startsWith('https://')"
+                            v-if="
+                                (form.proxy || machineProxy) !== 'none' &&
+                                result.url?.startsWith('https://')
+                            "
                             class="flex items-start gap-1.5 text-fg-muted"
                         >
                             <LockKeyhole

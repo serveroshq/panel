@@ -85,6 +85,7 @@ class MachineDeployController extends Controller
             ...Placement::taken($machine),
             'proxy' => $machine->proxy,
             'canChooseProxy' => DaemonJobQueue::canChooseProxy($machine),
+            'canUseExternalProxy' => DaemonJobQueue::canUseExternalProxy($machine),
             'canChooseHttps' => DaemonJobQueue::canChooseHttps($machine),
             'canDeployBuild' => $build,
             'canInspect' => $build && DaemonJobQueue::canResolveRef($machine),

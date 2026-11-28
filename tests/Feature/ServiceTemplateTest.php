@@ -485,7 +485,7 @@ test('the deploy dialog learns which names and ports are taken, so a second data
 
     $this->actingAs($workspace->owner)->getJson($url.'/taken')
         ->assertOk()
-        ->assertExactJson(['services' => ['postgres', 'shop'], 'ports' => [80, 5432], 'proxy' => null, 'canChooseProxy' => false, 'canChooseHttps' => false, 'freeAddress' => '203-0-113-7.sslip.io',
+        ->assertExactJson(['services' => ['postgres', 'shop'], 'ports' => [80, 5432], 'proxy' => null, 'canChooseProxy' => false, 'canUseExternalProxy' => false, 'canChooseHttps' => false, 'freeAddress' => '203-0-113-7.sslip.io',
             'canDeployBuild' => false, 'canInspect' => false, 'docker' => ['installed' => true, 'canInstall' => false], 'domains' => [], 'machines' => [
                 ['id' => $machine->id, 'name' => $machine->name, 'provider' => $machine->provider, 'online' => true, 'canDeployBuild' => false],
             ]]);
