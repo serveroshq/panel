@@ -191,12 +191,32 @@ final class TemplateDeployment
     /** @return array<string, string> */
     private function files(): array
     {
+        $files = $this->template->files;
         $php = $this->input['php'] ?? null;
-        if (! is_string($php) || ! in_array($php, RepositoryDetector::PHP_VERSIONS, true)) {
-            return $this->template->files;
+        if (is_string($php) && in_array($php, RepositoryDetector::PHP_VERSIONS, true)) {
+            $files = array_map(fn (string $file) => (string) preg_replace('#serversideup/php:\d+\.\d+-#', "serversideup/php:{$php}-", $file), $files);
         }
 
-        return array_map(fn (string $file) => (string) preg_replace('#serversideup/php:\d+\.\d+-#', "serversideup/php:{$php}-", $file), $this->template->files);
+        return $this->withoutStalwartPublicUrl($files);
+    }
+
+    /**
+     * @param  array<string, string>  $files
+     * @return array<string, string>
+     */
+    private function withoutStalwartPublicUrl(array $files): array
+    {
+        if ($this->template->slug !== 'stalwart' || isset($this->env['STALWART_PUBLIC_URL']) || ! isset($files['compose.yaml'])) {
+            return $files;
+        }
+
+        $files['compose.yaml'] = str_replace(
+            "    environment:\n      STALWART_PUBLIC_URL: \${STALWART_PUBLIC_URL}\n",
+            '',
+            $files['compose.yaml'],
+        );
+
+        return $files;
     }
 
     public static function usesPhp(ServiceTemplate $template): bool
@@ -336,10 +356,41 @@ final class TemplateDeployment
             unset($this->env['PORT']);
         }
         $this->env['DOCKER_BRIDGE'] = DaemonFacts::dockerBridge($this->machine->facts ?? []);
+        $this->applyStalwartPublicUrl();
 
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
+    }
+
+    /**
+     * Stalwart publishes its sign-in URLs from this variable. The browser
+     * stays on https when a tunnel or the machine proxy terminates TLS, so
+     * a domain always becomes an https URL unless one was typed. With no
+     * domain the variable is left unset, and the Compose file drops it, so
+     * an empty value is not passed into the container.
+     */
+    private function applyStalwartPublicUrl(): void
+    {
+        if ($this->template->slug !== 'stalwart') {
+            return;
+        }
+
+        $typed = trim((string) ($this->input['env']['STALWART_PUBLIC_URL'] ?? ''));
+        if ($typed !== '') {
+            $this->env['STALWART_PUBLIC_URL'] = $typed;
+
+            return;
+        }
+
+        $domain = $this->domain();
+        if ($domain !== null) {
+            $this->env['STALWART_PUBLIC_URL'] = 'https://'.$domain;
+
+            return;
+        }
+
+        unset($this->env['STALWART_PUBLIC_URL']);
     }
 
     private function generate(string $default): string

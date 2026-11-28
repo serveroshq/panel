@@ -110,6 +110,62 @@ test('a database template deploys its compose file with a generated password', f
         ->and($response->json('generated.0.value'))->toBe($job['env']['POSTGRES_PASSWORD']);
 });
 
+test('Stalwart 1 keeps its config and publishes the domain as its public URL', function () {
+    [$workspace, $machine, $url] = templateMachine();
+    $machine->forceFill(['daemon_version' => '0.1.1-pre.52'])->save();
+
+    $this->actingAs($workspace->owner)->postJson($url, [
+        'template' => 'stalwart',
+        'service' => 'mail',
+        'domain' => 'mail.acme.io',
+        'port' => 8080,
+        'https' => false,
+    ])->assertAccepted();
+
+    $job = sentJob();
+    $compose = $job['files']['compose.yaml'];
+
+    expect($job['env']['STALWART_PUBLIC_URL'])->toBe('https://mail.acme.io')
+        ->and($compose)->toContain('image: stalwartlabs/stalwart:v1')
+        ->and($compose)->toContain('init: true')
+        ->and($compose)->toContain('STALWART_PUBLIC_URL: ${STALWART_PUBLIC_URL}')
+        ->and($compose)->toContain('stalwart-etc:/etc/stalwart')
+        ->and($compose)->toContain('stalwart-data:/var/lib/stalwart')
+        ->and($compose)->toContain('127.0.0.1:${PORT}:8080')
+        ->and($compose)->not->toContain('/opt/stalwart')
+        ->and($compose)->not->toContain('"443:443"');
+});
+
+test('Stalwart without a domain does not pass an empty public URL', function () {
+    [$workspace, , $url] = templateMachine();
+
+    $this->actingAs($workspace->owner)->postJson($url, [
+        'template' => 'stalwart',
+        'service' => 'mail',
+        'port' => 8080,
+    ])->assertAccepted();
+
+    $job = sentJob();
+
+    expect($job['env'])->not->toHaveKey('STALWART_PUBLIC_URL')
+        ->and($job['files']['compose.yaml'])->not->toContain('STALWART_PUBLIC_URL')
+        ->and($job['files']['compose.yaml'])->toContain('stalwart-etc:/etc/stalwart');
+});
+
+test('a typed Stalwart public URL is kept', function () {
+    [$workspace, , $url] = templateMachine();
+
+    $this->actingAs($workspace->owner)->postJson($url, [
+        'template' => 'stalwart',
+        'service' => 'mail',
+        'domain' => 'mail.acme.io',
+        'port' => 8080,
+        'env' => ['STALWART_PUBLIC_URL' => 'https://mail.acme.io:8443'],
+    ])->assertAccepted();
+
+    expect(sentJob()['env']['STALWART_PUBLIC_URL'])->toBe('https://mail.acme.io:8443');
+});
+
 test('Supabase gets its anon and service role keys signed with the JWT secret it generates', function () {
     [$workspace, , $url] = templateMachine();
 
