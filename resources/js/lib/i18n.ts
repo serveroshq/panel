@@ -6,9 +6,21 @@ const files = import.meta.glob<{ default: Record<string, string> }>(
 );
 
 function pageLocale(): string {
-    return typeof document === 'undefined'
-        ? 'en'
-        : document.documentElement.lang.split('-')[0] || 'en';
+    if (typeof document === 'undefined') {
+        return 'en';
+    }
+
+    const raw = document.documentElement.lang || 'en';
+    if (files[`../../../lang/${raw}.json`]) {
+        return raw;
+    }
+
+    const base = raw.split('-')[0] || 'en';
+    if (base === 'en' || files[`../../../lang/${base}.json`]) {
+        return base;
+    }
+
+    return raw;
 }
 
 const locale = pageLocale();

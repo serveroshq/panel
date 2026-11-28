@@ -12,12 +12,26 @@ class SetLocale
 {
     public const string COOKIE = 'locale';
 
+    /**
+     * Map browser language tags onto a locale ServerOS ships.
+     *
+     * @var array<string, string>
+     */
+    private const array ALIASES = [
+        'zh' => 'zh-CN',
+        'zh-cn' => 'zh-CN',
+        'zh-hans' => 'zh-CN',
+        'zh-hans-cn' => 'zh-CN',
+        'zh-sg' => 'zh-CN',
+        'zh-hans-sg' => 'zh-CN',
+    ];
+
     public function handle(Request $request, Closure $next): Response
     {
         $locale = self::for($request);
 
         App::setLocale($locale);
-        Carbon::setLocale($locale);
+        Carbon::setLocale(str_replace('-', '_', $locale));
 
         return $next($request);
     }
@@ -36,8 +50,41 @@ class SetLocale
             return $chosen;
         }
 
-        $browser = $request->getPreferredLanguage($supported);
+        return self::fromBrowser($request, $supported)
+            ?? (string) config('app.fallback_locale', 'en');
+    }
 
-        return is_string($browser) && in_array($browser, $supported, true) ? $browser : (string) config('app.fallback_locale', 'en');
+    /**
+     * @param  list<string>  $supported
+     */
+    private static function fromBrowser(Request $request, array $supported): ?string
+    {
+        $lookup = [];
+        foreach ($supported as $code) {
+            $lookup[strtolower(str_replace('_', '-', $code))] = $code;
+        }
+
+        foreach ($request->getLanguages() as $lang) {
+            $tag = strtolower(str_replace('_', '-', (string) $lang));
+            if ($tag === '') {
+                continue;
+            }
+
+            if (isset($lookup[$tag])) {
+                return $lookup[$tag];
+            }
+            if (isset(self::ALIASES[$tag]) && in_array(self::ALIASES[$tag], $supported, true)) {
+                return self::ALIASES[$tag];
+            }
+
+            // A regional tag takes its primary language before the next tag
+            // gets a turn, so "de-DE, en" stays German.
+            $primary = str_contains($tag, '-') ? strstr($tag, '-', true) : false;
+            if (is_string($primary) && isset($lookup[$primary])) {
+                return $lookup[$primary];
+            }
+        }
+
+        return null;
     }
 }
