@@ -255,7 +255,7 @@ fi
 public_ip="$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || true)"
 check_dns() {
     local name="$1" found
-    found="$(getent ahostsv4 "$name" 2>/dev/null | awk 'NR==1 {print $1}')"
+    found="$(getent ahostsv4 "$name" 2>/dev/null | awk 'NR==1 {print $1}' || true)"
     if [ -z "$found" ]; then
         warn "$name doesn't resolve yet. Add an A record pointing at ${public_ip:-this server}."
     elif [ -n "$public_ip" ] && [ "$found" != "$public_ip" ]; then
